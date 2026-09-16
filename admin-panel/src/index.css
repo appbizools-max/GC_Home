@@ -1,0 +1,65 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --admin-primary: #1E4E3D;
+  --admin-accent: #2D8A68;
+  --admin-light: #BBE9D2;
+  --admin-bg: #F8FAFC;
+}
+
+* {
+  box-sizing: border-box;
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+body {
+  background-color: var(--admin-bg);
+  color: #0F172A;
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+}
+
+/* Custom Table Styling */
+.table-container {
+  width: 100%;
+  overflow-x: auto;
+  border-radius: 12px;
+  border: 1px solid #E2E8F0;
+  background: white;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+th {
+  background: #F1F5F9;
+  padding: 12px 16px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+td {
+  padding: 14px 16px;
+  font-size: 13px;
+  color: #1E293B;
+  border-bottom: 1px solid #F1F5F9;
+}
+
+tr:last-child td {
+  border-bottom: none;
+}
+
+tr:hover td {
+  background-color: #F8FAFC;
+}

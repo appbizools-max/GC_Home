@@ -1,0 +1,19 @@
+{
+  "expo": {
+    "name": "GC Home Plus",
+    "slug": "gc-home-plus",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.gchomeplus.app",
+      "googleServicesFile": "./google-services.json"
+    }
+  }
+}
