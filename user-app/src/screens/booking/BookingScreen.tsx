@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
-import { ArrowLeft, Calendar, MapPin, CreditCard } from 'lucide-react';
+import { ArrowLeft, Calendar, MapPin, CreditCard } from 'lucide-react-native';
 import { PaymentMethod } from '../../types';
 
 export const BookingScreen: React.FC = () => {
@@ -27,9 +28,7 @@ export const BookingScreen: React.FC = () => {
     '04:00 PM - 06:00 PM'
   ];
 
-  const handleConfirm = (e: React.FormEvent) => {
-    e.preventDefault();
-
+  const handleConfirm = () => {
     const booking = createBooking({
       customerName: user?.name || 'Rahul Verma',
       customerPhone: user?.phone || '+91 98111 22233',
@@ -56,149 +55,316 @@ export const BookingScreen: React.FC = () => {
   };
 
   return (
-    <form onSubmit={handleConfirm} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <button
-          type="button"
-          onClick={() => navigateTo('service_details', { service: selectedService })}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}
+    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+      <View style={styles.headerRow}>
+        <TouchableOpacity
+          onPress={() => navigateTo('service_details', { service: selectedService })}
+          style={styles.backBtn}
         >
           <ArrowLeft size={20} color="#1E293B" />
-        </button>
-        <h2 style={{ fontSize: 18, fontWeight: 800, color: '#1E293B' }}>Complete Booking</h2>
-      </div>
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Complete Booking</Text>
+      </View>
 
-      <div className="card" style={{ background: '#EBF8F2', borderColor: '#BBE9D2', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <span style={{ fontSize: 11, fontWeight: 700, color: '#2D8A68' }}>SERVICE PACKAGE</span>
-          <h3 style={{ fontSize: 16, fontWeight: 800, color: '#1E4E3D' }}>{selectedService.name}</h3>
-        </div>
-        <span style={{ fontSize: 18, fontWeight: 800, color: '#1E4E3D' }}>₹{selectedService.startingPrice}</span>
-      </div>
+      <View style={styles.summaryCard}>
+        <View>
+          <Text style={styles.summaryLabel}>SERVICE PACKAGE</Text>
+          <Text style={styles.summaryTitle}>{selectedService.name}</Text>
+        </View>
+        <Text style={styles.summaryPrice}>₹{selectedService.startingPrice}</Text>
+      </View>
 
-      <div className="card">
-        <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Calendar size={16} color="#2D8A68" /> Select Date & Slot
-        </h3>
+      <View style={styles.card}>
+        <View style={styles.cardTitleRow}>
+          <Calendar size={16} color="#2D8A68" />
+          <Text style={styles.cardTitle}>Select Date & Slot</Text>
+        </View>
 
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ fontSize: 12, color: '#64748B', display: 'block', marginBottom: 4 }}>Appointment Date</label>
-          <input
-            type="date"
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Appointment Date</Text>
+          <TextInput
             value={date}
-            onChange={e => setDate(e.target.value)}
-            required
-            style={{ width: '100%', padding: '10px', borderRadius: 8, border: '1px solid #CBD5E1', fontSize: 14 }}
+            onChangeText={setDate}
+            placeholder="YYYY-MM-DD"
+            placeholderTextColor="#94A3B8"
+            style={styles.input}
           />
-        </div>
+        </View>
 
-        <div>
-          <label style={{ fontSize: 12, color: '#64748B', display: 'block', marginBottom: 6 }}>Time Slot</label>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Time Slot</Text>
+          <View style={styles.slotsGrid}>
             {timeSlots.map(slot => (
-              <button
+              <TouchableOpacity
                 key={slot}
-                type="button"
-                onClick={() => setTimeSlot(slot)}
-                style={{
-                  padding: '8px 10px',
-                  borderRadius: 8,
-                  fontSize: 12,
-                  fontWeight: 600,
-                  border: timeSlot === slot ? '2px solid #2D8A68' : '1px solid #E2E8F0',
-                  background: timeSlot === slot ? '#EBF8F2' : '#FFFFFF',
-                  color: timeSlot === slot ? '#1E4E3D' : '#475569',
-                  cursor: 'pointer'
-                }}
+                onPress={() => setTimeSlot(slot)}
+                style={[
+                  styles.slotBtn,
+                  timeSlot === slot ? styles.slotBtnActive : styles.slotBtnInactive
+                ]}
               >
-                {slot}
-              </button>
+                <Text style={[
+                  styles.slotText,
+                  timeSlot === slot ? styles.slotTextActive : styles.slotTextInactive
+                ]}>
+                  {slot}
+                </Text>
+              </TouchableOpacity>
             ))}
-          </div>
-        </div>
-      </div>
+          </View>
+        </View>
+      </View>
 
-      <div className="card">
-        <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <MapPin size={16} color="#2D8A68" /> Service Address
-        </h3>
+      <View style={styles.card}>
+        <View style={styles.cardTitleRow}>
+          <MapPin size={16} color="#2D8A68" />
+          <Text style={styles.cardTitle}>Service Address</Text>
+        </View>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <input
-            type="text"
+        <View style={styles.addressInputs}>
+          <TextInput
             value={street}
-            onChange={e => setStreet(e.target.value)}
+            onChangeText={setStreet}
             placeholder="Flat / Building / House No."
-            required
-            style={{ width: '100%', padding: '10px', borderRadius: 8, border: '1px solid #CBD5E1', fontSize: 13 }}
+            placeholderTextColor="#94A3B8"
+            style={styles.input}
           />
-          <input
-            type="text"
+          <TextInput
             value={locality}
-            onChange={e => setLocality(e.target.value)}
+            onChangeText={setLocality}
             placeholder="Locality / Area"
-            required
-            style={{ width: '100%', padding: '10px', borderRadius: 8, border: '1px solid #CBD5E1', fontSize: 13 }}
+            placeholderTextColor="#94A3B8"
+            style={styles.input}
           />
-        </div>
-      </div>
+        </View>
+      </View>
 
-      <div className="card">
-        <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <CreditCard size={16} color="#2D8A68" /> Payment Method
-        </h3>
+      <View style={styles.card}>
+        <View style={styles.cardTitleRow}>
+          <CreditCard size={16} color="#2D8A68" />
+          <Text style={styles.cardTitle}>Payment Method</Text>
+        </View>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <View style={styles.paymentMethodsList}>
           {[
             { id: 'upi', label: 'UPI / GPay / PhonePe / Paytm', desc: 'Instant & Secure' },
             { id: 'card', label: 'Credit / Debit Card', desc: 'Visa, Mastercard, RuPay' },
             { id: 'pay_on_completion', label: 'Pay on Completion', desc: 'Pay after service is finished' }
           ].map(pm => (
-            <label
+            <TouchableOpacity
               key={pm.id}
-              onClick={() => setPaymentMethod(pm.id as PaymentMethod)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '10px 12px',
-                borderRadius: 10,
-                border: paymentMethod === pm.id ? '2px solid #2D8A68' : '1px solid #E2E8F0',
-                background: paymentMethod === pm.id ? '#EBF8F2' : '#FFFFFF',
-                cursor: 'pointer'
-              }}
+              onPress={() => setPaymentMethod(pm.id as PaymentMethod)}
+              style={[
+                styles.paymentOption,
+                paymentMethod === pm.id ? styles.paymentOptionActive : styles.paymentOptionInactive
+              ]}
             >
-              <div>
-                <span style={{ fontSize: 13, fontWeight: 700, color: '#1E293B', display: 'block' }}>{pm.label}</span>
-                <span style={{ fontSize: 11, color: '#64748B' }}>{pm.desc}</span>
-              </div>
-              <input
-                type="radio"
-                name="payment"
-                checked={paymentMethod === pm.id}
-                onChange={() => setPaymentMethod(pm.id as PaymentMethod)}
-              />
-            </label>
+              <View>
+                <Text style={styles.paymentOptionLabel}>{pm.label}</Text>
+                <Text style={styles.paymentOptionDesc}>{pm.desc}</Text>
+              </View>
+              <View style={[
+                styles.radioCircle,
+                paymentMethod === pm.id && styles.radioCircleActive
+              ]} />
+            </TouchableOpacity>
           ))}
-        </div>
-      </div>
+        </View>
+      </View>
 
-      <div className="card">
-        <label style={{ fontSize: 13, fontWeight: 700, marginBottom: 6, display: 'block' }}>
-          Special Instructions (Optional)
-        </label>
-        <textarea
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Special Instructions (Optional)</Text>
+        <TextInput
           value={instructions}
-          onChange={e => setInstructions(e.target.value)}
+          onChangeText={setInstructions}
           placeholder="e.g. Please bring extra hard water stain cleaner, beware of pet dog."
-          rows={2}
-          style={{ width: '100%', padding: '10px', borderRadius: 8, border: '1px solid #CBD5E1', fontSize: 13, resize: 'none' }}
+          placeholderTextColor="#94A3B8"
+          multiline
+          numberOfLines={3}
+          style={[styles.input, styles.multilineInput]}
         />
-      </div>
+      </View>
 
-      <button type="submit" className="btn-primary" style={{ marginTop: 8 }}>
-        Confirm & Book Appointment (₹{selectedService.startingPrice})
-      </button>
-    </form>
+      <TouchableOpacity onPress={handleConfirm} style={styles.confirmBtn} activeOpacity={0.85}>
+        <Text style={styles.confirmBtnText}>
+          Confirm & Book Appointment (₹{selectedService.startingPrice})
+        </Text>
+      </TouchableOpacity>
+    </ScrollView>
   );
 };
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+  },
+  contentContainer: {
+    padding: 16,
+    gap: 16,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  backBtn: {
+    padding: 4,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#1E293B',
+  },
+  summaryCard: {
+    backgroundColor: '#EBF8F2',
+    borderColor: '#BBE9D2',
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  summaryLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#2D8A68',
+  },
+  summaryTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1E4E3D',
+    marginTop: 2,
+  },
+  summaryPrice: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#1E4E3D',
+  },
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 12,
+  },
+  cardTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  cardTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  inputGroup: {
+    gap: 6,
+  },
+  label: {
+    fontSize: 12,
+    color: '#64748B',
+  },
+  input: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 13,
+    color: '#1E293B',
+  },
+  multilineInput: {
+    height: 70,
+    textAlignVertical: 'top',
+  },
+  slotsGrid: {
+    gap: 8,
+  },
+  slotBtn: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  slotBtnActive: {
+    borderWidth: 2,
+    borderColor: '#2D8A68',
+    backgroundColor: '#EBF8F2',
+  },
+  slotBtnInactive: {
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
+  },
+  slotText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  slotTextActive: {
+    color: '#1E4E3D',
+  },
+  slotTextInactive: {
+    color: '#475569',
+  },
+  addressInputs: {
+    gap: 8,
+  },
+  paymentMethodsList: {
+    gap: 8,
+  },
+  paymentOption: {
+    padding: 12,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  paymentOptionActive: {
+    borderWidth: 2,
+    borderColor: '#2D8A68',
+    backgroundColor: '#EBF8F2',
+  },
+  paymentOptionInactive: {
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
+  },
+  paymentOptionLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  paymentOptionDesc: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  radioCircle: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2,
+    borderColor: '#CBD5E1',
+  },
+  radioCircleActive: {
+    borderColor: '#2D8A68',
+    backgroundColor: '#2D8A68',
+  },
+  confirmBtn: {
+    backgroundColor: '#1E4E3D',
+    paddingVertical: 14,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+  },
+  confirmBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+});

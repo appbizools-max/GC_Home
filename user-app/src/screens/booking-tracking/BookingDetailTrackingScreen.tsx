@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
+import { View, Text, StyleSheet, Image, TouchableOpacity, TextInput, ScrollView, Linking } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
-import { ArrowLeft, Clock, Phone, Star } from 'lucide-react';
+import { ArrowLeft, Clock, Phone, Star } from 'lucide-react-native';
 import { BookingStatus } from '../../types';
 
 export const BookingDetailTrackingScreen: React.FC = () => {
@@ -35,159 +36,372 @@ export const BookingDetailTrackingScreen: React.FC = () => {
 
   const currentIndex = getStepIndex(selectedBooking.status);
 
-  const handleRatingSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleRatingSubmit = () => {
     updateBookingStatus(selectedBooking.bookingId, 'completed', { rating, review });
     setSubmittedRating(true);
   };
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <button
-          onClick={() => navigateTo('my_bookings')}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}
-        >
-          <ArrowLeft size={20} color="#1E293B" />
-        </button>
-        <div>
-          <h2 style={{ fontSize: 16, fontWeight: 800, color: '#1E293B' }}>{selectedBooking.serviceName}</h2>
-          <span style={{ fontSize: 11, color: '#64748B' }}>Booking #{selectedBooking.bookingId}</span>
-        </div>
-      </div>
+  const handleCallMaid = () => {
+    if (selectedBooking.assignedMaidPhone) {
+      Linking.openURL(`tel:${selectedBooking.assignedMaidPhone}`);
+    }
+  };
 
-      <div className="card">
-        <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Live Status Progression</h3>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, position: 'relative', paddingLeft: 8 }}>
+  return (
+    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+      <View style={styles.headerRow}>
+        <TouchableOpacity onPress={() => navigateTo('my_bookings')} style={styles.backBtn}>
+          <ArrowLeft size={20} color="#1E293B" />
+        </TouchableOpacity>
+        <View>
+          <Text style={styles.headerTitle}>{selectedBooking.serviceName}</Text>
+          <Text style={styles.headerSubtitle}>Booking #{selectedBooking.bookingId}</Text>
+        </View>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Live Status Progression</Text>
+        <View style={styles.stepsList}>
           {steps.map((step, idx) => {
             const isDone = idx <= currentIndex;
             const isCurrent = idx === currentIndex;
             return (
-              <div key={step.status} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{
-                  width: 24,
-                  height: 24,
-                  borderRadius: '50%',
-                  background: isDone ? '#2D8A68' : '#E2E8F0',
-                  color: 'white',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: 12,
-                  fontWeight: 700,
-                  boxShadow: isCurrent ? '0 0 0 4px #EBF8F2' : 'none'
-                }}>
-                  {isDone ? '✓' : idx + 1}
-                </div>
-                <span style={{
-                  fontSize: 13,
-                  fontWeight: isCurrent ? 800 : (isDone ? 600 : 400),
-                  color: isCurrent ? '#1E4E3D' : (isDone ? '#1E293B' : '#94A3B8')
-                }}>
+              <View key={step.status} style={styles.stepRow}>
+                <View style={[
+                  styles.stepCircle,
+                  isDone ? styles.stepCircleDone : styles.stepCirclePending,
+                  isCurrent && styles.stepCircleCurrent
+                ]}>
+                  <Text style={[styles.stepCircleText, isDone && styles.stepCircleTextDone]}>
+                    {isDone ? '✓' : String(idx + 1)}
+                  </Text>
+                </View>
+                <Text style={[
+                  styles.stepLabel,
+                  isCurrent && styles.stepLabelCurrent,
+                  isDone && !isCurrent && styles.stepLabelDone
+                ]}>
                   {step.label}
-                </span>
-              </div>
+                </Text>
+              </View>
             );
           })}
-        </div>
-      </div>
+        </View>
+      </View>
 
       {selectedBooking.assignedMaidName ? (
-        <div className="card" style={{ background: '#EBF8F2', borderColor: '#BBE9D2' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-            <span style={{ fontSize: 11, fontWeight: 800, color: '#1E4E3D', textTransform: 'uppercase' }}>Assigned Maid</span>
-            <span style={{ fontSize: 11, fontWeight: 700, background: '#DCFCE7', color: '#166534', padding: '2px 8px', borderRadius: 10 }}>
-              Verified Partner
-            </span>
-          </div>
+        <View style={[styles.card, styles.maidCard]}>
+          <View style={styles.maidHeader}>
+            <Text style={styles.maidLabel}>ASSIGNED MAID</Text>
+            <View style={styles.verifiedBadge}>
+              <Text style={styles.verifiedBadgeText}>Verified Partner</Text>
+            </View>
+          </View>
 
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-            <img
-              src={selectedBooking.assignedMaidPhoto || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=400'}
-              alt={selectedBooking.assignedMaidName}
-              style={{ width: 54, height: 54, borderRadius: '50%', objectFit: 'cover' }}
+          <View style={styles.maidInfoRow}>
+            <Image
+              source={{ uri: selectedBooking.assignedMaidPhoto || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=400' }}
+              style={styles.maidPhoto}
             />
-            <div style={{ flex: 1 }}>
-              <h4 style={{ fontSize: 15, fontWeight: 800, color: '#1E293B' }}>{selectedBooking.assignedMaidName}</h4>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
+            <View style={styles.maidDetails}>
+              <Text style={styles.maidName}>{selectedBooking.assignedMaidName}</Text>
+              <View style={styles.ratingRow}>
                 <Star size={14} color="#F59E0B" fill="#F59E0B" />
-                <span style={{ fontSize: 12, fontWeight: 700, color: '#1E293B' }}>4.8 (42 jobs)</span>
-              </div>
-            </div>
-            <a
-              href={`tel:${selectedBooking.assignedMaidPhone}`}
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: '50%',
-                background: '#2D8A68',
-                color: 'white',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                textDecoration: 'none'
-              }}
-            >
-              <Phone size={18} />
-            </a>
-          </div>
-        </div>
+                <Text style={styles.ratingText}>4.8 (42 jobs)</Text>
+              </View>
+            </View>
+            <TouchableOpacity onPress={handleCallMaid} style={styles.callBtn}>
+              <Phone size={18} color="#FFFFFF" />
+            </TouchableOpacity>
+          </View>
+        </View>
       ) : (
-        <div className="card" style={{ textAlign: 'center', padding: '20px 16px', background: '#FEF3C7', borderColor: '#FDE68A' }}>
-          <Clock size={28} color="#92400E" style={{ margin: '0 auto 8px auto' }} />
-          <h4 style={{ fontSize: 14, fontWeight: 700, color: '#92400E' }}>Finding the Nearest Verified Maid</h4>
-          <p style={{ fontSize: 12, color: '#78350F', marginTop: 4 }}>
+        <View style={[styles.card, styles.findingCard]}>
+          <Clock size={28} color="#92400E" style={{ alignSelf: 'center', marginBottom: 8 }} />
+          <Text style={styles.findingTitle}>Finding the Nearest Verified Maid</Text>
+          <Text style={styles.findingDesc}>
             Admin is matching your job location with available maids in Bellandur.
-          </p>
-        </div>
+          </Text>
+        </View>
       )}
 
-      <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <span style={{ fontSize: 11, color: '#64748B', display: 'block' }}>SERVICE START OTP</span>
-          <span style={{ fontSize: 22, fontWeight: 800, color: '#1E4E3D', letterSpacing: 4 }}>{selectedBooking.startOtp || '4829'}</span>
-        </div>
-        <div style={{ textAlign: 'right' }}>
-          <span style={{ fontSize: 11, color: '#64748B', display: 'block' }}>AMOUNT DUE</span>
-          <span style={{ fontSize: 16, fontWeight: 800, color: '#1E293B' }}>₹{selectedBooking.totalAmount}</span>
-        </div>
-      </div>
+      <View style={[styles.card, styles.otpCard]}>
+        <View>
+          <Text style={styles.otpLabel}>SERVICE START OTP</Text>
+          <Text style={styles.otpValue}>{selectedBooking.startOtp || '4829'}</Text>
+        </View>
+        <View style={{ alignItems: 'flex-end' }}>
+          <Text style={styles.otpLabel}>AMOUNT DUE</Text>
+          <Text style={styles.amountValue}>₹{selectedBooking.totalAmount}</Text>
+        </View>
+      </View>
 
       {selectedBooking.status === 'completed' && (
-        <div className="card" style={{ background: '#F8FAFC' }}>
-          <h3 style={{ fontSize: 14, fontWeight: 800, color: '#1E293B', marginBottom: 8 }}>Rate Your Service</h3>
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Rate Your Service</Text>
           {submittedRating || selectedBooking.rating ? (
-            <div style={{ background: '#DCFCE7', color: '#166534', padding: 12, borderRadius: 10, fontSize: 13, fontWeight: 600 }}>
-              Thank you for rating! You rated {selectedBooking.rating || rating} Stars.
-            </div>
+            <View style={styles.ratedBox}>
+              <Text style={styles.ratedText}>
+                Thank you for rating! You rated {selectedBooking.rating || rating} Stars.
+              </Text>
+            </View>
           ) : (
-            <form onSubmit={handleRatingSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+            <View style={styles.ratingForm}>
+              <View style={styles.starsRow}>
                 {[1, 2, 3, 4, 5].map(star => (
-                  <Star
-                    key={star}
-                    size={28}
-                    color={star <= rating ? '#F59E0B' : '#CBD5E1'}
-                    fill={star <= rating ? '#F59E0B' : 'transparent'}
-                    onClick={() => setRating(star)}
-                    style={{ cursor: 'pointer' }}
-                  />
+                  <TouchableOpacity key={star} onPress={() => setRating(star)}>
+                    <Star
+                      size={28}
+                      color={star <= rating ? '#F59E0B' : '#CBD5E1'}
+                      fill={star <= rating ? '#F59E0B' : 'transparent'}
+                    />
+                  </TouchableOpacity>
                 ))}
-              </div>
-              <textarea
+              </View>
+              <TextInput
                 value={review}
-                onChange={e => setReview(e.target.value)}
+                onChangeText={setReview}
                 placeholder="Share your experience with the maid..."
-                rows={2}
-                style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #CBD5E1', fontSize: 12 }}
+                placeholderTextColor="#94A3B8"
+                multiline
+                numberOfLines={2}
+                style={styles.reviewInput}
               />
-              <button type="submit" className="btn-primary" style={{ padding: '10px' }}>
-                Submit Rating & Review
-              </button>
-            </form>
+              <TouchableOpacity onPress={handleRatingSubmit} style={styles.submitRatingBtn}>
+                <Text style={styles.submitRatingBtnText}>Submit Rating & Review</Text>
+              </TouchableOpacity>
+            </View>
           )}
-        </div>
+        </View>
       )}
-    </div>
+    </ScrollView>
   );
 };
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+  },
+  contentContainer: {
+    padding: 16,
+    gap: 16,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  backBtn: {
+    padding: 4,
+  },
+  headerTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1E293B',
+  },
+  headerSubtitle: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  cardTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 12,
+  },
+  stepsList: {
+    gap: 12,
+    paddingLeft: 4,
+  },
+  stepRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  stepCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  stepCircleDone: {
+    backgroundColor: '#2D8A68',
+  },
+  stepCirclePending: {
+    backgroundColor: '#E2E8F0',
+  },
+  stepCircleCurrent: {
+    borderWidth: 3,
+    borderColor: '#BBE9D2',
+  },
+  stepCircleText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  stepCircleTextDone: {
+    color: '#FFFFFF',
+  },
+  stepLabel: {
+    fontSize: 13,
+    color: '#94A3B8',
+  },
+  stepLabelDone: {
+    color: '#1E293B',
+    fontWeight: '600',
+  },
+  stepLabelCurrent: {
+    color: '#1E4E3D',
+    fontWeight: '800',
+  },
+  maidCard: {
+    backgroundColor: '#EBF8F2',
+    borderColor: '#BBE9D2',
+  },
+  maidHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  maidLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#1E4E3D',
+  },
+  verifiedBadge: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  verifiedBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#166534',
+  },
+  maidInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  maidPhoto: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+  },
+  maidDetails: {
+    flex: 1,
+  },
+  maidName: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#1E293B',
+  },
+  ratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+  },
+  ratingText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  callBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#2D8A68',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  findingCard: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#FDE68A',
+    alignItems: 'center',
+    paddingVertical: 20,
+  },
+  findingTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#92400E',
+  },
+  findingDesc: {
+    fontSize: 12,
+    color: '#78350F',
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  otpCard: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  otpLabel: {
+    fontSize: 11,
+    color: '#64748B',
+  },
+  otpValue: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#1E4E3D',
+    letterSpacing: 4,
+  },
+  amountValue: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1E293B',
+  },
+  ratedBox: {
+    backgroundColor: '#DCFCE7',
+    padding: 12,
+    borderRadius: 10,
+  },
+  ratedText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#166534',
+  },
+  ratingForm: {
+    gap: 10,
+  },
+  starsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'center',
+  },
+  reviewInput: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 8,
+    padding: 10,
+    fontSize: 12,
+    color: '#1E293B',
+    height: 60,
+    textAlignVertical: 'top',
+  },
+  submitRatingBtn: {
+    backgroundColor: '#1E4E3D',
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  submitRatingBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+});

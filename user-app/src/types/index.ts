@@ -24,10 +24,13 @@ export interface MaidProfile {
   fullName: string;
   phone: string;
   email?: string;
+  dob?: string;
+  gender?: string;
   photoUrl: string;
   idProofUrl: string;
   emergencyContact: string;
   address: string;
+  city?: string;
   bankDetails: BankDetails;
   serviceArea: string;
   serviceRadiusKm: number;
@@ -41,6 +44,12 @@ export interface MaidProfile {
   workingDays: string[];
   appliedAt: string;
   approvedAt?: string;
+  aadhaarNumber?: string;
+  kycVerificationMethod?: 'digilocker' | 'manual';
+  isDigiLockerVerified?: boolean;
+  aadhaarFrontUrl?: string;
+  aadhaarBackUrl?: string;
+  policeClearanceUrl?: string;
 }
 
 export interface Service {

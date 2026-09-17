@@ -12,8 +12,7 @@
       "supportsTablet": true
     },
     "android": {
-      "package": "com.gchomeplus.app",
-      "googleServicesFile": "./google-services.json"
+      "package": "com.gchomeplus.app"
     }
   }
 }

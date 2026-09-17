@@ -1,4 +1,5 @@
 import React from 'react';
+import { View, Text, StyleSheet, StatusBar } from 'react-native';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LoginScreen } from './screens/login/LoginScreen';
 import { CustomerHomeScreen } from './screens/customer-home/CustomerHomeScreen';
@@ -8,10 +9,9 @@ import { BookingConfirmationScreen } from './screens/booking-confirmation/Bookin
 import { MyJobsScreen as MyBookingsScreen } from './screens/my-jobs/MyJobsScreen';
 import { BookingDetailTrackingScreen } from './screens/booking-tracking/BookingDetailTrackingScreen';
 import { BecomeMaidInfoScreen } from './screens/become-maid/BecomeMaidInfoScreen';
-import { BecomeMaidInfoScreen as MaidRegistrationFormScreen } from './screens/become-maid/BecomeMaidInfoScreen';
+import { MaidRegistrationFormScreen } from './screens/become-maid/MaidRegistrationFormScreen';
 import { MaidHomeScreen as MaidStatusScreen } from './screens/maid-home/MaidHomeScreen';
 import { MaidHomeScreen } from './screens/maid-home/MaidHomeScreen';
-import { MyJobsScreen as JobRequestsScreen } from './screens/my-jobs/MyJobsScreen';
 import { ActiveJobScreen } from './screens/active-job/ActiveJobScreen';
 import { MyJobsScreen } from './screens/my-jobs/MyJobsScreen';
 import { EarningsScreen } from './screens/earnings/EarningsScreen';
@@ -33,9 +33,8 @@ const RouterView: React.FC = () => {
       case 'booking_tracking': return <BookingDetailTrackingScreen />;
       case 'become_maid_info': return <BecomeMaidInfoScreen />;
       case 'maid_registration_form': return <MaidRegistrationFormScreen />;
-      case 'maid_status': return <MaidStatusScreen />;
+      case 'maid_status': return <BecomeMaidInfoScreen />;
       case 'maid_home': return <MaidHomeScreen />;
-      case 'job_requests': return <JobRequestsScreen />;
       case 'active_job': return <ActiveJobScreen />;
       case 'my_jobs': return <MyJobsScreen />;
       case 'earnings': return <EarningsScreen />;
@@ -48,28 +47,31 @@ const RouterView: React.FC = () => {
   const isMaidUI = user?.role === 'maid' && maidProfile?.status === 'approved';
 
   return (
-    <div className="mobile-wrapper">
+    <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       {/* Header Bar */}
       {currentScreen !== 'login' && (
-        <header className="app-header">
-          <div>
-            <h1>GC Home Plus</h1>
-            <span style={{ fontSize: 10, color: '#1E4E3D', fontWeight: 600 }}>Genuine & Care</span>
-          </div>
-          <span className="header-badge">
-            {isMaidUI ? 'Maid Partner' : 'Customer'}
-          </span>
-        </header>
+        <View style={styles.appHeader}>
+          <View>
+            <Text style={styles.headerTitle}>GC Home Plus</Text>
+            <Text style={styles.headerSubtitle}>Genuine & Care</Text>
+          </View>
+          <View style={styles.headerBadge}>
+            <Text style={styles.headerBadgeText}>
+              {isMaidUI ? 'Maid Partner' : 'Customer'}
+            </Text>
+          </View>
+        </View>
       )}
 
       {/* Main Screen Content */}
-      <main className="app-content">
+      <View style={styles.appContent}>
         {renderScreen()}
-      </main>
+      </View>
 
       {/* Bottom Tabs Navigation */}
       <BottomTabs />
-    </div>
+    </View>
   );
 };
 
@@ -82,3 +84,44 @@ export function App() {
 }
 
 export default App;
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+  },
+  appHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  headerSubtitle: {
+    fontSize: 10,
+    color: '#1E4E3D',
+    fontWeight: '600',
+  },
+  headerBadge: {
+    backgroundColor: '#E6F4EA',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  headerBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#2A7B62',
+  },
+  appContent: {
+    flex: 1,
+  },
+});

@@ -1,6 +1,7 @@
 import React from 'react';
+import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
-import { ToggleLeft, ToggleRight, DollarSign, Briefcase, Star, Clock, ChevronRight, MapPin } from 'lucide-react';
+import { ToggleLeft, ToggleRight, DollarSign, Briefcase, Star, Clock, ChevronRight, MapPin } from 'lucide-react-native';
 
 export const MaidHomeScreen: React.FC = () => {
   const { maidProfile, toggleMaidOnline, bookings, navigateTo } = useAuth();
@@ -10,117 +11,309 @@ export const MaidHomeScreen: React.FC = () => {
   const assignedJobs = bookings.filter(b => b.assignedMaidId === maidProfile?.uid && ['maid_assigned', 'maid_accepted', 'in_progress'].includes(b.status));
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div className="card" style={{ background: 'linear-gradient(135deg, #1E4E3D 0%, #2D8A68 100%)', color: 'white' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-            <img
-              src={maidProfile?.photoUrl || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=400'}
-              alt={maidProfile?.fullName}
-              style={{ width: 50, height: 50, borderRadius: '50%', border: '2px solid white', objectFit: 'cover' }}
+    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+      <View style={styles.headerCard}>
+        <View style={styles.profileRow}>
+          <View style={styles.profileLeft}>
+            <Image
+              source={{ uri: maidProfile?.photoUrl || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=400' }}
+              style={styles.profilePhoto}
             />
-            <div>
-              <h3 style={{ fontSize: 16, fontWeight: 800, color: '#FFFFFF' }}>{maidProfile?.fullName || 'Sunita Sharma'}</h3>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
+            <View>
+              <Text style={styles.profileName}>{maidProfile?.fullName || 'Sunita Sharma'}</Text>
+              <View style={styles.ratingRow}>
                 <Star size={14} color="#F59E0B" fill="#F59E0B" />
-                <span style={{ fontSize: 12, fontWeight: 700 }}>4.8 ★ (56 Jobs)</span>
-              </div>
-            </div>
-          </div>
+                <Text style={styles.ratingText}>4.8 ★ (56 Jobs)</Text>
+              </View>
+            </View>
+          </View>
 
-          <button
-            onClick={toggleMaidOnline}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '6px 12px',
-              borderRadius: 20,
-              background: isOnline ? '#DCFCE7' : '#FEE2E2',
-              color: isOnline ? '#15803D' : '#991B1B',
-              border: 'none',
-              fontSize: 12,
-              fontWeight: 800,
-              cursor: 'pointer'
-            }}
+          <TouchableOpacity
+            onPress={toggleMaidOnline}
+            style={[styles.toggleBtn, isOnline ? styles.toggleOnline : styles.toggleOffline]}
           >
             {isOnline ? <ToggleRight size={20} color="#15803D" /> : <ToggleLeft size={20} color="#991B1B" />}
-            {isOnline ? 'ONLINE' : 'OFFLINE'}
-          </button>
-        </div>
-      </div>
+            <Text style={[styles.toggleText, isOnline ? styles.toggleTextOnline : styles.toggleTextOffline]}>
+              {isOnline ? 'ONLINE' : 'OFFLINE'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <div className="card" style={{ background: '#EBF8F2', borderColor: '#BBE9D2', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ width: 40, height: 40, borderRadius: 10, background: '#2D8A68', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <DollarSign size={22} />
-          </div>
-          <div>
-            <span style={{ fontSize: 10, fontWeight: 700, color: '#2D8A68', display: 'block' }}>THIS WEEK</span>
-            <span style={{ fontSize: 18, fontWeight: 800, color: '#1E4E3D' }}>₹4,250</span>
-          </div>
-        </div>
+      <View style={styles.statsGrid}>
+        <View style={[styles.statCard, styles.earningsStatCard]}>
+          <View style={[styles.statIconBox, { backgroundColor: '#2D8A68' }]}>
+            <DollarSign size={22} color="#FFFFFF" />
+          </View>
+          <View>
+            <Text style={styles.statLabel}>THIS WEEK</Text>
+            <Text style={styles.statValue}>₹4,250</Text>
+          </View>
+        </View>
 
-        <div className="card" style={{ background: '#F0F9FF', borderColor: '#BAE6FD', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ width: 40, height: 40, borderRadius: 10, background: '#0284C7', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Briefcase size={22} />
-          </div>
-          <div>
-            <span style={{ fontSize: 10, fontWeight: 700, color: '#0369A1', display: 'block' }}>ACTIVE JOBS</span>
-            <span style={{ fontSize: 18, fontWeight: 800, color: '#075985' }}>{assignedJobs.length}</span>
-          </div>
-        </div>
-      </div>
+        <View style={[styles.statCard, styles.jobsStatCard]}>
+          <View style={[styles.statIconBox, { backgroundColor: '#0284C7' }]}>
+            <Briefcase size={22} color="#FFFFFF" />
+          </View>
+          <View>
+            <Text style={[styles.statLabel, { color: '#0369A1' }]}>ACTIVE JOBS</Text>
+            <Text style={[styles.statValue, { color: '#075985' }]}>{assignedJobs.length}</Text>
+          </View>
+        </View>
+      </View>
 
-      <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-          <h3 style={{ fontSize: 16, fontWeight: 800, color: '#1E293B' }}>Assigned Jobs Today</h3>
-          <span style={{ fontSize: 12, color: '#2D8A68', fontWeight: 700, cursor: 'pointer' }} onClick={() => navigateTo('job_requests')}>
-            View Incoming Requests →
-          </span>
-        </div>
+      <View>
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionTitle}>Assigned Jobs Today</Text>
+        </View>
 
         {assignedJobs.length === 0 ? (
-          <div className="card" style={{ textAlign: 'center', padding: '24px 16px', color: '#94A3B8' }}>
-            <Clock size={32} style={{ margin: '0 auto 8px auto', opacity: 0.5 }} />
-            <p style={{ fontSize: 13, fontWeight: 600 }}>No active jobs assigned right now.</p>
-            <span style={{ fontSize: 11, color: '#64748B', marginTop: 2, display: 'block' }}>
+          <View style={styles.emptyCard}>
+            <Clock size={32} color="#94A3B8" style={{ alignSelf: 'center', marginBottom: 8, opacity: 0.5 }} />
+            <Text style={styles.emptyText}>No active jobs assigned right now.</Text>
+            <Text style={styles.emptySubText}>
               Ensure your Online toggle is active to receive job assignments.
-            </span>
-          </div>
+            </Text>
+          </View>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <View style={styles.jobsList}>
             {assignedJobs.map(job => (
-              <div key={job.bookingId} className="card" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: 11, fontWeight: 800, background: '#DCFCE7', color: '#166534', padding: '2px 8px', borderRadius: 8 }}>
-                    {job.serviceName}
-                  </span>
-                  <span style={{ fontSize: 15, fontWeight: 800, color: '#1E4E3D' }}>Payout: ₹{Math.round(job.totalAmount * 0.8)}</span>
-                </div>
+              <View key={job.bookingId} style={styles.jobCard}>
+                <View style={styles.jobCardHeader}>
+                  <View style={styles.serviceBadge}>
+                    <Text style={styles.serviceBadgeText}>{job.serviceName}</Text>
+                  </View>
+                  <Text style={styles.payoutText}>Payout: ₹{Math.round(job.totalAmount * 0.8)}</Text>
+                </View>
 
-                <div style={{ fontSize: 13, color: '#334155', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <View style={styles.jobDetailsGroup}>
+                  <View style={styles.detailRow}>
                     <MapPin size={14} color="#2D8A68" />
-                    <strong>{job.address.locality}</strong> ({job.address.street})
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#64748B' }}>
-                    <Clock size={14} color="#64748B" /> {job.date} | {job.timeSlot}
-                  </div>
-                </div>
+                    <Text style={styles.addressText}>
+                      <Text style={{ fontWeight: '700' }}>{job.address.locality}</Text> ({job.address.street})
+                    </Text>
+                  </View>
+                  <View style={styles.detailRow}>
+                    <Clock size={14} color="#64748B" />
+                    <Text style={styles.timeText}>{job.date} | {job.timeSlot}</Text>
+                  </View>
+                </View>
 
-                <button
-                  className="btn-primary"
-                  onClick={() => navigateTo('active_job', { booking: job })}
-                  style={{ padding: '10px' }}
+                <TouchableOpacity
+                  onPress={() => navigateTo('active_job', { booking: job })}
+                  style={styles.openConsoleBtn}
                 >
-                  Open Job Console <ChevronRight size={16} />
-                </button>
-              </div>
+                  <Text style={styles.openConsoleBtnText}>Open Job Console</Text>
+                  <ChevronRight size={16} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
             ))}
-          </div>
+          </View>
         )}
-      </div>
-    </div>
+      </View>
+    </ScrollView>
   );
 };
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+  },
+  contentContainer: {
+    padding: 16,
+    gap: 16,
+  },
+  headerCard: {
+    backgroundColor: '#1E4E3D',
+    borderRadius: 16,
+    padding: 16,
+  },
+  profileRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  profileLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  profilePhoto: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  profileName: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  ratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+  },
+  ratingText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  toggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  toggleOnline: {
+    backgroundColor: '#DCFCE7',
+  },
+  toggleOffline: {
+    backgroundColor: '#FEE2E2',
+  },
+  toggleText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  toggleTextOnline: {
+    color: '#15803D',
+  },
+  toggleTextOffline: {
+    color: '#991B1B',
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  statCard: {
+    flex: 1,
+    borderRadius: 16,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1,
+  },
+  earningsStatCard: {
+    backgroundColor: '#EBF8F2',
+    borderColor: '#BBE9D2',
+  },
+  jobsStatCard: {
+    backgroundColor: '#F0F9FF',
+    borderColor: '#BAE6FD',
+  },
+  statIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  statLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#2D8A68',
+  },
+  statValue: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#1E4E3D',
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1E293B',
+  },
+  emptyCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  emptyText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#94A3B8',
+  },
+  emptySubText: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  jobsList: {
+    gap: 12,
+  },
+  jobCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 10,
+  },
+  jobCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  serviceBadge: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  serviceBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#166534',
+  },
+  payoutText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#1E4E3D',
+  },
+  jobDetailsGroup: {
+    gap: 4,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  addressText: {
+    fontSize: 13,
+    color: '#334155',
+  },
+  timeText: {
+    fontSize: 12,
+    color: '#64748B',
+  },
+  openConsoleBtn: {
+    backgroundColor: '#1E4E3D',
+    paddingVertical: 10,
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  openConsoleBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+});

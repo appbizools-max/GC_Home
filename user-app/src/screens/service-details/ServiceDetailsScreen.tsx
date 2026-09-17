@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
+import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
-import { ArrowLeft, CheckCircle2, Clock, Plus, Minus, ArrowRight } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Clock, Plus, Minus, ArrowRight } from 'lucide-react-native';
 
 export const ServiceDetailsScreen: React.FC = () => {
   const { selectedService, navigateTo } = useAuth();
@@ -15,108 +16,228 @@ export const ServiceDetailsScreen: React.FC = () => {
   const totalPrice = selectedService.startingPrice + (roomsCount > 1 ? (roomsCount - 1) * pricePerExtraRoom : 0);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <button
-          onClick={() => navigateTo('customer_home')}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}
-        >
+    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+      <View style={styles.headerRow}>
+        <TouchableOpacity onPress={() => navigateTo('customer_home')} style={styles.backBtn}>
           <ArrowLeft size={20} color="#1E293B" />
-        </button>
-        <h2 style={{ fontSize: 18, fontWeight: 800, color: '#1E293B' }}>{selectedService.name}</h2>
-      </div>
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>{selectedService.name}</Text>
+      </View>
 
-      <div style={{ position: 'relative', borderRadius: 16, overflow: 'hidden', height: 180 }}>
-        <img
-          src={selectedService.imageUrl}
-          alt={selectedService.name}
-          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+      <View style={styles.imageBox}>
+        <Image
+          source={{ uri: selectedService.imageUrl }}
+          style={styles.image}
         />
-        <div style={{
-          position: 'absolute',
-          bottom: 10,
-          left: 10,
-          background: 'rgba(15, 23, 42, 0.75)',
-          backdropFilter: 'blur(6px)',
-          padding: '4px 10px',
-          borderRadius: 8,
-          color: 'white',
-          fontSize: 12,
-          fontWeight: 600,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6
-        }}>
-          <Clock size={14} /> Duration: {selectedService.estimatedDuration}
-        </div>
-      </div>
+        <View style={styles.durationOverlay}>
+          <Clock size={14} color="#FFFFFF" />
+          <Text style={styles.durationOverlayText}>Duration: {selectedService.estimatedDuration}</Text>
+        </View>
+      </View>
 
-      <div className="card">
-        <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>Service Overview</h3>
-        <p style={{ fontSize: 13, color: '#475569', lineHeight: '1.5' }}>
-          {selectedService.description}
-        </p>
-      </div>
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Service Overview</Text>
+        <Text style={styles.cardDesc}>{selectedService.description}</Text>
+      </View>
 
-      <div className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div>
-          <h4 style={{ fontSize: 14, fontWeight: 700 }}>Select Home Size (BHK / Rooms)</h4>
-          <span style={{ fontSize: 12, color: '#64748B' }}>+₹{pricePerExtraRoom} per additional room</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#F1F5F9', padding: '4px 10px', borderRadius: 10 }}>
-          <button
-            onClick={() => setRoomsCount(Math.max(1, roomsCount - 1))}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}
-          >
+      <View style={[styles.card, styles.roomSelectorRow]}>
+        <View style={styles.roomLabelGroup}>
+          <Text style={styles.roomSelectorTitle}>Select Home Size (BHK / Rooms)</Text>
+          <Text style={styles.roomSelectorSub}>+₹{pricePerExtraRoom} per additional room</Text>
+        </View>
+        <View style={styles.counterBox}>
+          <TouchableOpacity onPress={() => setRoomsCount(Math.max(1, roomsCount - 1))} style={styles.counterBtn}>
             <Minus size={16} color="#1E293B" />
-          </button>
-          <span style={{ fontSize: 15, fontWeight: 800, color: '#1E4E3D', minWidth: 20, textAlign: 'center' }}>
-            {roomsCount}
-          </span>
-          <button
-            onClick={() => setRoomsCount(roomsCount + 1)}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}
-          >
+          </TouchableOpacity>
+          <Text style={styles.counterText}>{roomsCount}</Text>
+          <TouchableOpacity onPress={() => setRoomsCount(roomsCount + 1)} style={styles.counterBtn}>
             <Plus size={16} color="#1E293B" />
-          </button>
-        </div>
-      </div>
+          </TouchableOpacity>
+        </View>
+      </View>
 
-      <div className="card">
-        <h3 style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>What's Included</h3>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>What's Included</Text>
+        <View style={styles.featureList}>
           {selectedService.features.map((feature, idx) => (
-            <div key={idx} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-              <CheckCircle2 size={16} color="#2D8A68" style={{ marginTop: 2, flexShrink: 0 }} />
-              <span style={{ fontSize: 13, color: '#334155' }}>{feature}</span>
-            </div>
+            <View key={idx} style={styles.featureItem}>
+              <CheckCircle2 size={16} color="#2D8A68" style={{ marginTop: 2 }} />
+              <Text style={styles.featureText}>{feature}</Text>
+            </View>
           ))}
-        </div>
-      </div>
+        </View>
+      </View>
 
-      <div style={{
-        marginTop: 10,
-        padding: 16,
-        background: '#FFFFFF',
-        borderRadius: 16,
-        boxShadow: '0 -4px 16px rgba(0,0,0,0.06)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between'
-      }}>
-        <div>
-          <span style={{ fontSize: 11, color: '#64748B', display: 'block' }}>TOTAL PRICE</span>
-          <span style={{ fontSize: 22, fontWeight: 800, color: '#1E4E3D' }}>₹{totalPrice}</span>
-        </div>
+      <View style={styles.footerBar}>
+        <View>
+          <Text style={styles.totalLabel}>TOTAL PRICE</Text>
+          <Text style={styles.totalValue}>₹{totalPrice}</Text>
+        </View>
 
-        <button
-          className="btn-primary"
-          onClick={() => navigateTo('booking_screen', { service: selectedService, roomsCount, totalPrice })}
-          style={{ width: 'auto', padding: '12px 24px' }}
+        <TouchableOpacity
+          onPress={() => navigateTo('booking_screen', { service: selectedService, roomsCount, totalPrice })}
+          style={styles.bookBtn}
+          activeOpacity={0.85}
         >
-          Book Now <ArrowRight size={18} />
-        </button>
-      </div>
-    </div>
+          <Text style={styles.bookBtnText}>Book Now</Text>
+          <ArrowRight size={18} color="#FFFFFF" />
+        </TouchableOpacity>
+      </View>
+    </ScrollView>
   );
 };
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+  },
+  contentContainer: {
+    padding: 16,
+    gap: 16,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  backBtn: {
+    padding: 4,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#1E293B',
+  },
+  imageBox: {
+    height: 180,
+    borderRadius: 16,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  image: {
+    width: '100%',
+    height: '100%',
+  },
+  durationOverlay: {
+    position: 'absolute',
+    bottom: 10,
+    left: 10,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  durationOverlayText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  cardTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 6,
+  },
+  cardDesc: {
+    fontSize: 13,
+    color: '#475569',
+    lineHeight: 18,
+  },
+  roomSelectorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  roomLabelGroup: {
+    flex: 1,
+    marginRight: 12,
+  },
+  roomSelectorTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  roomSelectorSub: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  counterBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  counterBtn: {
+    padding: 4,
+  },
+  counterText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#1E4E3D',
+    minWidth: 20,
+    textAlign: 'center',
+  },
+  featureList: {
+    gap: 10,
+    marginTop: 6,
+  },
+  featureItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  featureText: {
+    fontSize: 13,
+    color: '#334155',
+    flex: 1,
+  },
+  footerBar: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginTop: 8,
+  },
+  totalLabel: {
+    fontSize: 11,
+    color: '#64748B',
+  },
+  totalValue: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#1E4E3D',
+  },
+  bookBtn: {
+    backgroundColor: '#1E4E3D',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  bookBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+});

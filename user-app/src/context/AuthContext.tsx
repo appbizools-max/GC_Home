@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, MaidProfile, Service, Booking, MaidApplicationStatus } from '../types';
 import { SERVICES_SEED, INITIAL_BOOKINGS, INITIAL_MAID_PROFILE } from '../services/mockData';
+import { supabase } from '../config/supabase';
 
 interface AuthContextType {
   user: User | null;
@@ -12,6 +13,8 @@ interface AuthContextType {
   selectedBooking: Booking | null;
   isLoggedIn: boolean;
   loginWithPhone: (phone: string, name?: string) => void;
+  loginAsDemoCustomer: () => void;
+  loginAsDemoMaid: () => void;
   logout: () => void;
   navigateTo: (screen: string, payload?: any) => void;
   submitMaidApplication: (applicationData: Partial<MaidProfile>) => void;
@@ -33,7 +36,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     email: 'rahul.v@example.com',
     role: 'customer',
     maidApplicationStatus: 'none',
-    createdAt: '2026-09-01'
+    createdAt: '2026-09-01',
   });
 
   const [maidProfile, setMaidProfile] = useState<MaidProfile | null>(null);
@@ -44,7 +47,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
 
   useEffect(() => {
-    // Route based on role
+    // Initial Route based on role
     if (!user) {
       setCurrentScreen('login');
       return;
@@ -59,6 +62,81 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
+  // Real-time synchronization with Supabase `maids` table for maid application status updates
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    const checkAndSubscribeMaidStatus = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('maids')
+          .select('*')
+          .eq('id', user.uid)
+          .maybeSingle();
+
+        if (!error && data) {
+          if (data.status === 'approved') {
+            setUser(prev => (prev ? { ...prev, role: 'maid', maidApplicationStatus: 'approved' } : null));
+            setMaidProfile(prev =>
+              prev
+                ? { ...prev, status: 'approved' }
+                : {
+                    ...INITIAL_MAID_PROFILE,
+                    uid: user.uid,
+                    fullName: data.full_name || user.name,
+                    phone: user.phone,
+                    status: 'approved',
+                  }
+            );
+          } else if (data.status === 'rejected') {
+            setUser(prev => (prev ? { ...prev, maidApplicationStatus: 'rejected' } : null));
+            setMaidProfile(prev =>
+              prev
+                ? { ...prev, status: 'rejected', rejectionReason: data.rejection_reason }
+                : null
+            );
+          }
+        }
+      } catch (err) {
+        console.log('Supabase sync skipped:', err);
+      }
+    };
+
+    checkAndSubscribeMaidStatus();
+
+    // Subscribe to Postgres changes on `maids` table for user's UID
+    const channel = supabase
+      .channel(`maid_user_${user.uid}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'maids',
+          filter: `id=eq.${user.uid}`,
+        },
+        payload => {
+          const updatedStatus = payload.new?.status;
+          if (updatedStatus === 'approved') {
+            setUser(prev => (prev ? { ...prev, role: 'maid', maidApplicationStatus: 'approved' } : null));
+            setMaidProfile(prev => (prev ? { ...prev, status: 'approved' } : null));
+            setCurrentScreen('maid_home');
+          } else if (updatedStatus === 'rejected') {
+            setUser(prev => (prev ? { ...prev, maidApplicationStatus: 'rejected' } : null));
+            setMaidProfile(prev =>
+              prev ? { ...prev, status: 'rejected', rejectionReason: payload.new?.rejection_reason } : null
+            );
+            setCurrentScreen('maid_status');
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.uid]);
+
   const loginWithPhone = (phone: string, name: string = 'User') => {
     const newUser: User = {
       uid: 'user_' + Date.now(),
@@ -66,11 +144,52 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       phone: phone,
       role: 'customer',
       maidApplicationStatus: 'none',
-      createdAt: new Date().toISOString().split('T')[0]
+      createdAt: new Date().toISOString().split('T')[0],
     };
     setUser(newUser);
     setMaidProfile(null);
     setCurrentScreen('customer_home');
+  };
+
+  const loginAsDemoCustomer = () => {
+    const customerUser: User = {
+      uid: 'cust_curr',
+      name: 'Rahul Verma',
+      phone: '+91 98111 22233',
+      email: 'rahul.v@example.com',
+      role: 'customer',
+      maidApplicationStatus: 'none',
+      createdAt: '2026-09-01',
+    };
+    setUser(customerUser);
+    setMaidProfile(null);
+    setCurrentScreen('customer_home');
+  };
+
+  const loginAsDemoMaid = () => {
+    const maidUser: User = {
+      uid: 'maid_curr',
+      name: 'Sunita Devi',
+      phone: '+91 98492 01824',
+      email: 'sunita.d@gchomeplus.com',
+      role: 'maid',
+      maidApplicationStatus: 'approved',
+      createdAt: '2026-08-15',
+    };
+    const approvedProfile: MaidProfile = {
+      ...INITIAL_MAID_PROFILE,
+      uid: 'maid_curr',
+      fullName: 'Sunita Devi',
+      phone: '+91 98492 01824',
+      status: 'approved',
+      isOnline: true,
+      rating: 4.8,
+      completedJobsCount: 42,
+      photoUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=400',
+    };
+    setUser(maidUser);
+    setMaidProfile(approvedProfile);
+    setCurrentScreen('maid_home');
   };
 
   const logout = () => {
@@ -101,35 +220,47 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       healthSafetyDecl: data.healthSafetyDecl || true,
       bankDetails: data.bankDetails || INITIAL_MAID_PROFILE.bankDetails,
       status: 'pending',
-      appliedAt: new Date().toISOString().split('T')[0]
+      appliedAt: new Date().toISOString().split('T')[0],
     };
 
     setMaidProfile(newProfile);
-    setUser(prev => prev ? { ...prev, maidApplicationStatus: 'pending' } : null);
+    setUser(prev => (prev ? { ...prev, maidApplicationStatus: 'pending' } : null));
     setCurrentScreen('maid_status');
   };
 
-  const simulateAdminApproval = (approved: boolean, reason?: string) => {
+  const simulateAdminApproval = async (approved: boolean, reason?: string) => {
     if (!user || !maidProfile) return;
 
     if (approved) {
       const updatedProfile: MaidProfile = {
         ...maidProfile,
         status: 'approved',
-        approvedAt: new Date().toISOString().split('T')[0]
+        approvedAt: new Date().toISOString().split('T')[0],
       };
       setMaidProfile(updatedProfile);
-      setUser(prev => prev ? { ...prev, role: 'maid', maidApplicationStatus: 'approved' } : null);
+      setUser(prev => (prev ? { ...prev, role: 'maid', maidApplicationStatus: 'approved' } : null));
       setCurrentScreen('maid_home');
+
+      try {
+        await supabase.from('maids').update({ status: 'approved', approved_at: new Date().toISOString() }).eq('id', user.uid);
+      } catch (err) {
+        console.log('Supabase sync err:', err);
+      }
     } else {
       const updatedProfile: MaidProfile = {
         ...maidProfile,
         status: 'rejected',
-        rejectionReason: reason || 'Document image was unreadable. Please re-upload clear government ID.'
+        rejectionReason: reason || 'Document image was unreadable. Please re-upload clear government ID.',
       };
       setMaidProfile(updatedProfile);
-      setUser(prev => prev ? { ...prev, maidApplicationStatus: 'rejected' } : null);
+      setUser(prev => (prev ? { ...prev, maidApplicationStatus: 'rejected' } : null));
       setCurrentScreen('maid_status');
+
+      try {
+        await supabase.from('maids').update({ status: 'rejected', rejection_reason: reason }).eq('id', user.uid);
+      } catch (err) {
+        console.log('Supabase sync err:', err);
+      }
     }
   };
 
@@ -140,7 +271,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       customerId: user?.uid || 'cust_anon',
       status: 'pending_assignment',
       createdAt: new Date().toISOString().replace('T', ' ').substring(0, 16),
-      startOtp: String(Math.floor(1000 + Math.random() * 9000))
+      startOtp: String(Math.floor(1000 + Math.random() * 9000)),
     };
 
     setBookings(prev => [newBooking, ...prev]);
@@ -168,14 +299,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       assignedMaidId: maidProfile?.uid || 'maid_curr',
       assignedMaidName: maidProfile?.fullName || 'Sunita Sharma',
       assignedMaidPhone: maidProfile?.phone || '+91 98765 43210',
-      assignedMaidPhoto: maidProfile?.photoUrl
+      assignedMaidPhoto: maidProfile?.photoUrl,
     });
   };
 
   const rejectJob = (bookingId: string) => {
     updateBookingStatus(bookingId, 'pending_assignment', {
       assignedMaidId: undefined,
-      assignedMaidName: undefined
+      assignedMaidName: undefined,
     });
   };
 
@@ -191,6 +322,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         selectedBooking,
         isLoggedIn: !!user,
         loginWithPhone,
+        loginAsDemoCustomer,
+        loginAsDemoMaid,
         logout,
         navigateTo,
         submitMaidApplication,
@@ -199,7 +332,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         toggleMaidOnline,
         acceptJob,
         rejectJob,
-        simulateAdminApproval
+        simulateAdminApproval,
       }}
     >
       {children}

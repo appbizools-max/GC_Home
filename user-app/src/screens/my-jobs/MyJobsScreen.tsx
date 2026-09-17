@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
-import { Briefcase, MapPin } from 'lucide-react';
+import { Briefcase, MapPin } from 'lucide-react-native';
 
 export const MyJobsScreen: React.FC = () => {
   const { bookings, maidProfile, navigateTo } = useAuth();
@@ -14,60 +15,153 @@ export const MyJobsScreen: React.FC = () => {
   });
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <h2 style={{ fontSize: 18, fontWeight: 800, color: '#1E293B' }}>My Maid Job Ledger</h2>
+    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+      <Text style={styles.headerTitle}>My Maid Job Ledger</Text>
 
-      <div style={{ display: 'flex', background: '#E2E8F0', padding: 4, borderRadius: 12 }}>
+      <View style={styles.tabBar}>
         {[
           { id: 'assigned', label: 'Active Jobs' },
           { id: 'completed', label: 'Completed Jobs' }
         ].map(tab => (
-          <button
+          <TouchableOpacity
             key={tab.id}
-            onClick={() => setActiveTab(tab.id as any)}
-            style={{
-              flex: 1,
-              padding: '8px 0',
-              borderRadius: 8,
-              border: 'none',
-              fontSize: 13,
-              fontWeight: 700,
-              background: activeTab === tab.id ? '#FFFFFF' : 'transparent',
-              color: activeTab === tab.id ? '#1E4E3D' : '#64748B',
-              cursor: 'pointer'
-            }}
+            onPress={() => setActiveTab(tab.id as any)}
+            style={[
+              styles.tabBtn,
+              activeTab === tab.id ? styles.tabBtnActive : styles.tabBtnInactive
+            ]}
           >
-            {tab.label}
-          </button>
+            <Text style={[
+              styles.tabText,
+              activeTab === tab.id ? styles.tabTextActive : styles.tabTextInactive
+            ]}>
+              {tab.label}
+            </Text>
+          </TouchableOpacity>
         ))}
-      </div>
+      </View>
 
       {filtered.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '40px 16px', color: '#94A3B8' }}>
-          <Briefcase size={36} style={{ margin: '0 auto 8px auto', opacity: 0.5 }} />
-          <p style={{ fontSize: 13, fontWeight: 600 }}>No {activeTab} jobs found.</p>
-        </div>
+        <View style={styles.emptyBox}>
+          <Briefcase size={36} color="#94A3B8" style={{ alignSelf: 'center', marginBottom: 8, opacity: 0.5 }} />
+          <Text style={styles.emptyText}>No {activeTab} jobs found.</Text>
+        </View>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <View style={styles.jobsList}>
           {filtered.map(job => (
-            <div
+            <TouchableOpacity
               key={job.bookingId}
-              className="card"
-              onClick={() => navigateTo('active_job', { booking: job })}
-              style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 8 }}
+              onPress={() => navigateTo('active_job', { booking: job })}
+              style={styles.jobCard}
+              activeOpacity={0.8}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: 12, fontWeight: 800, color: '#2D8A68' }}>{job.bookingId}</span>
-                <span style={{ fontSize: 14, fontWeight: 800, color: '#1E4E3D' }}>Payout: ₹{Math.round(job.totalAmount * 0.8)}</span>
-              </div>
-              <h4 style={{ fontSize: 15, fontWeight: 700, color: '#1E293B' }}>{job.serviceName}</h4>
-              <div style={{ fontSize: 12, color: '#64748B', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <MapPin size={14} color="#2D8A68" /> {job.address.locality}
-              </div>
-            </div>
+              <View style={styles.cardHeader}>
+                <Text style={styles.bookingIdText}>{job.bookingId}</Text>
+                <Text style={styles.payoutText}>Payout: ₹{Math.round(job.totalAmount * 0.8)}</Text>
+              </View>
+              <Text style={styles.serviceName}>{job.serviceName}</Text>
+              <View style={styles.locationRow}>
+                <MapPin size={14} color="#2D8A68" />
+                <Text style={styles.locationText}>{job.address.locality}</Text>
+              </View>
+            </TouchableOpacity>
           ))}
-        </div>
+        </View>
       )}
-    </div>
+    </ScrollView>
   );
 };
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+  },
+  contentContainer: {
+    padding: 16,
+    gap: 16,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#1E293B',
+  },
+  tabBar: {
+    flexDirection: 'row',
+    backgroundColor: '#E2E8F0',
+    padding: 4,
+    borderRadius: 12,
+  },
+  tabBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  tabBtnActive: {
+    backgroundColor: '#FFFFFF',
+  },
+  tabBtnInactive: {
+    backgroundColor: 'transparent',
+  },
+  tabText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  tabTextActive: {
+    color: '#1E4E3D',
+  },
+  tabTextInactive: {
+    color: '#64748B',
+  },
+  emptyBox: {
+    alignItems: 'center',
+    paddingVertical: 40,
+    paddingHorizontal: 16,
+  },
+  emptyText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#94A3B8',
+  },
+  jobsList: {
+    gap: 12,
+  },
+  jobCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 8,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  bookingIdText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#2D8A68',
+  },
+  payoutText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#1E4E3D',
+  },
+  serviceName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  locationText: {
+    fontSize: 12,
+    color: '#64748B',
+  },
+});
