@@ -68,6 +68,37 @@ export const SERVICES_SEED: Service[] = [
       'Shower glass & mirror polishing',
       'Grout line scrub & sanitization'
     ]
+  },
+  {
+    serviceId: 'srv_5',
+    name: 'Kitchen Deep Degreasing',
+    category: 'Kitchen',
+    description: 'Intensive grease and oil removal from chimney exterior, exhaust fan, stovetop, slab tiles, and sink drainage.',
+    startingPrice: 699,
+    estimatedDuration: '2 hrs',
+    imageUrl: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&q=80&w=600',
+    isActive: true,
+    features: [
+      'Exhaust fan & chimney exterior degreasing',
+      'Countertop & wall splashback stain removal',
+      'Stainless steel sink scrubbing & faucet shine',
+      'Cabinet exterior wiping & sanitization'
+    ]
+  },
+  {
+    serviceId: 'srv_6',
+    name: 'Sofa & Upholstery Care',
+    category: 'Specialized',
+    description: 'Deep fabric extraction vacuuming, high-foam stain removal shampooing, deodorization, and allergen treatment.',
+    startingPrice: 599,
+    estimatedDuration: '1.5 hrs',
+    imageUrl: 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?auto=format&fit=crop&q=80&w=600',
+    isActive: true,
+    features: [
+      'Deep high-suction dust & mite vacuuming',
+      'Eco shampoo foam scrub & spot stain removal',
+      'Fabric deodorization & rapid air dry treatment'
+    ]
   }
 ];
 

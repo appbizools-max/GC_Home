@@ -1,100 +1,111 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { useAuth } from '../context/AuthContext';
-import { Home, Calendar, UserCheck, User, Briefcase, DollarSign } from 'lucide-react-native';
-
+import { Home, Calendar, UserCheck, User, DollarSign, Broom } from 'lucide-react-native';
 export const BottomTabs: React.FC = () => {
   const { user, maidProfile, currentScreen, navigateTo } = useAuth();
-
-  if (!user || currentScreen === 'login') return null;
+  if (
+    !user ||
+    currentScreen === 'login' ||
+    currentScreen === 'service_details' ||
+    currentScreen === 'booking_screen' ||
+    currentScreen === 'booking_confirmation'
+  ) {
+    return null;
+  }
 
   const isMaidApproved = user.role === 'maid' && maidProfile?.status === 'approved';
 
+  // ── Maid Partner Bottom Navigation ──
   if (isMaidApproved) {
+    const maidTabs = [
+      { id: 'maid_home', label: 'Home', icon: Home },
+      { id: 'my_jobs', label: 'My Jobs', icon: Calendar },
+      { id: 'earnings', label: 'Earnings', icon: DollarSign },
+      { id: 'maid_profile', label: 'Profile', icon: User },
+    ];
+
     return (
       <View style={styles.bottomNav}>
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => navigateTo('maid_home')}
-        >
-          <Home size={20} color={currentScreen === 'maid_home' ? '#2A7B62' : '#6B7280'} />
-          <Text style={[styles.navLabel, currentScreen === 'maid_home' && styles.activeNavLabel]}>Home</Text>
-        </TouchableOpacity>
+        {maidTabs.map(tab => {
+          const isActive = currentScreen === tab.id;
+          const IconComp = tab.icon;
+          const activeColor = '#0D8846';
+          const inactiveColor = '#94A3B8';
 
-
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => navigateTo('my_jobs')}
-        >
-          <Calendar size={20} color={currentScreen === 'my_jobs' ? '#2A7B62' : '#6B7280'} />
-          <Text style={[styles.navLabel, currentScreen === 'my_jobs' && styles.activeNavLabel]}>My Jobs</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => navigateTo('earnings')}
-        >
-          <DollarSign size={20} color={currentScreen === 'earnings' ? '#2A7B62' : '#6B7280'} />
-          <Text style={[styles.navLabel, currentScreen === 'earnings' && styles.activeNavLabel]}>Earnings</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => navigateTo('maid_profile')}
-        >
-          <User size={20} color={currentScreen === 'maid_profile' ? '#2A7B62' : '#6B7280'} />
-          <Text style={[styles.navLabel, currentScreen === 'maid_profile' && styles.activeNavLabel]}>Profile</Text>
-        </TouchableOpacity>
+          return (
+            <TouchableOpacity
+              key={tab.id}
+              style={styles.navItem}
+              onPress={() => navigateTo(tab.id as any)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.iconContainer}>
+                <IconComp
+                  size={21}
+                  color={isActive ? activeColor : inactiveColor}
+                  strokeWidth={isActive ? 2.4 : 1.8}
+                />
+              </View>
+              <Text
+                style={[
+                  styles.navLabel,
+                  isActive && styles.activeNavLabel,
+                ]}
+              >
+                {tab.label}
+              </Text>
+              {isActive && <View style={styles.activeDot} />}
+            </TouchableOpacity>
+          );
+        })}
       </View>
     );
   }
+  // ── Customer Bottom Navigation ──
+  const customerTabs = [
+    { id: 'customer_home', label: 'Home', icon: Home },
+    { id: 'services_listing', label: 'Services', icon: Broom },
+    ...(user.maidApplicationStatus === 'none'
+      ? [{ id: 'become_maid_info', label: 'Become Maid', icon: UserCheck }]
+      : [{ id: 'maid_status', label: 'Maid Status', icon: UserCheck }]),
+    { id: 'user_profile', label: 'Profile', icon: User },
+  ];
 
-  // Customer Bottom Navigation
   return (
     <View style={styles.bottomNav}>
-      <TouchableOpacity
-        style={styles.navItem}
-        onPress={() => navigateTo('customer_home')}
-      >
-        <Home size={20} color={currentScreen === 'customer_home' ? '#2A7B62' : '#6B7280'} />
-        <Text style={[styles.navLabel, currentScreen === 'customer_home' && styles.activeNavLabel]}>Home</Text>
-      </TouchableOpacity>
+      {customerTabs.map(tab => {
+        const isActive = currentScreen === tab.id;
+        const IconComp = tab.icon;
+        const activeColor = '#0D8846';
+        const inactiveColor = '#94A3B8';
 
-      <TouchableOpacity
-        style={styles.navItem}
-        onPress={() => navigateTo('my_bookings')}
-      >
-        <Calendar size={20} color={currentScreen === 'my_bookings' ? '#2A7B62' : '#6B7280'} />
-        <Text style={[styles.navLabel, currentScreen === 'my_bookings' && styles.activeNavLabel]}>Bookings</Text>
-      </TouchableOpacity>
-
-      {user.maidApplicationStatus === 'none' && (
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => navigateTo('become_maid_info')}
-        >
-          <UserCheck size={20} color={currentScreen === 'become_maid_info' ? '#2A7B62' : '#6B7280'} />
-          <Text style={[styles.navLabel, currentScreen === 'become_maid_info' && styles.activeNavLabel]}>Become Maid</Text>
-        </TouchableOpacity>
-      )}
-
-      {(user.maidApplicationStatus === 'pending' || user.maidApplicationStatus === 'rejected') && (
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => navigateTo('maid_status')}
-        >
-          <UserCheck size={20} color={currentScreen === 'maid_status' ? '#2A7B62' : '#6B7280'} />
-          <Text style={[styles.navLabel, currentScreen === 'maid_status' && styles.activeNavLabel]}>Maid Status</Text>
-        </TouchableOpacity>
-      )}
-
-      <TouchableOpacity
-        style={styles.navItem}
-        onPress={() => navigateTo('user_profile')}
-      >
-        <User size={20} color={currentScreen === 'user_profile' ? '#2A7B62' : '#6B7280'} />
-        <Text style={[styles.navLabel, currentScreen === 'user_profile' && styles.activeNavLabel]}>Profile</Text>
-      </TouchableOpacity>
+        return (
+          <TouchableOpacity
+            key={tab.id}
+            style={styles.navItem}
+            onPress={() => navigateTo(tab.id as any)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.iconContainer}>
+              <IconComp
+                size={21}
+                color={isActive ? activeColor : inactiveColor}
+                strokeWidth={isActive ? 2.4 : 1.8}
+              />
+            </View>
+            <Text
+              style={[
+                styles.navLabel,
+                isActive && styles.activeNavLabel,
+              ]}
+            >
+              {tab.label}
+            </Text>
+            {isActive && <View style={styles.activeDot} />}
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 };
@@ -106,22 +117,43 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-    paddingVertical: 8,
-    paddingBottom: 20,
+    borderTopColor: '#F1F5F9',
+    paddingTop: 8,
+    paddingBottom: Platform.OS === 'ios' ? 22 : 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 8,
   },
   navItem: {
     alignItems: 'center',
     justifyContent: 'center',
     flex: 1,
+    paddingVertical: 2,
+    position: 'relative',
+  },
+  iconContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 32,
+    height: 26,
   },
   navLabel: {
-    fontSize: 12,
-    color: '#6B7280',
+    fontSize: 10.5,
+    color: '#94A3B8',
+    fontWeight: '500',
     marginTop: 2,
   },
   activeNavLabel: {
-    color: '#2A7B62',
-    fontWeight: '600',
+    color: '#0D8846',
+    fontWeight: '800',
+  },
+  activeDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#0D8846',
+    marginTop: 3,
   },
 });

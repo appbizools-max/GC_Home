@@ -1,22 +1,33 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { User, MaidProfile, Service, Booking, MaidApplicationStatus } from '../types';
+import { BackHandler } from 'react-native';
+import { User, MaidProfile, Service, Booking, MaidApplicationStatus, Address } from '../types';
 import { SERVICES_SEED, INITIAL_BOOKINGS, INITIAL_MAID_PROFILE } from '../services/mockData';
 import { supabase } from '../config/supabase';
+
+interface HistoryItem {
+  screen: string;
+  selectedService: Service | null;
+  selectedBooking: Booking | null;
+}
 
 interface AuthContextType {
   user: User | null;
   maidProfile: MaidProfile | null;
   services: Service[];
   bookings: Booking[];
+  savedAddresses: Address[];
   currentScreen: string;
   selectedService: Service | null;
   selectedBooking: Booking | null;
   isLoggedIn: boolean;
+  canGoBack: boolean;
+  goBack: () => boolean;
   loginWithPhone: (phone: string, name?: string) => void;
   loginAsDemoCustomer: () => void;
   loginAsDemoMaid: () => void;
   logout: () => void;
   navigateTo: (screen: string, payload?: any) => void;
+  updateUserProfile: (updates: Partial<User>) => void;
   submitMaidApplication: (applicationData: Partial<MaidProfile>) => void;
   createBooking: (bookingData: Omit<Booking, 'bookingId' | 'status' | 'createdAt' | 'customerId'>) => Booking;
   updateBookingStatus: (bookingId: string, status: Booking['status'], extra?: Partial<Booking>) => void;
@@ -42,9 +53,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [maidProfile, setMaidProfile] = useState<MaidProfile | null>(null);
   const [services] = useState<Service[]>(SERVICES_SEED);
   const [bookings, setBookings] = useState<Booking[]>(INITIAL_BOOKINGS);
+  const [savedAddresses, setSavedAddresses] = useState<Address[]>([
+    {
+      id: 'addr_1',
+      label: 'Home',
+      street: 'Flat 402, Green Glen Layout',
+      locality: 'Kondapur',
+      city: 'Hyderabad',
+      pincode: '500084',
+    },
+    {
+      id: 'addr_2',
+      label: 'Office',
+      street: 'Plot 18, Cyber Towers',
+      locality: 'Hitec City',
+      city: 'Hyderabad',
+      pincode: '500081',
+    },
+  ]);
   const [currentScreen, setCurrentScreen] = useState<string>('customer_home');
   const [selectedService, setSelectedService] = useState<Service | null>(null);
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
+
+  const updateUserProfile = (updates: Partial<User>) => {
+    setUser(prev => (prev ? { ...prev, ...updates } : null));
+  };
 
   useEffect(() => {
     // Initial Route based on role
@@ -192,17 +225,68 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setCurrentScreen('maid_home');
   };
 
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+
   const logout = () => {
     setUser(null);
     setMaidProfile(null);
+    setHistory([]);
     setCurrentScreen('login');
   };
 
   const navigateTo = (screen: string, payload?: any) => {
+    if (screen === currentScreen) return;
+
+    // Push current screen to history stack
+    setHistory(prev => [
+      ...prev,
+      {
+        screen: currentScreen,
+        selectedService,
+        selectedBooking,
+      },
+    ]);
+
     if (payload?.service) setSelectedService(payload.service);
     if (payload?.booking) setSelectedBooking(payload.booking);
     setCurrentScreen(screen);
   };
+
+  const goBack = (): boolean => {
+    if (history.length > 0) {
+      const prevEntry = history[history.length - 1];
+      setHistory(prev => prev.slice(0, prev.length - 1));
+      setCurrentScreen(prevEntry.screen);
+      if (prevEntry.selectedService) setSelectedService(prevEntry.selectedService);
+      if (prevEntry.selectedBooking) setSelectedBooking(prevEntry.selectedBooking);
+      return true;
+    }
+
+    // If no history but on secondary screen, fallback to home
+    const isMaid = user?.role === 'maid' && maidProfile?.status === 'approved';
+    const homeScreen = isMaid ? 'maid_home' : 'customer_home';
+
+    if (currentScreen !== homeScreen && currentScreen !== 'login') {
+      setCurrentScreen(homeScreen);
+      return true;
+    }
+
+    return false; // Root screen: allow default Android minimize/exit
+  };
+
+  // Global Android Hardware Back Button listener
+  useEffect(() => {
+    const onHardwareBack = () => {
+      return goBack();
+    };
+
+    const backHandler = BackHandler.addEventListener(
+      'hardwareBackPress',
+      onHardwareBack
+    );
+
+    return () => backHandler.remove();
+  }, [history, currentScreen, user, maidProfile, selectedService, selectedBooking]);
 
   const submitMaidApplication = (data: Partial<MaidProfile>) => {
     if (!user) return;
@@ -317,6 +401,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         maidProfile,
         services,
         bookings,
+        savedAddresses,
         currentScreen,
         selectedService,
         selectedBooking,
@@ -326,6 +411,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         loginAsDemoMaid,
         logout,
         navigateTo,
+        goBack,
+        canGoBack: history.length > 0,
+        updateUserProfile,
         submitMaidApplication,
         createBooking,
         updateBookingStatus,
