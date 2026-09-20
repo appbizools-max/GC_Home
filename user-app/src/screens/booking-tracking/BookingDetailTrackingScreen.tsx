@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, TextInput, ScrollView, Linking } from 'react-native';
+import { View, Text, StyleSheet, Image, TouchableOpacity, TextInput, ScrollView } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
-import { ArrowLeft, Clock, Phone, Star } from 'lucide-react-native';
+import { ArrowLeft, Clock, MessageSquare, Star, ShieldCheck, Lock } from 'lucide-react-native';
 import { BookingStatus } from '../../types';
+import { InAppChatModal } from '../../components/InAppChatModal';
 
 export const BookingDetailTrackingScreen: React.FC = () => {
-  const { selectedBooking, navigateTo, updateBookingStatus } = useAuth();
+  const { selectedBooking, navigateTo, updateBookingStatus, user } = useAuth();
   const [rating, setRating] = useState(5);
   const [review, setReview] = useState('');
   const [submittedRating, setSubmittedRating] = useState(false);
+  const [isChatModalOpen, setIsChatModalOpen] = useState(false);
 
   if (!selectedBooking) {
     navigateTo('my_bookings');
@@ -39,12 +41,6 @@ export const BookingDetailTrackingScreen: React.FC = () => {
   const handleRatingSubmit = () => {
     updateBookingStatus(selectedBooking.bookingId, 'completed', { rating, review });
     setSubmittedRating(true);
-  };
-
-  const handleCallMaid = () => {
-    if (selectedBooking.assignedMaidPhone) {
-      Linking.openURL(`tel:${selectedBooking.assignedMaidPhone}`);
-    }
   };
 
   return (
@@ -109,20 +105,46 @@ export const BookingDetailTrackingScreen: React.FC = () => {
                 <Star size={14} color="#F59E0B" fill="#F59E0B" />
                 <Text style={styles.ratingText}>4.8 (42 jobs)</Text>
               </View>
+              <Text style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>
+                Phone: +91 98*** ***24 (Masked for Privacy)
+              </Text>
             </View>
-            <TouchableOpacity onPress={handleCallMaid} style={styles.callBtn}>
-              <Phone size={18} color="#FFFFFF" />
-            </TouchableOpacity>
           </View>
+
+          {/* Supervised In-App Chat CTA */}
+          <TouchableOpacity
+            onPress={() => setIsChatModalOpen(true)}
+            style={styles.chatActionBtn}
+            activeOpacity={0.88}
+          >
+            <MessageSquare size={16} color="#FFFFFF" />
+            <Text style={styles.chatActionBtnText}>In-App Chat with Maid</Text>
+            <View style={styles.adminMonitoredBadge}>
+              <Lock size={10} color="#D1FAE5" />
+              <Text style={styles.adminMonitoredBadgeText}>Admin Supervised</Text>
+            </View>
+          </TouchableOpacity>
         </View>
       ) : (
         <View style={[styles.card, styles.findingCard]}>
           <Clock size={28} color="#92400E" style={{ alignSelf: 'center', marginBottom: 8 }} />
           <Text style={styles.findingTitle}>Finding the Nearest Verified Maid</Text>
           <Text style={styles.findingDesc}>
-            Admin is matching your job location with available maids in Bellandur.
+            Admin is reviewing your job location to assign an approved partner. Direct contact is mediated through GC HOME+ dispatch.
           </Text>
         </View>
+      )}
+
+      {/* In-App Chat Modal */}
+      {isChatModalOpen && (
+        <InAppChatModal
+          visible={isChatModalOpen}
+          onClose={() => setIsChatModalOpen(false)}
+          booking={selectedBooking}
+          currentUserRole="customer"
+          currentUserId={user?.uid || 'cust_curr'}
+          currentUserName={user?.name || selectedBooking.customerName || 'Customer'}
+        />
       )}
 
       <View style={[styles.card, styles.otpCard]}>
@@ -319,13 +341,41 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#1E293B',
   },
-  callBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#2D8A68',
-    justifyContent: 'center',
+  chatActionBtn: {
+    marginTop: 12,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#043927',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  chatActionBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    flex: 1,
+    marginLeft: 8,
+  },
+  adminMonitoredBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#064E3B',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  adminMonitoredBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#D1FAE5',
   },
   findingCard: {
     backgroundColor: '#FEF3C7',

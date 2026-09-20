@@ -1,12 +1,18 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { useAuth } from '../context/AuthContext';
-import { Home, Calendar, UserCheck, User, DollarSign, Broom } from 'lucide-react-native';
+import { Home, Calendar, Tag, Headphones, User, DollarSign } from 'lucide-react-native';
+
 export const BottomTabs: React.FC = () => {
   const { user, maidProfile, currentScreen, navigateTo } = useAuth();
+
+  // Hide bottom navigation on auth/onboarding or full-screen modal flows
   if (
     !user ||
+    currentScreen === 'splash' ||
     currentScreen === 'login' ||
+    currentScreen === 'otp_verification' ||
+    currentScreen === 'profile_setup' ||
     currentScreen === 'service_details' ||
     currentScreen === 'booking_screen' ||
     currentScreen === 'booking_confirmation'
@@ -14,9 +20,9 @@ export const BottomTabs: React.FC = () => {
     return null;
   }
 
-  const isMaidApproved = user.role === 'maid' && maidProfile?.status === 'approved';
+  const isMaidApproved = (user.role === 'maid' || user.maidApplicationStatus === 'approved' || maidProfile?.status === 'approved') && maidProfile?.isOnline === true;
 
-  // ── Maid Partner Bottom Navigation ──
+  // ── Maid Partner Bottom Navigation (If in Maid Mode) ──
   if (isMaidApproved) {
     const maidTabs = [
       { id: 'maid_home', label: 'Home', icon: Home },
@@ -30,8 +36,8 @@ export const BottomTabs: React.FC = () => {
         {maidTabs.map(tab => {
           const isActive = currentScreen === tab.id;
           const IconComp = tab.icon;
-          const activeColor = '#0D8846';
-          const inactiveColor = '#94A3B8';
+          const activeColor = '#168A68';
+          const inactiveColor = '#68788C';
 
           return (
             <TouchableOpacity
@@ -39,12 +45,13 @@ export const BottomTabs: React.FC = () => {
               style={styles.navItem}
               onPress={() => navigateTo(tab.id as any)}
               activeOpacity={0.7}
+              accessibilityLabel={tab.label}
             >
               <View style={styles.iconContainer}>
                 <IconComp
-                  size={21}
+                  size={20}
                   color={isActive ? activeColor : inactiveColor}
-                  strokeWidth={isActive ? 2.4 : 1.8}
+                  strokeWidth={isActive ? 2.5 : 1.8}
                 />
               </View>
               <Text
@@ -62,13 +69,13 @@ export const BottomTabs: React.FC = () => {
       </View>
     );
   }
-  // ── Customer Bottom Navigation ──
+
+  // ── Customer Bottom Navigation (Exactly 5 Tabs: Home, My Bookings, Offers, Help, Profile) ──
   const customerTabs = [
     { id: 'customer_home', label: 'Home', icon: Home },
-    { id: 'services_listing', label: 'Services', icon: Broom },
-    ...(user.maidApplicationStatus === 'none'
-      ? [{ id: 'become_maid_info', label: 'Become Maid', icon: UserCheck }]
-      : [{ id: 'maid_status', label: 'Maid Status', icon: UserCheck }]),
+    { id: 'my_bookings', label: 'My Bookings', icon: Calendar },
+    { id: 'offers', label: 'Offers', icon: Tag },
+    { id: 'help', label: 'Help', icon: Headphones },
     { id: 'user_profile', label: 'Profile', icon: User },
   ];
 
@@ -77,8 +84,8 @@ export const BottomTabs: React.FC = () => {
       {customerTabs.map(tab => {
         const isActive = currentScreen === tab.id;
         const IconComp = tab.icon;
-        const activeColor = '#0D8846';
-        const inactiveColor = '#94A3B8';
+        const activeColor = '#168A68';
+        const inactiveColor = '#68788C';
 
         return (
           <TouchableOpacity
@@ -86,12 +93,14 @@ export const BottomTabs: React.FC = () => {
             style={styles.navItem}
             onPress={() => navigateTo(tab.id as any)}
             activeOpacity={0.7}
+            accessibilityLabel={tab.label}
           >
             <View style={styles.iconContainer}>
               <IconComp
                 size={21}
                 color={isActive ? activeColor : inactiveColor}
-                strokeWidth={isActive ? 2.4 : 1.8}
+                strokeWidth={isActive ? 2.5 : 1.8}
+                fill={isActive && tab.id === 'customer_home' ? '#EAF8F1' : 'none'}
               />
             </View>
             <Text
@@ -117,12 +126,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
+    borderTopColor: '#E1E8E5',
     paddingTop: 8,
-    paddingBottom: Platform.OS === 'ios' ? 22 : 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.04,
+    paddingBottom: Platform.OS === 'ios' ? 22 : 8,
+    shadowColor: '#10243A',
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.05,
     shadowRadius: 6,
     elevation: 8,
   },
@@ -137,23 +146,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     width: 32,
-    height: 26,
+    height: 24,
   },
   navLabel: {
-    fontSize: 10.5,
-    color: '#94A3B8',
-    fontWeight: '500',
+    fontSize: 10,
+    color: '#68788C',
+    fontWeight: '600',
     marginTop: 2,
   },
   activeNavLabel: {
-    color: '#0D8846',
+    color: '#168A68',
     fontWeight: '800',
   },
   activeDot: {
     width: 4,
     height: 4,
     borderRadius: 2,
-    backgroundColor: '#0D8846',
-    marginTop: 3,
+    backgroundColor: '#168A68',
+    marginTop: 2,
   },
 });

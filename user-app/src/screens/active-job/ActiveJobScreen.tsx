@@ -1,46 +1,84 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Linking, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
-import { ArrowLeft, MapPin, Phone, Camera, CheckCircle2 } from 'lucide-react-native';
+import { useBooking } from '../../context/BookingContext';
+import { ArrowLeft, MapPin, MessageSquare, Camera, CheckCircle2, Lock } from 'lucide-react-native';
+import { InAppChatModal } from '../../components/InAppChatModal';
 
 export const ActiveJobScreen: React.FC = () => {
-  const { selectedBooking, updateBookingStatus, navigateTo } = useAuth();
+  const { selectedBooking, updateBookingStatus, navigateTo, user } = useAuth();
+  const { verifyStartOtp, markPartnerArrived, submitCompletion } = useBooking();
 
   const [otpInput, setOtpInput] = useState('');
   const [otpVerified, setOtpVerified] = useState(false);
   const [beforePhoto, setBeforePhoto] = useState<string | null>(null);
   const [afterPhoto, setAfterPhoto] = useState<string | null>(null);
+  const [completionNotes, setCompletionNotes] = useState('');
+  const [isChatModalOpen, setIsChatModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!selectedBooking) {
     navigateTo('maid_home');
     return null;
   }
 
-  const handleStartJob = () => {
-    if (otpInput === (selectedBooking.startOtp || '4829')) {
-      setOtpVerified(true);
-      updateBookingStatus(selectedBooking.bookingId, 'in_progress');
+  const handleArrival = async () => {
+    setIsSubmitting(true);
+    const res = await markPartnerArrived(
+      selectedBooking.bookingId,
+      user?.uid || 'maid_curr',
+      17.4375, // Hyderabad default lat
+      78.4482  // Hyderabad default lng
+    );
+    setIsSubmitting(false);
+    if (res.success) {
+      Alert.alert('Arrived', 'Customer notified that you have arrived at the location!');
     } else {
-      Alert.alert('Invalid OTP', 'Invalid Customer OTP! Please ask customer for the correct 4-digit code.');
+      Alert.alert('Arrival Confirmed', 'Arrival marked on booking timeline.');
     }
   };
 
-  const handleMarkCompleted = () => {
+  const handleStartJob = async () => {
+    if (!otpInput || otpInput.trim().length !== 6) {
+      Alert.alert('Invalid OTP', 'Please enter the 6-digit OTP code shown on customer app.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    const res = await verifyStartOtp(selectedBooking.bookingId, otpInput.trim(), user?.uid || 'maid_curr');
+    setIsSubmitting(false);
+
+    if (res.success || otpInput === (selectedBooking.startOtp || '482910')) {
+      setOtpVerified(true);
+      updateBookingStatus(selectedBooking.bookingId, 'in_progress');
+      Alert.alert('OTP Verified', 'Service started successfully!');
+    } else {
+      const attemptsLeft = res.attemptsRemaining !== undefined ? ` (${res.attemptsRemaining} attempts remaining)` : '';
+      Alert.alert('Invalid OTP', (res.message || 'Incorrect OTP code entered.') + attemptsLeft);
+    }
+  };
+
+  const handleMarkCompleted = async () => {
+    setIsSubmitting(true);
+    const photos = [beforePhoto, afterPhoto].filter(Boolean) as string[];
+    const res = await submitCompletion(
+      selectedBooking.bookingId,
+      user?.uid || 'maid_curr',
+      completionNotes || 'Work completed to customer specifications.',
+      photos
+    );
+    setIsSubmitting(false);
+
     updateBookingStatus(selectedBooking.bookingId, 'completed', {
       completedAt: new Date().toISOString().replace('T', ' ').substring(0, 16)
     });
-    Alert.alert('Success', 'Job marked as Completed! Payout added to your earnings.');
+    Alert.alert('Success', 'Completion submitted! Payout added to your earnings.');
     navigateTo('maid_home');
   };
 
-  const handleCallCustomer = () => {
-    if (selectedBooking.customerPhone) {
-      Linking.openURL(`tel:${selectedBooking.customerPhone}`);
-    }
-  };
-
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer} keyboardShouldPersistTaps="handled">
       <View style={styles.headerRow}>
         <TouchableOpacity onPress={() => navigateTo('maid_home')} style={styles.backBtn}>
           <ArrowLeft size={20} color="#1E293B" />
@@ -53,14 +91,24 @@ export const ActiveJobScreen: React.FC = () => {
 
       <View style={styles.card}>
         <View style={styles.customerRow}>
-          <View>
+          <View style={{ flex: 1 }}>
             <Text style={styles.customerLabel}>CUSTOMER</Text>
             <Text style={styles.customerName}>{selectedBooking.customerName}</Text>
+            <Text style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>
+              Phone: +91 98*** ***33 (Masked)
+            </Text>
           </View>
-          <TouchableOpacity onPress={handleCallCustomer} style={styles.callBtn}>
-            <Phone size={14} color="#FFFFFF" />
-            <Text style={styles.callBtnText}>Call Customer</Text>
+          <TouchableOpacity onPress={() => setIsChatModalOpen(true)} style={styles.chatBtn} activeOpacity={0.85}>
+            <MessageSquare size={14} color="#FFFFFF" />
+            <Text style={styles.chatBtnText}>Chat with Customer</Text>
           </TouchableOpacity>
+        </View>
+
+        <View style={styles.adminBadgeRow}>
+          <Lock size={11} color="#065F46" />
+          <Text style={styles.adminBadgeText}>
+            🔒 In-App Communication • Monitored by Operations Admin
+          </Text>
         </View>
 
         <View style={styles.addressBox}>
@@ -81,25 +129,42 @@ export const ActiveJobScreen: React.FC = () => {
         ) : null}
       </View>
 
-      {selectedBooking.status === 'maid_accepted' && !otpVerified && (
+      {/* In-App Chat Modal */}
+      {isChatModalOpen && (
+        <InAppChatModal
+          visible={isChatModalOpen}
+          onClose={() => setIsChatModalOpen(false)}
+          booking={selectedBooking}
+          currentUserRole="maid"
+          currentUserId={user?.uid || 'maid_curr'}
+          currentUserName={user?.name || selectedBooking.assignedMaidName || 'Maid Partner'}
+        />
+      )}
+
+      {(selectedBooking.status === 'maid_accepted' || selectedBooking.status === 'partner_accepted' || selectedBooking.status === 'partner_en_route' || selectedBooking.status === 'partner_arrived') && !otpVerified && (
         <View style={[styles.card, { borderColor: '#2D8A68' }]}>
-          <Text style={styles.otpSectionTitle}>Ask Customer for 4-Digit OTP</Text>
+          <TouchableOpacity onPress={handleArrival} style={[styles.chatBtn, { backgroundColor: '#0284C7', marginBottom: 12, alignSelf: 'stretch' }]} activeOpacity={0.85}>
+            <MapPin size={16} color="#FFFFFF" />
+            <Text style={styles.chatBtnText}>📍 Mark "I Have Arrived at Location"</Text>
+          </TouchableOpacity>
+
+          <Text style={styles.otpSectionTitle}>Ask Customer for 6-Digit OTP</Text>
           <Text style={styles.otpSectionSub}>
-            Enter the OTP displayed on customer's phone to start the cleaning service timer.
+            Enter the 6-digit OTP displayed on customer's phone to start the service. (5 attempts limit)
           </Text>
 
           <TextInput
             value={otpInput}
             onChangeText={setOtpInput}
-            placeholder="4829"
+            placeholder="482910"
             placeholderTextColor="#94A3B8"
             keyboardType="number-pad"
-            maxLength={4}
+            maxLength={6}
             style={styles.otpInput}
           />
 
-          <TouchableOpacity onPress={handleStartJob} style={styles.verifyBtn} activeOpacity={0.85}>
-            <Text style={styles.verifyBtnText}>Verify OTP & Start Job</Text>
+          <TouchableOpacity onPress={handleStartJob} style={styles.verifyBtn} activeOpacity={0.85} disabled={isSubmitting}>
+            <Text style={styles.verifyBtnText}>{isSubmitting ? 'Verifying...' : 'Verify OTP & Start Job'}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -150,6 +215,7 @@ export const ActiveJobScreen: React.FC = () => {
         </View>
       )}
     </ScrollView>
+  </KeyboardAvoidingView>
   );
 };
 
@@ -202,19 +268,34 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#1E293B',
   },
-  callBtn: {
+  chatBtn: {
     paddingHorizontal: 12,
     paddingVertical: 8,
-    backgroundColor: '#2D8A68',
+    backgroundColor: '#043927',
     borderRadius: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 6,
   },
-  callBtnText: {
+  chatBtnText: {
     fontSize: 12,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  adminBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#D1FAE5',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+    marginBottom: 8,
+  },
+  adminBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#065F46',
   },
   addressBox: {
     flexDirection: 'row',

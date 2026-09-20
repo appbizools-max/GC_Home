@@ -1,227 +1,361 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+} from 'react-native';
 import { useAuth } from '../../context/AuthContext';
-import { CheckCircle2, Clock, MapPin, Calendar, ArrowRight } from 'lucide-react-native';
+import { useBooking } from '../../context/BookingContext';
+import { AppLogo } from '../../components/ui/AppLogo';
+import {
+  CheckCircle2,
+  Calendar,
+  Clock,
+  MapPin,
+  ShieldCheck,
+  UserCheck,
+  ArrowRight,
+  Home,
+  FileText,
+} from 'lucide-react-native';
 
 export const BookingConfirmationScreen: React.FC = () => {
-  const { selectedBooking, navigateTo } = useAuth();
+  const { navigateTo } = useAuth();
+  const { activeBooking } = useBooking();
 
-  if (!selectedBooking) {
-    navigateTo('my_bookings');
-    return null;
-  }
+  const booking = activeBooking || {
+    bookingId: 'GC-89421',
+    serviceName: 'Home Cleaning',
+    homeSize: { label: '1 BHK' },
+    dateLabel: 'Today, 26 Apr',
+    timeSlot: '4:00 PM – 6:00 PM',
+    address: {
+      street: '123, 4th Cross, HSR Layout',
+      locality: 'Sector 2',
+      city: 'Bengaluru',
+      pincode: '560102',
+    },
+    totalAmount: 848,
+    paymentStatus: 'paid',
+  };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      <View style={styles.topSection}>
-        <View style={styles.iconCircle}>
-          <CheckCircle2 size={44} color="#166534" />
-        </View>
-        <Text style={styles.title}>Booking Confirmed!</Text>
-        <Text style={styles.subtitle}>
-          Booking ID: <Text style={styles.boldText}>{selectedBooking.bookingId}</Text>
-        </Text>
+    <View style={styles.safeContainer}>
+      {/* Top Header */}
+      <View style={styles.header}>
+        <AppLogo size="sm" showTagline={true} align="left" />
       </View>
 
-      <View style={styles.card}>
-        <View style={styles.cardHeader}>
-          <View>
-            <Text style={styles.serviceLabel}>SERVICE</Text>
-            <Text style={styles.serviceName}>{selectedBooking.serviceName}</Text>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Success Visual Graphic */}
+        <View style={styles.successBadgeContainer}>
+          <View style={styles.outerCircle}>
+            <View style={styles.innerCircle}>
+              <CheckCircle2 size={46} color="#FFFFFF" strokeWidth={2.8} />
+            </View>
           </View>
-          <View style={styles.statusBadge}>
-            <Clock size={12} color="#92400E" />
-            <Text style={styles.statusBadgeText}>Pending Assignment</Text>
+          <Text style={styles.successHeading}>Booking Confirmed!</Text>
+          <Text style={styles.successSub}>
+            Your home cleaning has been scheduled successfully.
+          </Text>
+        </View>
+
+        {/* Booking Reference Card */}
+        <View style={styles.refCard}>
+          <View style={styles.refHeaderRow}>
+            <Text style={styles.refIdLabel}>Booking ID</Text>
+            <Text style={styles.refIdValue}>{booking.bookingId}</Text>
+          </View>
+
+          <View style={styles.serviceBriefRow}>
+            <Text style={styles.serviceName}>{booking.serviceName}</Text>
+            <Text style={styles.homeSizeTag}>{booking.homeSize.label}</Text>
+          </View>
+
+          <View style={styles.divider} />
+
+          {/* Details Rows */}
+          <View style={styles.infoRow}>
+            <Calendar size={16} color="#168A68" />
+            <Text style={styles.infoText}>
+              Date: <Text style={styles.infoBold}>{booking.dateLabel}</Text>
+            </Text>
+          </View>
+
+          <View style={styles.infoRow}>
+            <Clock size={16} color="#168A68" />
+            <Text style={styles.infoText}>
+              Time Slot: <Text style={styles.infoBold}>{booking.timeSlot}</Text>
+            </Text>
+          </View>
+
+          <View style={[styles.infoRow, { alignItems: 'flex-start' }]}>
+            <MapPin size={16} color="#168A68" style={{ marginTop: 2 }} />
+            <Text style={styles.infoText}>
+              Address:{' '}
+              <Text style={styles.infoBold}>
+                {booking.address.street}, {booking.address.locality}, {booking.address.city} - {booking.address.pincode}
+              </Text>
+            </Text>
+          </View>
+
+          <View style={styles.infoRow}>
+            <ShieldCheck size={16} color="#168A68" />
+            <Text style={styles.infoText}>
+              Amount Paid: <Text style={styles.priceBold}>₹ {booking.totalAmount}</Text>
+            </Text>
           </View>
         </View>
 
-        <View style={styles.detailsList}>
-          <View style={styles.detailRow}>
-            <Calendar size={16} color="#2D8A68" />
-            <Text style={styles.detailText}>{selectedBooking.date} ({selectedBooking.timeSlot})</Text>
+        {/* Cleaner Assignment Status Banner */}
+        <View style={styles.assignmentBanner}>
+          <View style={styles.assignmentIconBox}>
+            <UserCheck size={20} color="#0E5B47" />
           </View>
-
-          <View style={styles.detailRow}>
-            <MapPin size={16} color="#2D8A68" style={{ marginTop: 2 }} />
-            <Text style={styles.detailText}>{selectedBooking.address.street}, {selectedBooking.address.locality}</Text>
-          </View>
-        </View>
-
-        <View style={styles.otpBox}>
-          <View>
-            <Text style={styles.otpLabel}>START OTP (Give to Maid)</Text>
-            <Text style={styles.otpValue}>{selectedBooking.startOtp}</Text>
-          </View>
-          <View style={{ alignItems: 'flex-end' }}>
-            <Text style={styles.otpLabel}>AMOUNT</Text>
-            <Text style={styles.amountValue}>₹{selectedBooking.totalAmount}</Text>
+          <View style={styles.assignmentTextCol}>
+            <Text style={styles.assignmentTitle}>Professional Assignment</Text>
+            <Text style={styles.assignmentSub}>
+              We are assigning a top-rated, background-verified cleaning professional for your slot.
+            </Text>
           </View>
         </View>
-      </View>
+      </ScrollView>
 
-      <View style={styles.buttonGroup}>
+      {/* Sticky Bottom Actions */}
+      <View style={styles.bottomBar}>
         <TouchableOpacity
-          onPress={() => navigateTo('booking_tracking', { booking: selectedBooking })}
-          style={styles.primaryBtn}
-          activeOpacity={0.85}
+          style={styles.trackBtn}
+          onPress={() => navigateTo('booking-tracking')}
+          activeOpacity={0.88}
         >
-          <Text style={styles.primaryBtnText}>Track Maid Assignment</Text>
-          <ArrowRight size={18} color="#FFFFFF" />
+          <Text style={styles.trackBtnText}>Track Booking</Text>
+          <ArrowRight size={18} color="#FFFFFF" strokeWidth={2.4} />
         </TouchableOpacity>
 
         <TouchableOpacity
-          onPress={() => navigateTo('customer_home')}
-          style={styles.secondaryBtn}
+          style={styles.homeBtn}
+          onPress={() => navigateTo('home')}
           activeOpacity={0.8}
         >
-          <Text style={styles.secondaryBtnText}>Back to Home</Text>
+          <Home size={16} color="#0E5B47" />
+          <Text style={styles.homeBtnText}>Back to Home</Text>
         </TouchableOpacity>
       </View>
-    </ScrollView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  safeContainer: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
-  },
-  contentContainer: {
-    padding: 16,
-    gap: 20,
-    justifyContent: 'center',
-    flexGrow: 1,
-  },
-  topSection: {
-    alignItems: 'center',
-  },
-  iconCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: '#DCFCE7',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#1E4E3D',
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 13,
-    color: '#64748B',
-  },
-  boldText: {
-    fontWeight: '700',
-    color: '#1E293B',
-  },
-  card: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+  },
+  header: {
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F4F2',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 20,
+    paddingBottom: 120,
+  },
+  successBadgeContainer: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  outerCircle: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    backgroundColor: '#EAF8F1',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  innerCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#168A68',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#168A68',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  successHeading: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#10243A',
+  },
+  successSub: {
+    fontSize: 12.5,
+    color: '#68788C',
+    marginTop: 3,
+    textAlign: 'center',
+    paddingHorizontal: 20,
+  },
+  refCard: {
+    backgroundColor: '#F5FCF8',
+    borderRadius: 18,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    gap: 14,
+    borderColor: '#C6EEDB',
+    marginBottom: 14,
   },
-  cardHeader: {
+  refHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-    paddingBottom: 10,
+    marginBottom: 10,
   },
-  serviceLabel: {
+  refIdLabel: {
     fontSize: 11,
-    color: '#94A3B8',
+    color: '#68788C',
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  refIdValue: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#0E5B47',
+    letterSpacing: 0.5,
+  },
+  serviceBriefRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
   },
   serviceName: {
     fontSize: 16,
-    fontWeight: '800',
-    color: '#1E293B',
+    fontWeight: '900',
+    color: '#10243A',
   },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#FEF3C7',
+  homeSizeTag: {
+    backgroundColor: '#EAF8F1',
     paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 10,
-  },
-  statusBadgeText: {
+    paddingVertical: 3,
+    borderRadius: 6,
     fontSize: 11,
-    fontWeight: '700',
-    color: '#92400E',
+    fontWeight: '800',
+    color: '#168A68',
   },
-  detailsList: {
-    gap: 10,
+  divider: {
+    height: 1,
+    backgroundColor: '#E1E8E5',
+    marginBottom: 10,
   },
-  detailRow: {
+  infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    paddingVertical: 4,
   },
-  detailText: {
-    fontSize: 13,
-    color: '#334155',
+  infoText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#68788C',
+  },
+  infoBold: {
+    fontWeight: '800',
+    color: '#10243A',
+  },
+  priceBold: {
+    fontWeight: '900',
+    color: '#0E5B47',
+  },
+  assignmentBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#EAF8F1',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#C6EEDB',
+  },
+  assignmentIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  assignmentTextCol: {
     flex: 1,
   },
-  otpBox: {
-    backgroundColor: '#F8FAFC',
-    padding: 12,
-    borderRadius: 10,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  assignmentTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0E5B47',
   },
-  otpLabel: {
+  assignmentSub: {
     fontSize: 11,
-    color: '#64748B',
+    color: '#168A68',
+    marginTop: 2,
+    lineHeight: 15,
   },
-  otpValue: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#1E4E3D',
-    letterSpacing: 4,
+  bottomBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#F0F4F2',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 8,
   },
-  amountValue: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#1E293B',
-  },
-  buttonGroup: {
-    gap: 10,
-  },
-  primaryBtn: {
-    backgroundColor: '#1E4E3D',
-    paddingVertical: 14,
-    borderRadius: 28,
+  trackBtn: {
+    backgroundColor: '#0E5B47',
+    borderRadius: 26,
+    paddingVertical: 13,
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
+    alignItems: 'center',
+    gap: 8,
+    shadowColor: '#0E5B47',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+    elevation: 3,
   },
-  primaryBtnText: {
-    fontSize: 14,
-    fontWeight: '700',
+  trackBtnText: {
+    fontSize: 14.5,
+    fontWeight: '800',
     color: '#FFFFFF',
   },
-  secondaryBtn: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    paddingVertical: 14,
-    borderRadius: 28,
-    alignItems: 'center',
+  homeBtn: {
+    backgroundColor: '#F5FCF8',
+    borderRadius: 26,
+    paddingVertical: 12,
+    flexDirection: 'row',
     justifyContent: 'center',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderColor: '#E1E8E5',
   },
-  secondaryBtnText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#475569',
+  homeBtnText: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#0E5B47',
   },
 });

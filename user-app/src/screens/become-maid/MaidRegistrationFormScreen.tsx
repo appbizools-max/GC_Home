@@ -227,26 +227,20 @@ export const MaidRegistrationFormScreen: React.FC = () => {
       // 1. Update state in AuthContext
       submitMaidApplication(fullApplicationPayload);
 
-      // 2. Persist in Supabase PostgreSQL `maids` table
+      // 2. Persist in Supabase PostgreSQL `maid_profiles` table
       if (user?.uid) {
-        await supabase.from('maids').upsert({
+        await supabase.from('maid_profiles').upsert({
           id: user.uid,
           full_name: fullName,
           phone: phone,
           email: email,
           city: selectedCity,
-          hub_zone: selectedHub,
-          aadhaar_number: aadhaarNumber.replace(/\s/g, ''),
-          kyc_method: 'digilocker',
-          is_digilocker_verified: isDigiLockerVerified,
-          bank_account: accountNumber,
+          service_area: selectedHub,
+          bank_account_number: accountNumber,
           bank_ifsc: ifscCode,
           bank_name: bankName,
           status: 'pending',
-          rating: 5.0,
-          jobs_completed: 0,
-          earnings: 0,
-          created_at: new Date().toISOString(),
+          applied_at: new Date().toISOString(),
         });
       }
 
@@ -569,7 +563,15 @@ export const MaidRegistrationFormScreen: React.FC = () => {
 
             {/* Photo Upload Box */}
             <View style={styles.photoUploadRow}>
-              <Image source={{ uri: photoUrl }} style={styles.photoPreview} />
+              <Image
+                source={{
+                  uri:
+                    photoUrl && photoUrl.trim().length > 0
+                      ? photoUrl
+                      : 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=300&q=80',
+                }}
+                style={styles.photoPreview}
+              />
               <View style={styles.photoActions}>
                 <Text style={styles.photoTitle}>Partner Profile Photo</Text>
                 <Text style={styles.photoSub}>Clear face picture for customer safety badge</Text>

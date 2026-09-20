@@ -1,151 +1,539 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAdmin } from '../../context/AdminContext';
-import { Calendar, Users, DollarSign, Clock, ArrowUpRight, CheckCircle2 } from 'lucide-react';
+import {
+  Calendar,
+  Clock,
+  CheckCircle2,
+  PlayCircle,
+  Plus,
+  ArrowUpRight,
+  ChevronRight,
+  Users,
+  MapPin,
+  Sparkles,
+  Phone,
+  Eye,
+} from 'lucide-react';
 
 export const DashboardPage: React.FC = () => {
-  const { getDashboardMetrics, bookings, maids, setCurrentTab, setSelectedMaidForReview, autoAssignMaid } = useAdmin();
+  const {
+    getDashboardMetrics,
+    bookings,
+    maids,
+    setCurrentTab,
+    openAssignMaid,
+    openBookingDetails,
+    setCreateBookingModalOpen,
+    exportBookingsToCSV,
+    selectedTimezone,
+  } = useAdmin();
+
+  const [now, setNow] = useState<Date>(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setNow(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const getGreeting = (): string => {
+    try {
+      const hourStr = new Intl.DateTimeFormat('en-US', {
+        timeZone: selectedTimezone,
+        hour: 'numeric',
+        hour12: false,
+      }).format(now);
+
+      let hour = parseInt(hourStr, 10);
+      if (isNaN(hour)) hour = now.getHours();
+
+      if (hour >= 5 && hour < 12) {
+        return 'Good Morning, Admin! 👋';
+      } else if (hour >= 12 && hour < 17) {
+        return 'Good Afternoon, Admin! 👋';
+      } else if (hour >= 17 && hour < 21) {
+        return 'Good Evening, Admin! 👋';
+      } else {
+        return 'Good Night, Admin! 👋';
+      }
+    } catch {
+      const hour = now.getHours();
+      if (hour >= 5 && hour < 12) return 'Good Morning, Admin! 👋';
+      if (hour >= 12 && hour < 17) return 'Good Afternoon, Admin! 👋';
+      if (hour >= 17 && hour < 21) return 'Good Evening, Admin! 👋';
+      return 'Good Night, Admin! 👋';
+    }
+  };
+
   const metrics = getDashboardMetrics();
 
-  const pendingMaids = maids.filter(m => m.status === 'pending');
+  const recentBookings = bookings.slice(0, 5);
+  const ongoingBookings = bookings.filter(
+    b => ['ongoing', 'in_progress', 'en_route', 'arrived', 'cleaning_started', 'maid_assigned', 'maid_accepted'].includes(b.status)
+  );
   const pendingBookings = bookings.filter(b => b.status === 'pending_assignment');
+  const completedBookings = bookings.filter(b => b.status === 'completed');
+  
+  const today = new Date().toISOString().split('T')[0];
+  const todayBookings = bookings.filter(b => 
+    b.date === today || (b.createdAt && b.createdAt.startsWith(today))
+  ).sort((a, b) => {
+    const timeA = a.timeSlot || '00:00';
+    const timeB = b.timeSlot || '00:00';
+    return timeA.localeCompare(timeB);
+  });
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-      {/* Metrics Banner Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
-        <div style={{ background: '#FFFFFF', padding: 20, borderRadius: 16, border: '1px solid #E2E8F0', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: '#64748B' }}>TOTAL BOOKINGS TODAY</span>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: '#E0F2FE', color: '#0284C7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Calendar size={20} />
-            </div>
-          </div>
-          <h3 style={{ fontSize: 28, fontWeight: 800, color: '#0F172A', marginTop: 8, margin: '8px 0 0 0' }}>
-            {metrics.totalBookingsToday}
-          </h3>
-          <span style={{ fontSize: 11, color: '#166534', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 2, marginTop: 4 }}>
-            <ArrowUpRight size={12} /> +12% from yesterday
-          </span>
+    <div className="flex flex-col gap-6 font-sans text-slate-800 select-none pb-8">
+      {/* Top Banner & Dynamic Timezone Greeting Row */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-black text-[#0A192F] tracking-tight">
+            {getGreeting()}
+          </h1>
+          <p className="text-xs text-slate-500 font-medium mt-1">
+            Here's what's happening with GC HOME+ today.
+          </p>
         </div>
 
-        <div style={{ background: '#FFFFFF', padding: 20, borderRadius: 16, border: '1px solid #E2E8F0', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: '#64748B' }}>ACTIVE MAIDS ONLINE</span>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: '#DCFCE7', color: '#166534', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Users size={20} />
-            </div>
+        <div className="flex items-center gap-3">
+          {/* Quote Pill */}
+          <div className="hidden lg:flex items-center gap-2 bg-emerald-50/80 border border-emerald-100 rounded-full px-4 py-2 text-xs text-emerald-900 font-medium shadow-sm">
+            <span className="italic">“A cleaner home makes a happier tomorrow.”</span>
+            <span className="text-[10px] text-emerald-700 font-bold">— GC HOME+</span>
           </div>
-          <h3 style={{ fontSize: 28, fontWeight: 800, color: '#0F172A', marginTop: 8, margin: '8px 0 0 0' }}>
-            {metrics.activeMaidsCount}
-          </h3>
-          <span style={{ fontSize: 11, color: '#64748B', display: 'block', marginTop: 4 }}>Verified & Available</span>
-        </div>
 
-        <div style={{ background: '#FFFFFF', padding: 20, borderRadius: 16, border: '1px solid #E2E8F0', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: '#64748B' }}>PENDING MAID APPROVALS</span>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: '#FEF3C7', color: '#D97706', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Clock size={20} />
-            </div>
-          </div>
-          <h3 style={{ fontSize: 28, fontWeight: 800, color: '#D97706', marginTop: 8, margin: '8px 0 0 0' }}>
-            {metrics.pendingMaidApprovalsCount}
-          </h3>
-          <span style={{ fontSize: 11, color: '#D97706', fontWeight: 700, display: 'block', marginTop: 4 }}>Requires Document Verification</span>
-        </div>
-
-        <div style={{ background: '#FFFFFF', padding: 20, borderRadius: 16, border: '1px solid #E2E8F0', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: '#64748B' }}>TOTAL REVENUE TODAY</span>
-            <div style={{ width: 36, height: 36, borderRadius: 10, background: '#EBF8F2', color: '#2D8A68', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <DollarSign size={20} />
-            </div>
-          </div>
-          <h3 style={{ fontSize: 28, fontWeight: 800, color: '#1E4E3D', marginTop: 8, margin: '8px 0 0 0' }}>
-            ₹{metrics.totalRevenueToday.toLocaleString()}
-          </h3>
-          <span style={{ fontSize: 11, color: '#166534', fontWeight: 700, display: 'block', marginTop: 4 }}>Gross Bookings</span>
+          {/* New Booking Button */}
+          <button
+            onClick={() => setCreateBookingModalOpen(true)}
+            className="bg-[#043927] hover:bg-[#064e3b] text-white font-extrabold px-4 py-2.5 rounded-xl text-xs flex items-center gap-2 shadow-md cursor-pointer transition-all active:scale-[0.99]"
+          >
+            <Plus className="w-4 h-4" />
+            <span>New Booking</span>
+          </button>
         </div>
       </div>
 
-      {/* Two Column Layout */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-        {/* Pending Maid Approvals Section */}
-        <div style={{ background: '#FFFFFF', padding: 20, borderRadius: 16, border: '1px solid #E2E8F0' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <h3 style={{ fontSize: 16, fontWeight: 800, color: '#0F172A', margin: 0 }}>Pending Maid Partner Approvals</h3>
-            <button
-              onClick={() => setCurrentTab('maids')}
-              style={{ background: 'none', border: 'none', color: '#2D8A68', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
-            >
-              View All ({pendingMaids.length}) →
-            </button>
+      {/* 4 KPI Cards Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Total Bookings */}
+        <div
+          onClick={() => setCurrentTab('all-bookings')}
+          className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-md transition-all cursor-pointer group"
+        >
+          <div className="flex items-center justify-between">
+            <div className="w-11 h-11 rounded-full bg-[#E8F5E9] text-[#043927] flex items-center justify-center">
+              <Calendar className="w-5 h-5" />
+            </div>
+            <span className="text-xs font-bold text-emerald-600 flex items-center gap-0.5">
+              <ArrowUpRight className="w-3.5 h-3.5" /> Live
+            </span>
           </div>
-
-          {pendingMaids.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '30px 10px', color: '#94A3B8' }}>
-              <CheckCircle2 size={36} style={{ margin: '0 auto 8px auto', opacity: 0.5 }} />
-              <p style={{ fontSize: 13, fontWeight: 600 }}>All maid applications have been reviewed!</p>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {pendingMaids.map(maid => (
-                <div key={maid.uid} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 12, border: '1px solid #F1F5F9', borderRadius: 12, background: '#FFFBEB' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <img src={maid.photoUrl} alt={maid.fullName} style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover' }} />
-                    <div>
-                      <h4 style={{ fontSize: 14, fontWeight: 700, color: '#0F172A', margin: 0 }}>{maid.fullName}</h4>
-                      <span style={{ fontSize: 11, color: '#64748B' }}>{maid.serviceArea} • {maid.phone}</span>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setSelectedMaidForReview(maid)}
-                    style={{ padding: '8px 14px', background: '#1E4E3D', color: 'white', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
-                  >
-                    Inspect Documents
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
+          <div className="mt-4">
+            <span className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">
+              Total Bookings
+            </span>
+            <h3 className="text-3xl font-black text-[#0A192F] mt-0.5">
+              {bookings.length}
+            </h3>
+          </div>
         </div>
 
-        {/* Bookings Requiring Maid Assignment */}
-        <div style={{ background: '#FFFFFF', padding: 20, borderRadius: 16, border: '1px solid #E2E8F0' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <h3 style={{ fontSize: 16, fontWeight: 800, color: '#0F172A', margin: 0 }}>Bookings Pending Assignment</h3>
-            <button
-              onClick={() => setCurrentTab('bookings')}
-              style={{ background: 'none', border: 'none', color: '#2D8A68', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
-            >
-              View Ledger →
-            </button>
-          </div>
-
-          {pendingBookings.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '30px 10px', color: '#94A3B8' }}>
-              <CheckCircle2 size={36} style={{ margin: '0 auto 8px auto', opacity: 0.5 }} />
-              <p style={{ fontSize: 13, fontWeight: 600 }}>All customer bookings are assigned to maids!</p>
+        {/* Ongoing Bookings */}
+        <div
+          onClick={() => setCurrentTab('ongoing-bookings')}
+          className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-md transition-all cursor-pointer group"
+        >
+          <div className="flex items-center justify-between">
+            <div className="w-11 h-11 rounded-full bg-sky-50 text-sky-600 flex items-center justify-center">
+              <PlayCircle className="w-5 h-5" />
             </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {pendingBookings.map(b => (
-                <div key={b.bookingId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 12, border: '1px solid #F1F5F9', borderRadius: 12 }}>
-                  <div>
-                    <span style={{ fontSize: 11, fontWeight: 800, color: '#2D8A68' }}>{b.bookingId}</span>
-                    <h4 style={{ fontSize: 14, fontWeight: 700, color: '#0F172A', margin: '2px 0 0 0' }}>{b.serviceName}</h4>
-                    <span style={{ fontSize: 11, color: '#64748B' }}>{b.address.locality} • {b.date} ({b.timeSlot})</span>
+            <span className="text-xs font-bold text-sky-600 flex items-center gap-0.5">
+              <ArrowUpRight className="w-3.5 h-3.5" /> Active
+            </span>
+          </div>
+          <div className="mt-4">
+            <span className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">
+              Ongoing Bookings
+            </span>
+            <h3 className="text-3xl font-black text-[#0A192F] mt-0.5">
+              {ongoingBookings.length}
+            </h3>
+          </div>
+        </div>
+
+        {/* Pending Bookings */}
+        <div
+          onClick={() => setCurrentTab('pending-bookings')}
+          className="bg-white p-5 rounded-2xl border border-amber-200/80 shadow-sm hover:shadow-md transition-all cursor-pointer group bg-amber-50/20"
+        >
+          <div className="flex items-center justify-between">
+            <div className="w-11 h-11 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center">
+              <Clock className="w-5 h-5" />
+            </div>
+            <span className="text-xs font-bold text-amber-600 flex items-center gap-0.5">
+              <ArrowUpRight className="w-3.5 h-3.5" /> Needs Action
+            </span>
+          </div>
+          <div className="mt-4">
+            <span className="text-xs font-extrabold text-amber-700 uppercase tracking-wider">
+              Pending Bookings
+            </span>
+            <h3 className="text-3xl font-black text-amber-600 mt-0.5">
+              {pendingBookings.length}
+            </h3>
+          </div>
+        </div>
+
+        {/* Completed Today */}
+        <div
+          onClick={() => setCurrentTab('completed-bookings')}
+          className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-md transition-all cursor-pointer group"
+        >
+          <div className="flex items-center justify-between">
+            <div className="w-11 h-11 rounded-full bg-purple-50 text-purple-600 flex items-center justify-center">
+              <CheckCircle2 className="w-5 h-5" />
+            </div>
+            <span className="text-xs font-bold text-purple-600 flex items-center gap-0.5">
+              <ArrowUpRight className="w-3.5 h-3.5" /> {metrics.todayBookings}
+            </span>
+          </div>
+          <div className="mt-4">
+            <span className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">
+              Completed Jobs
+            </span>
+            <h3 className="text-3xl font-black text-[#0A192F] mt-0.5">
+              {completedBookings.length}
+            </h3>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Grid: Left 7 Cols / Right 5 Cols */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Left Side (Recent Bookings + Ongoing/Completed cards) */}
+        <div className="lg:col-span-8 flex flex-col gap-6">
+          {/* Recent Bookings Table Card */}
+          <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-extrabold text-[#0A192F]">Recent Bookings</h3>
+              <button
+                onClick={() => setCurrentTab('all-bookings')}
+                className="text-xs font-bold text-[#043927] hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                <span>View All</span>
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="overflow-x-auto">
+              {recentBookings.length === 0 ? (
+                <div className="text-center py-12">
+                  <div className="w-16 h-16 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
+                    <Calendar className="w-8 h-8" />
                   </div>
+                  <p className="text-sm font-bold text-slate-400">No bookings found</p>
+                  <p className="text-xs text-slate-400 mt-1">Create a new booking to get started</p>
                   <button
-                    onClick={() => autoAssignMaid(b.bookingId)}
-                    style={{ padding: '8px 14px', background: '#2D8A68', color: 'white', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+                    onClick={() => setCreateBookingModalOpen(true)}
+                    className="mt-4 bg-[#043927] hover:bg-[#064e3b] text-white font-bold px-4 py-2 rounded-lg text-xs inline-flex items-center gap-2"
                   >
-                    Auto-Assign Nearest
+                    <Plus className="w-4 h-4" />
+                    <span>Create Booking</span>
                   </button>
                 </div>
-              ))}
+              ) : (
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-200/80 text-slate-400 font-extrabold uppercase tracking-wider">
+                      <th className="py-2.5 px-3">#</th>
+                      <th className="py-2.5 px-3">Booking ID</th>
+                      <th className="py-2.5 px-3">Customer</th>
+                      <th className="py-2.5 px-3">Service</th>
+                      <th className="py-2.5 px-3">Date & Time</th>
+                      <th className="py-2.5 px-3">Status</th>
+                      <th className="py-2.5 px-3 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                    {recentBookings.map((b, idx) => (
+                      <tr key={b.bookingId} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="py-3 px-3 font-semibold text-slate-400">{idx + 1}</td>
+                        <td className="py-3 px-3 font-extrabold text-[#043927]">{b.bookingId}</td>
+                        <td className="py-3 px-3">
+                          <div className="flex items-center gap-2">
+                            {b.customerAvatar && (
+                              <img
+                                src={b.customerAvatar}
+                                alt={b.customerName}
+                                className="w-7 h-7 rounded-full object-cover"
+                              />
+                            )}
+                            <div>
+                              <div className="font-bold text-slate-900">{b.customerName}</div>
+                              <div className="text-[10px] text-slate-400">{b.customerPhone}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3 px-3 font-semibold">{b.serviceName}</td>
+                        <td className="py-3 px-3 text-slate-500">
+                          {b.date} <br />
+                          <span className="text-[10px] text-slate-400">{b.timeSlot}</span>
+                        </td>
+                        <td className="py-3 px-3">
+                          {b.status === 'completed' && (
+                            <span className="bg-emerald-50 text-emerald-700 font-bold px-2.5 py-1 rounded-full text-[10px]">
+                              Completed
+                            </span>
+                          )}
+                          {['ongoing', 'in_progress', 'cleaning_started'].includes(b.status) && (
+                            <span className="bg-sky-50 text-sky-700 font-bold px-2.5 py-1 rounded-full text-[10px]">
+                              Ongoing
+                            </span>
+                          )}
+                          {['pending_assignment', 'new'].includes(b.status) && (
+                            <span className="bg-amber-50 text-amber-700 font-bold px-2.5 py-1 rounded-full text-[10px]">
+                              Pending
+                            </span>
+                          )}
+                          {['maid_assigned', 'maid_accepted', 'en_route', 'arrived'].includes(b.status) && (
+                            <span className="bg-purple-50 text-purple-700 font-bold px-2.5 py-1 rounded-full text-[10px]">
+                              Scheduled
+                            </span>
+                          )}
+                          {b.status === 'cancelled' && (
+                            <span className="bg-red-50 text-red-700 font-bold px-2.5 py-1 rounded-full text-[10px]">
+                              Cancelled
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 text-right">
+                          <button
+                            onClick={() => openBookingDetails(b.bookingId)}
+                            className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition-all"
+                          >
+                            View
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
-          )}
+          </div>
+
+          {/* Ongoing & Completed Cards Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            {/* Ongoing Bookings List */}
+            <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-extrabold text-[#0A192F]">Ongoing Bookings</h3>
+                <button
+                  onClick={() => setCurrentTab('ongoing-bookings')}
+                  className="text-xs font-bold text-[#043927] hover:underline flex items-center gap-0.5 cursor-pointer"
+                >
+                  <span>View All</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <div className="flex flex-col gap-3">
+                {ongoingBookings.length === 0 ? (
+                  <div className="text-center py-8">
+                    <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-2">
+                      <PlayCircle className="w-6 h-6" />
+                    </div>
+                    <p className="text-xs font-bold text-slate-400">No ongoing bookings</p>
+                  </div>
+                ) : (
+                  ongoingBookings.slice(0, 3).map(b => (
+                    <div
+                      key={b.bookingId}
+                      className="p-3 bg-slate-50 border border-slate-200/60 rounded-xl flex items-center justify-between"
+                    >
+                      <div className="flex items-center gap-3">
+                        {b.customerAvatar && (
+                          <img
+                            src={b.customerAvatar}
+                            alt={b.customerName}
+                            className="w-10 h-10 rounded-full object-cover"
+                          />
+                        )}
+                        <div>
+                          <div className="text-xs font-extrabold text-slate-900">
+                            {b.customerName}
+                          </div>
+                          <div className="text-[11px] text-slate-500 font-medium">
+                            {b.serviceName}
+                          </div>
+                          <div className="text-[10px] text-emerald-700 font-bold flex items-center gap-1 mt-0.5">
+                            <MapPin className="w-3 h-3" />
+                            <span>{b.address?.locality || 'Location'}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => openBookingDetails(b.bookingId)}
+                        className="bg-emerald-50 hover:bg-emerald-100 text-[#043927] border border-emerald-200 px-3 py-1.5 rounded-lg text-xs font-extrabold cursor-pointer"
+                      >
+                        Track
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Completed Bookings List */}
+            <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-extrabold text-[#0A192F]">Completed Bookings</h3>
+                <button
+                  onClick={() => setCurrentTab('completed-bookings')}
+                  className="text-xs font-bold text-[#043927] hover:underline flex items-center gap-0.5 cursor-pointer"
+                >
+                  <span>View All</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <div className="flex flex-col gap-3">
+                {completedBookings.length === 0 ? (
+                  <div className="text-center py-8">
+                    <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-2">
+                      <CheckCircle2 className="w-6 h-6" />
+                    </div>
+                    <p className="text-xs font-bold text-slate-400">No completed bookings</p>
+                  </div>
+                ) : (
+                  completedBookings.slice(0, 3).map(b => (
+                    <div
+                      key={b.bookingId}
+                      className="p-3 bg-slate-50 border border-slate-200/60 rounded-xl flex items-center justify-between"
+                    >
+                      <div className="flex items-center gap-3">
+                        {b.customerAvatar && (
+                          <img
+                            src={b.customerAvatar}
+                            alt={b.customerName}
+                            className="w-10 h-10 rounded-full object-cover"
+                          />
+                        )}
+                        <div>
+                          <div className="text-xs font-extrabold text-slate-900">
+                            {b.customerName}
+                          </div>
+                          <div className="text-[11px] text-slate-500 font-medium">
+                            {b.serviceName}
+                          </div>
+                          <div className="text-[10px] text-slate-400 font-medium mt-0.5">
+                            {b.completedAt ? new Date(b.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Completed'}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
+                        <CheckCircle2 className="w-4 h-4" />
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Side (Today's Schedule + Quick Actions) */}
+        <div className="lg:col-span-4 flex flex-col gap-6">
+          {/* Today's Schedule Card */}
+          <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-extrabold text-[#0A192F]">Today's Schedule</h3>
+              <button
+                onClick={() => setCurrentTab('all-bookings')}
+                className="text-xs font-bold text-[#043927] hover:underline flex items-center gap-0.5 cursor-pointer"
+              >
+                <span>View Calendar</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Timeline List */}
+            <div className="flex flex-col gap-4 relative pl-4 border-l-2 border-slate-100">
+              {todayBookings.length === 0 ? (
+                <div className="text-center py-8 -ml-4">
+                  <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-2">
+                    <Calendar className="w-6 h-6" />
+                  </div>
+                  <p className="text-xs font-bold text-slate-400">No bookings scheduled for today</p>
+                </div>
+              ) : (
+                todayBookings.slice(0, 6).map((b, idx) => (
+                  <div key={b.bookingId} className="relative">
+                    <span className={`absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full ring-4 ring-white ${
+                      b.status === 'completed' ? 'bg-emerald-500' :
+                      ['ongoing', 'in_progress', 'cleaning_started', 'arrived', 'en_route'].includes(b.status) ? 'bg-sky-500' :
+                      b.status === 'pending_assignment' ? 'bg-amber-500' :
+                      'bg-purple-500'
+                    }`}></span>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-extrabold text-slate-400">{b.timeSlot || 'TBD'}</span>
+                      <span className={`font-bold px-2 py-0.5 rounded-md text-[10px] ${
+                        b.status === 'completed' ? 'bg-emerald-50 text-emerald-700' :
+                        ['ongoing', 'in_progress', 'cleaning_started', 'arrived', 'en_route'].includes(b.status) ? 'bg-sky-50 text-sky-700' :
+                        b.status === 'pending_assignment' ? 'bg-amber-50 text-amber-700' :
+                        'bg-purple-50 text-purple-700'
+                      }`}>
+                        {b.status === 'completed' ? 'Completed' :
+                         ['ongoing', 'in_progress', 'cleaning_started'].includes(b.status) ? 'Ongoing' :
+                         b.status === 'pending_assignment' ? 'Pending' :
+                         ['maid_assigned', 'maid_accepted', 'en_route', 'arrived'].includes(b.status) ? 'Scheduled' :
+                         'Active'}
+                      </span>
+                    </div>
+                    <div className="font-bold text-slate-900 text-xs mt-0.5">{b.customerName}</div>
+                    <div className="text-[11px] text-slate-500">
+                      {b.serviceName} • {b.address?.locality || b.address?.city || 'Location'}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Quick Actions Panel */}
+          <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
+            <h3 className="text-base font-extrabold text-[#0A192F] mb-4">Quick Actions</h3>
+
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => setCreateBookingModalOpen(true)}
+                className="p-4 bg-slate-50 hover:bg-emerald-50/80 border border-slate-200 hover:border-emerald-200 rounded-xl flex flex-col items-center justify-center text-center gap-2 transition-all cursor-pointer group shadow-2xs hover:shadow-sm"
+              >
+                <div className="w-10 h-10 rounded-xl bg-emerald-100 text-[#043927] flex items-center justify-center font-bold group-hover:scale-105 transition-transform">
+                  <Plus className="w-5 h-5" />
+                </div>
+                <span className="text-xs font-extrabold text-slate-800 group-hover:text-[#043927]">
+                  New Booking
+                </span>
+              </button>
+
+              <button
+                onClick={() => setCurrentTab('maids')}
+                className="p-4 bg-slate-50 hover:bg-emerald-50/80 border border-slate-200 hover:border-emerald-200 rounded-xl flex flex-col items-center justify-center text-center gap-2 transition-all cursor-pointer group shadow-2xs hover:shadow-sm"
+              >
+                <div className="w-10 h-10 rounded-xl bg-emerald-100 text-[#043927] flex items-center justify-center font-bold group-hover:scale-105 transition-transform">
+                  <Users className="w-5 h-5" />
+                </div>
+                <span className="text-xs font-extrabold text-slate-800 group-hover:text-[#043927]">
+                  Manage Maids
+                </span>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

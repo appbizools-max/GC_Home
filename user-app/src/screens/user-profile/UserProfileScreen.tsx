@@ -34,16 +34,19 @@ import {
   Plus,
   X,
   Smartphone,
+  ToggleRight,
+  ToggleLeft,
   Check,
 } from 'lucide-react-native';
 export const UserProfileScreen: React.FC = () => {
   const {
     user,
+    maidProfile,
+    toggleMaidOnline,
     logout,
     navigateTo,
     savedAddresses,
     updateUserProfile,
-    loginAsDemoMaid,
   } = useAuth();
   const userName = user?.name && user.name !== 'User' ? user.name : 'Pavani M';
   const userEmail = user?.email || 'pavani@gmail.com';
@@ -109,21 +112,7 @@ export const UserProfileScreen: React.FC = () => {
     ]);
   };
   const handleHelpAndSupport = () => {
-    Alert.alert(
-      'Help & Support',
-      'Need assistance with your booking, account, or cleaner?\n\n• Helpline: 1800-424-663\n• Email: support@gchomeplus.com\n• WhatsApp: +91 98765 43210',
-      [
-        { text: 'Close', style: 'cancel' },
-        {
-          text: 'Call Helpline',
-          onPress: () => {
-            if (Platform.OS !== 'web') {
-              Linking.openURL('tel:1800424663').catch(() => { });
-            }
-          },
-        },
-      ]
-    );
+    navigateTo('help');
   };
   const handlePrivacySecurity = () => {
     Alert.alert(
@@ -194,29 +183,58 @@ export const UserProfileScreen: React.FC = () => {
             </View>
           </View>
         </View>
-        {/* Partner Program Shortcut */}
-        {user?.role === 'customer' && (
+        {/* Approved Maid Partner Toggle Card */}
+        {maidProfile?.status === 'approved' ? (
           <TouchableOpacity
-            onPress={() => navigateTo('become_maid_info')}
-            style={styles.partnerBannerCard}
+            onPress={toggleMaidOnline}
+            style={[
+              styles.partnerBannerCard,
+              { backgroundColor: maidProfile.isOnline ? '#043927' : '#0F172A', marginTop: 12 }
+            ]}
             activeOpacity={0.88}
           >
-            <View style={styles.partnerIconBox}>
-              <Leaf size={18} color="#FFFFFF" />
+            <View style={[styles.partnerIconBox, { backgroundColor: 'rgba(255,255,255,0.18)' }]}>
+              {maidProfile.isOnline ? <ToggleRight size={22} color="#4ADE80" /> : <ToggleLeft size={22} color="#F87171" />}
             </View>
             <View style={{ flex: 1 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Text style={styles.partnerCardTitle}>GC Maid Partner Program</Text>
-                <View style={styles.partnerPill}>
-                  <Text style={styles.partnerPillText}>Earn ₹35k/mo</Text>
-                </View>
+                <Text style={[styles.partnerCardTitle, { color: '#FFFFFF' }]}>
+                  {maidProfile.isOnline ? 'Maid Partner Mode: ONLINE 🟢' : 'Maid Partner Mode: OFFLINE 🔴'}
+                </Text>
               </View>
-              <Text style={styles.partnerCardSub}>
-                Flexible hours, insurance & weekly payouts
+              <Text style={[styles.partnerCardSub, { color: maidProfile.isOnline ? '#A7F3D0' : '#94A3B8' }]}>
+                {maidProfile.isOnline
+                  ? 'Currently active. Tap to go OFFLINE & view Customer App.'
+                  : 'Currently in Customer Mode. Tap to go ONLINE & receive job offers.'}
               </Text>
             </View>
-            <ChevronRight size={18} color="#0D8846" />
+            <ChevronRight size={18} color="#FFFFFF" />
           </TouchableOpacity>
+        ) : (
+          /* Partner Program Shortcut for non-maids */
+          user?.role === 'customer' && (
+            <TouchableOpacity
+              onPress={() => navigateTo('become_maid_info')}
+              style={styles.partnerBannerCard}
+              activeOpacity={0.88}
+            >
+              <View style={styles.partnerIconBox}>
+                <Leaf size={18} color="#FFFFFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={styles.partnerCardTitle}>GC Maid Partner Program</Text>
+                  <View style={styles.partnerPill}>
+                    <Text style={styles.partnerPillText}>Earn ₹35k/mo</Text>
+                  </View>
+                </View>
+                <Text style={styles.partnerCardSub}>
+                  Flexible hours, insurance & weekly payouts
+                </Text>
+              </View>
+              <ChevronRight size={18} color="#0D8846" />
+            </TouchableOpacity>
+          )
         )}
         {/* Menu Items List */}
         <View style={styles.menuContainer}>
@@ -341,26 +359,7 @@ export const UserProfileScreen: React.FC = () => {
             </View>
             <ChevronRight size={18} color="#94A3B8" />
           </TouchableOpacity>
-          <View style={styles.menuDivider} />
 
-          {/* 8. Demo Role Switch */}
-          <TouchableOpacity
-            style={styles.menuItem}
-            onPress={() => {
-              loginAsDemoMaid();
-              Alert.alert('Demo Role Switched', 'Switched to Maid Partner view.');
-            }}
-            activeOpacity={0.7}
-          >
-            <View style={[styles.menuIconBox, { backgroundColor: '#EBF8F2' }]}>
-              <User size={18} color="#1E4E3D" strokeWidth={2.2} />
-            </View>
-            <View style={styles.menuTextCol}>
-              <Text style={styles.menuTitle}>Switch to Maid Mode (Demo)</Text>
-              <Text style={styles.menuSubtitle}>Test maid partner active job interface</Text>
-            </View>
-            <ChevronRight size={18} color="#94A3B8" />
-          </TouchableOpacity>
           <View style={styles.menuDivider} />
           {/* 9. Logout */}
           <TouchableOpacity

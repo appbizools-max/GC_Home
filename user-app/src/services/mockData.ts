@@ -9,7 +9,7 @@ export const SERVICES_SEED: Service[] = [
     startingPrice: 499,
     pricePerRoom: 150,
     estimatedDuration: '1.5 - 2 hrs',
-    imageUrl: 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?auto=format&fit=crop&q=80&w=600',
+    imageUrl: 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?auto=format&fit=crop&q=80&w=800',
     isActive: true,
     features: [
       'Sweeping & Mopping of all rooms',
@@ -26,7 +26,7 @@ export const SERVICES_SEED: Service[] = [
     startingPrice: 899,
     pricePerRoom: 250,
     estimatedDuration: '2.5 - 3 hrs',
-    imageUrl: 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&q=80&w=600',
+    imageUrl: 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&q=80&w=800',
     isActive: true,
     features: [
       'All Basic Clean inclusions',
@@ -44,7 +44,7 @@ export const SERVICES_SEED: Service[] = [
     startingPrice: 1499,
     pricePerRoom: 400,
     estimatedDuration: '4 - 5 hrs',
-    imageUrl: 'https://images.unsplash.com/photo-1628177142898-93e36e4e3a50?auto=format&fit=crop&q=80&w=600',
+    imageUrl: 'https://images.unsplash.com/photo-1628177142898-93e36e4e3a50?auto=format&fit=crop&q=80&w=800',
     isActive: true,
     features: [
       'All Medium Clean inclusions',
@@ -61,7 +61,7 @@ export const SERVICES_SEED: Service[] = [
     description: 'Specialized hard water stain removal, shower partition glass polishing, floor tile scrubbing, and dis-infection.',
     startingPrice: 399,
     estimatedDuration: '1 hr',
-    imageUrl: 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&q=80&w=600',
+    imageUrl: 'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&q=80&w=800',
     isActive: true,
     features: [
       'Hard water scale removal',
@@ -76,7 +76,7 @@ export const SERVICES_SEED: Service[] = [
     description: 'Intensive grease and oil removal from chimney exterior, exhaust fan, stovetop, slab tiles, and sink drainage.',
     startingPrice: 699,
     estimatedDuration: '2 hrs',
-    imageUrl: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&q=80&w=600',
+    imageUrl: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&q=80&w=800',
     isActive: true,
     features: [
       'Exhaust fan & chimney exterior degreasing',
@@ -92,14 +92,14 @@ export const SERVICES_SEED: Service[] = [
     description: 'Deep fabric extraction vacuuming, high-foam stain removal shampooing, deodorization, and allergen treatment.',
     startingPrice: 599,
     estimatedDuration: '1.5 hrs',
-    imageUrl: 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?auto=format&fit=crop&q=80&w=600',
+    imageUrl: 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?auto=format&fit=crop&q=80&w=800',
     isActive: true,
     features: [
       'Deep high-suction dust & mite vacuuming',
       'Eco shampoo foam scrub & spot stain removal',
       'Fabric deodorization & rapid air dry treatment'
     ]
-  }
+  },
 ];
 
 export const INITIAL_BOOKINGS: Booking[] = [

@@ -11,7 +11,8 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "vite"
+    "web": "vite",
+    "test": "vitest --run"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^1.24.0",
@@ -36,6 +37,8 @@
     "postcss": "^8.4.35",
     "tailwindcss": "^3.4.1",
     "typescript": "^5.2.2",
-    "vite": "^5.1.6"
+    "vite": "^5.1.6",
+    "vitest": "^1.6.1"
   }
 }
+

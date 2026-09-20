@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { BackHandler } from 'react-native';
 import { User, MaidProfile, Service, Booking, MaidApplicationStatus, Address } from '../types';
 import { SERVICES_SEED, INITIAL_BOOKINGS, INITIAL_MAID_PROFILE } from '../services/mockData';
+import { authService, ProfileInputData } from '../services/authService';
 import { supabase } from '../config/supabase';
 
 interface HistoryItem {
@@ -19,13 +20,21 @@ interface AuthContextType {
   currentScreen: string;
   selectedService: Service | null;
   selectedBooking: Booking | null;
+  pendingPhoneNumber: string;
   isLoggedIn: boolean;
+  isAuthLoading: boolean;
+  authError: string | null;
   canGoBack: boolean;
   goBack: () => boolean;
+  checkExistingSession: () => Promise<void>;
+  sendLoginOtp: (phoneNumber: string) => Promise<boolean>;
+  verifyLoginOtp: (otpCode: string) => Promise<boolean>;
+  resendLoginOtp: () => Promise<boolean>;
+  completeProfileSetup: (profileData: ProfileInputData) => Promise<boolean>;
   loginWithPhone: (phone: string, name?: string) => void;
   loginAsDemoCustomer: () => void;
-  loginAsDemoMaid: () => void;
   logout: () => void;
+  clearAuthError: () => void;
   navigateTo: (screen: string, payload?: any) => void;
   updateUserProfile: (updates: Partial<User>) => void;
   submitMaidApplication: (applicationData: Partial<MaidProfile>) => void;
@@ -40,27 +49,22 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>({
-    uid: 'cust_curr',
-    name: 'Rahul Verma',
-    phone: '+91 98111 22233',
-    email: 'rahul.v@example.com',
-    role: 'customer',
-    maidApplicationStatus: 'none',
-    createdAt: '2026-09-01',
-  });
+  const [user, setUser] = useState<User | null>(null);
+  const [pendingPhoneNumber, setPendingPhoneNumber] = useState<string>('+91 9849201824');
+  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(false);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   const [maidProfile, setMaidProfile] = useState<MaidProfile | null>(null);
-  const [services] = useState<Service[]>(SERVICES_SEED);
+  const [services, setServices] = useState<Service[]>(SERVICES_SEED);
   const [bookings, setBookings] = useState<Booking[]>(INITIAL_BOOKINGS);
   const [savedAddresses, setSavedAddresses] = useState<Address[]>([
     {
       id: 'addr_1',
       label: 'Home',
-      street: 'Flat 402, Green Glen Layout',
-      locality: 'Kondapur',
-      city: 'Hyderabad',
-      pincode: '500084',
+      street: '123, 4th Cross, HSR Layout',
+      locality: 'HSR Layout',
+      city: 'Bengaluru, Karnataka',
+      pincode: '560102',
     },
     {
       id: 'addr_2',
@@ -71,104 +75,123 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       pincode: '500081',
     },
   ]);
-  const [currentScreen, setCurrentScreen] = useState<string>('customer_home');
+
+  // Initial Screen starts on splash screen
+  const [currentScreen, setCurrentScreen] = useState<string>('splash');
   const [selectedService, setSelectedService] = useState<Service | null>(null);
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+
+  const clearAuthError = () => setAuthError(null);
+
+  /**
+   * Check for existing authenticated user session during splash launch
+   */
+  const checkExistingSession = async () => {
+    try {
+      const session = await authService.getCurrentUser();
+      if (session.user && session.onboardingCompleted) {
+        setUser(session.user);
+        setCurrentScreen('customer_home');
+      } else {
+        setUser(null);
+        setCurrentScreen('login');
+      }
+    } catch {
+      setCurrentScreen('login');
+    }
+  };
+
+  /**
+   * Send 6-digit OTP to mobile number
+   */
+  const sendLoginOtp = async (phoneNumber: string): Promise<boolean> => {
+    setIsAuthLoading(true);
+    setAuthError(null);
+    try {
+      await authService.sendOtp(phoneNumber);
+      setPendingPhoneNumber(phoneNumber);
+      setIsAuthLoading(false);
+      navigateTo('otp_verification');
+      return true;
+    } catch (err: any) {
+      setIsAuthLoading(false);
+      setAuthError(err?.message || 'Failed to send OTP. Please check your number.');
+      return false;
+    }
+  };
+
+  /**
+   * Verify 6-digit OTP code
+   */
+  const verifyLoginOtp = async (otpCode: string): Promise<boolean> => {
+    setIsAuthLoading(true);
+    setAuthError(null);
+    try {
+      const res = await authService.verifyOtp(pendingPhoneNumber, otpCode);
+      setIsAuthLoading(false);
+
+      if (res.isNewUser) {
+        setUser(res.user);
+        navigateTo('profile_setup');
+      } else {
+        setUser(res.user);
+        // Clear history stack to prevent back-nav to auth
+        setHistory([]);
+        setCurrentScreen('customer_home');
+      }
+      return true;
+    } catch (err: any) {
+      setIsAuthLoading(false);
+      setAuthError(err?.message || 'Incorrect OTP. Please check the code and try again.');
+      return false;
+    }
+  };
+
+  /**
+   * Resend OTP code
+   */
+  const resendLoginOtp = async (): Promise<boolean> => {
+    setIsAuthLoading(true);
+    setAuthError(null);
+    try {
+      await authService.sendOtp(pendingPhoneNumber);
+      setIsAuthLoading(false);
+      return true;
+    } catch (err: any) {
+      setIsAuthLoading(false);
+      setAuthError(err?.message || 'Failed to resend OTP.');
+      return false;
+    }
+  };
+
+  /**
+   * Save and complete user profile setup
+   */
+  const completeProfileSetup = async (profileData: ProfileInputData): Promise<boolean> => {
+    setIsAuthLoading(true);
+    setAuthError(null);
+    try {
+      const res = await authService.createProfile(profileData, pendingPhoneNumber);
+      setUser(res.user);
+      if (res.address) {
+        setSavedAddresses(prev => [res.address, ...prev]);
+      }
+      setIsAuthLoading(false);
+      // Clear history stack to finalize onboarding
+      setHistory([]);
+      setCurrentScreen('customer_home');
+      return true;
+    } catch (err: any) {
+      setIsAuthLoading(false);
+      setAuthError(err?.message || "We couldn't save your profile. Please try again.");
+      return false;
+    }
+  };
 
   const updateUserProfile = (updates: Partial<User>) => {
     setUser(prev => (prev ? { ...prev, ...updates } : null));
   };
-
-  useEffect(() => {
-    // Initial Route based on role
-    if (!user) {
-      setCurrentScreen('login');
-      return;
-    }
-
-    if (user.role === 'maid' && maidProfile?.status === 'approved') {
-      setCurrentScreen('maid_home');
-    } else if (user.maidApplicationStatus === 'pending' || user.maidApplicationStatus === 'rejected') {
-      setCurrentScreen('maid_status');
-    } else {
-      setCurrentScreen('customer_home');
-    }
-  }, []);
-
-  // Real-time synchronization with Supabase `maids` table for maid application status updates
-  useEffect(() => {
-    if (!user?.uid) return;
-
-    const checkAndSubscribeMaidStatus = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('maids')
-          .select('*')
-          .eq('id', user.uid)
-          .maybeSingle();
-
-        if (!error && data) {
-          if (data.status === 'approved') {
-            setUser(prev => (prev ? { ...prev, role: 'maid', maidApplicationStatus: 'approved' } : null));
-            setMaidProfile(prev =>
-              prev
-                ? { ...prev, status: 'approved' }
-                : {
-                    ...INITIAL_MAID_PROFILE,
-                    uid: user.uid,
-                    fullName: data.full_name || user.name,
-                    phone: user.phone,
-                    status: 'approved',
-                  }
-            );
-          } else if (data.status === 'rejected') {
-            setUser(prev => (prev ? { ...prev, maidApplicationStatus: 'rejected' } : null));
-            setMaidProfile(prev =>
-              prev
-                ? { ...prev, status: 'rejected', rejectionReason: data.rejection_reason }
-                : null
-            );
-          }
-        }
-      } catch (err) {
-        console.log('Supabase sync skipped:', err);
-      }
-    };
-
-    checkAndSubscribeMaidStatus();
-
-    // Subscribe to Postgres changes on `maids` table for user's UID
-    const channel = supabase
-      .channel(`maid_user_${user.uid}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'maids',
-          filter: `id=eq.${user.uid}`,
-        },
-        payload => {
-          const updatedStatus = payload.new?.status;
-          if (updatedStatus === 'approved') {
-            setUser(prev => (prev ? { ...prev, role: 'maid', maidApplicationStatus: 'approved' } : null));
-            setMaidProfile(prev => (prev ? { ...prev, status: 'approved' } : null));
-            setCurrentScreen('maid_home');
-          } else if (updatedStatus === 'rejected') {
-            setUser(prev => (prev ? { ...prev, maidApplicationStatus: 'rejected' } : null));
-            setMaidProfile(prev =>
-              prev ? { ...prev, status: 'rejected', rejectionReason: payload.new?.rejection_reason } : null
-            );
-            setCurrentScreen('maid_status');
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [user?.uid]);
 
   const loginWithPhone = (phone: string, name: string = 'User') => {
     const newUser: User = {
@@ -181,6 +204,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     setUser(newUser);
     setMaidProfile(null);
+    setHistory([]);
     setCurrentScreen('customer_home');
   };
 
@@ -192,42 +216,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       email: 'rahul.v@example.com',
       role: 'customer',
       maidApplicationStatus: 'none',
+      profilePhoto: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
       createdAt: '2026-09-01',
     };
     setUser(customerUser);
     setMaidProfile(null);
+    setHistory([]);
     setCurrentScreen('customer_home');
   };
 
-  const loginAsDemoMaid = () => {
-    const maidUser: User = {
-      uid: 'maid_curr',
-      name: 'Sunita Devi',
-      phone: '+91 98492 01824',
-      email: 'sunita.d@gchomeplus.com',
-      role: 'maid',
-      maidApplicationStatus: 'approved',
-      createdAt: '2026-08-15',
-    };
-    const approvedProfile: MaidProfile = {
-      ...INITIAL_MAID_PROFILE,
-      uid: 'maid_curr',
-      fullName: 'Sunita Devi',
-      phone: '+91 98492 01824',
-      status: 'approved',
-      isOnline: true,
-      rating: 4.8,
-      completedJobsCount: 42,
-      photoUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=400',
-    };
-    setUser(maidUser);
-    setMaidProfile(approvedProfile);
-    setCurrentScreen('maid_home');
-  };
-
-  const [history, setHistory] = useState<HistoryItem[]>([]);
-
-  const logout = () => {
+  const logout = async () => {
+    await authService.logout();
     setUser(null);
     setMaidProfile(null);
     setHistory([]);
@@ -237,15 +236,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const navigateTo = (screen: string, payload?: any) => {
     if (screen === currentScreen) return;
 
-    // Push current screen to history stack
-    setHistory(prev => [
-      ...prev,
-      {
-        screen: currentScreen,
-        selectedService,
-        selectedBooking,
-      },
-    ]);
+    // Push current screen to history stack (except transient screens like splash)
+    if (currentScreen !== 'splash') {
+      setHistory(prev => [
+        ...prev,
+        {
+          screen: currentScreen,
+          selectedService,
+          selectedBooking,
+        },
+      ]);
+    }
 
     if (payload?.service) setSelectedService(payload.service);
     if (payload?.booking) setSelectedBooking(payload.booking);
@@ -262,19 +263,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return true;
     }
 
-    // If no history but on secondary screen, fallback to home
-    const isMaid = user?.role === 'maid' && maidProfile?.status === 'approved';
-    const homeScreen = isMaid ? 'maid_home' : 'customer_home';
-
-    if (currentScreen !== homeScreen && currentScreen !== 'login') {
-      setCurrentScreen(homeScreen);
+    // Onboarding back behavior
+    if (currentScreen === 'otp_verification') {
+      setCurrentScreen('login');
+      return true;
+    }
+    if (currentScreen === 'profile_setup') {
+      setCurrentScreen('otp_verification');
       return true;
     }
 
-    return false; // Root screen: allow default Android minimize/exit
+    if (currentScreen !== 'customer_home' && currentScreen !== 'login' && currentScreen !== 'splash') {
+      setCurrentScreen('customer_home');
+      return true;
+    }
+
+    return false;
   };
 
-  // Global Android Hardware Back Button listener
+  // Hardware Back Button listener
   useEffect(() => {
     const onHardwareBack = () => {
       return goBack();
@@ -288,9 +295,101 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => backHandler.remove();
   }, [history, currentScreen, user, maidProfile, selectedService, selectedBooking]);
 
-  const submitMaidApplication = (data: Partial<MaidProfile>) => {
-    if (!user) return;
+  // Load services and bookings from Supabase DB with Realtime sync
+  useEffect(() => {
+    const fetchServices = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('services')
+          .select('*')
+          .eq('is_active', true)
+          .order('display_order', { ascending: true });
 
+        if (!error && data && data.length > 0) {
+          const mappedServices: Service[] = data.map((row: any) => ({
+            serviceId: row.id,
+            name: row.name,
+            category: row.category,
+            description: row.description || '',
+            startingPrice: Number(row.starting_price || 0),
+            pricePerRoom: row.price_per_room ? Number(row.price_per_room) : undefined,
+            estimatedDuration: row.estimated_duration || '',
+            imageUrl: row.image_url || '',
+            isActive: Boolean(row.is_active),
+            features: Array.isArray(row.features) ? row.features : [],
+          }));
+          setServices(mappedServices);
+        }
+      } catch (err) {
+        console.log('Error loading services from Supabase:', err);
+      }
+    };
+
+    const fetchSupabaseBookings = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('bookings')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (!error && data && data.length > 0) {
+          const mappedBookings: Booking[] = data.map((row: any) => ({
+            bookingId: row.booking_code || row.id,
+            customerId: row.customer_id || 'cust_curr',
+            customerName: row.customer_name || 'Customer',
+            customerPhone: row.customer_phone || '+91 98000 00000',
+            serviceId: row.service_id || 'srv_1',
+            serviceName: row.service_name || 'Cleaning Service',
+            servicePrice: Number(row.service_price || row.total_amount || 799),
+            totalAmount: Number(row.total_amount || row.service_price || 799),
+            address: {
+              id: 'addr_' + (row.booking_code || row.id),
+              label: row.address_label || 'Home',
+              street: row.address_street || '',
+              locality: row.address_locality || '',
+              city: row.address_city || 'Bengaluru',
+              pincode: row.address_pincode || '560102',
+            },
+            date: row.scheduled_date || new Date().toISOString().split('T')[0],
+            timeSlot: row.time_slot || '10:00 AM',
+            specialInstructions: row.special_instructions,
+            status: (row.status as any) || 'pending_assignment',
+            assignedMaidId: row.assigned_maid_id,
+            assignedMaidName: row.assigned_maid_name,
+            assignedMaidPhone: row.assigned_maid_phone,
+            assignedMaidPhoto: row.assigned_maid_photo_url,
+            paymentMethod: (row.payment_method as any) || 'upi',
+            paymentStatus: (row.payment_status as any) || 'paid',
+            startOtp: row.start_otp || '1234',
+            createdAt: row.created_at ? row.created_at.substring(0, 16).replace('T', ' ') : new Date().toISOString(),
+          }));
+          setBookings(mappedBookings);
+        }
+      } catch (err) {
+        console.log('Error loading bookings from Supabase:', err);
+      }
+    };
+
+    fetchServices();
+    fetchSupabaseBookings();
+
+    const channel = supabase
+      .channel('user_app_realtime_channel')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, () => {
+        fetchSupabaseBookings();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'services' }, () => {
+        fetchServices();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const submitMaidApplication = async (data: Partial<MaidProfile>) => {
+    if (!user) return;
     const newProfile: MaidProfile = {
       ...INITIAL_MAID_PROFILE,
       uid: user.uid,
@@ -298,7 +397,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       phone: user.phone,
       email: data.email || user.email,
       address: data.address || '',
-      serviceArea: data.serviceArea || 'Bellandur / HSR Layout',
+      serviceArea: data.serviceArea || 'HSR Layout / Bellandur',
       serviceRadiusKm: data.serviceRadiusKm || 5,
       emergencyContact: data.emergencyContact || '',
       healthSafetyDecl: data.healthSafetyDecl || true,
@@ -306,7 +405,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       status: 'pending',
       appliedAt: new Date().toISOString().split('T')[0],
     };
-
     setMaidProfile(newProfile);
     setUser(prev => (prev ? { ...prev, maidApplicationStatus: 'pending' } : null));
     setCurrentScreen('maid_status');
@@ -314,44 +412,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const simulateAdminApproval = async (approved: boolean, reason?: string) => {
     if (!user || !maidProfile) return;
-
     if (approved) {
-      const updatedProfile: MaidProfile = {
-        ...maidProfile,
-        status: 'approved',
-        approvedAt: new Date().toISOString().split('T')[0],
-      };
-      setMaidProfile(updatedProfile);
+      setMaidProfile({ ...maidProfile, status: 'approved' });
       setUser(prev => (prev ? { ...prev, role: 'maid', maidApplicationStatus: 'approved' } : null));
       setCurrentScreen('maid_home');
-
-      try {
-        await supabase.from('maids').update({ status: 'approved', approved_at: new Date().toISOString() }).eq('id', user.uid);
-      } catch (err) {
-        console.log('Supabase sync err:', err);
-      }
     } else {
-      const updatedProfile: MaidProfile = {
-        ...maidProfile,
-        status: 'rejected',
-        rejectionReason: reason || 'Document image was unreadable. Please re-upload clear government ID.',
-      };
-      setMaidProfile(updatedProfile);
+      setMaidProfile({ ...maidProfile, status: 'rejected', rejectionReason: reason });
       setUser(prev => (prev ? { ...prev, maidApplicationStatus: 'rejected' } : null));
       setCurrentScreen('maid_status');
-
-      try {
-        await supabase.from('maids').update({ status: 'rejected', rejection_reason: reason }).eq('id', user.uid);
-      } catch (err) {
-        console.log('Supabase sync err:', err);
-      }
     }
   };
 
   const createBooking = (bookingData: Omit<Booking, 'bookingId' | 'status' | 'createdAt' | 'customerId'>): Booking => {
+    const generatedCode = 'GC-' + new Date().toISOString().slice(0, 10).replace(/-/g, '') + '-' + Math.floor(100 + Math.random() * 900);
     const newBooking: Booking = {
       ...bookingData,
-      bookingId: 'BK-' + Math.floor(1000 + Math.random() * 9000),
+      bookingId: generatedCode,
       customerId: user?.uid || 'cust_anon',
       status: 'pending_assignment',
       createdAt: new Date().toISOString().replace('T', ' ').substring(0, 16),
@@ -360,6 +436,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     setBookings(prev => [newBooking, ...prev]);
     setSelectedBooking(newBooking);
+
+    const scheduledDate = newBooking.date && /^\d{4}-\d{2}-\d{2}$/.test(newBooking.date)
+      ? newBooking.date
+      : new Date().toISOString().split('T')[0];
+
+    supabase.from('bookings').insert([
+      {
+        booking_code: generatedCode,
+        customer_id: user?.uid && /^[0-9a-f-]{36}$/.test(user.uid) ? user.uid : null,
+        customer_name: newBooking.customerName || user?.name || 'Customer',
+        customer_phone: newBooking.customerPhone || user?.phone || '+91 98000 00000',
+        service_id: newBooking.serviceId && /^[0-9a-f-]{36}$/.test(newBooking.serviceId) ? newBooking.serviceId : null,
+        service_name: newBooking.serviceName,
+        service_price: newBooking.servicePrice,
+        total_amount: newBooking.totalAmount || newBooking.servicePrice,
+        address_label: newBooking.address?.label || 'Home',
+        address_street: newBooking.address?.street || '',
+        address_locality: newBooking.address?.locality || '',
+        address_city: newBooking.address?.city || 'Bengaluru',
+        address_pincode: newBooking.address?.pincode || '',
+        scheduled_date: scheduledDate,
+        time_slot: newBooking.timeSlot,
+        status: 'pending_assignment',
+        payment_method: 'online',
+        payment_status: 'paid',
+        start_otp: newBooking.startOtp,
+      },
+    ]).then(({ error }) => {
+      if (error) console.log('Supabase booking insert notice:', error.message);
+    });
+
     return newBooking;
   };
 
@@ -374,7 +481,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const toggleMaidOnline = () => {
     if (maidProfile) {
-      setMaidProfile({ ...maidProfile, isOnline: !maidProfile.isOnline });
+      const nextOnlineState = !maidProfile.isOnline;
+      setMaidProfile({ ...maidProfile, isOnline: nextOnlineState });
+
+      // Update Supabase database
+      if (maidProfile.uid) {
+        supabase
+          .from('maid_profiles')
+          .update({ is_online: nextOnlineState })
+          .eq('id', maidProfile.uid)
+          .then(({ error }) => {
+            if (error) console.log('Notice updating is_online in Supabase:', error.message);
+          });
+      }
+
+      // Dynamic navigation & role switching:
+      if (nextOnlineState) {
+        // Going ONLINE -> Switch to Maid Partner Console
+        setUser(prev => prev ? { ...prev, role: 'maid' } : null);
+        setHistory([]);
+        setCurrentScreen('maid_home');
+      } else {
+        // Going OFFLINE -> Switch to Customer App UI
+        setUser(prev => prev ? { ...prev, role: 'customer' } : null);
+        setHistory([]);
+        setCurrentScreen('customer_home');
+      }
     }
   };
 
@@ -405,14 +537,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         currentScreen,
         selectedService,
         selectedBooking,
+        pendingPhoneNumber,
         isLoggedIn: !!user,
+        isAuthLoading,
+        authError,
+        canGoBack: history.length > 0,
+        goBack,
+        checkExistingSession,
+        sendLoginOtp,
+        verifyLoginOtp,
+        resendLoginOtp,
+        completeProfileSetup,
         loginWithPhone,
         loginAsDemoCustomer,
-        loginAsDemoMaid,
         logout,
+        clearAuthError,
         navigateTo,
-        goBack,
-        canGoBack: history.length > 0,
         updateUserProfile,
         submitMaidApplication,
         createBooking,

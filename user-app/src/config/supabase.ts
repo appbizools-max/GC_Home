@@ -8,10 +8,19 @@ declare const process: {
   };
 };
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://zpkukinayxcbwyklfdqn.supabase.co';
+const DEFAULT_SUPABASE_URL = 'https://zpkukinayxcbwyklfdqn.supabase.co';
+const DEFAULT_SUPABASE_ANON_KEY =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inpwa3VraW5heXhjYnd5a2xmZHFuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk1MjgzOTMsImV4cCI6MjEwNTEwNDM5M30.Pb-lFEOs94TwjDtiih7F8CcxAjEAt1Q4kDbsQaTe-O4';
+
+const supabaseUrl =
+  typeof process !== 'undefined' && process.env && process.env.EXPO_PUBLIC_SUPABASE_URL
+    ? process.env.EXPO_PUBLIC_SUPABASE_URL
+    : DEFAULT_SUPABASE_URL;
+
 const supabaseAnonKey =
-  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJpYXQiOjE2MDAwMDAwMDAsImV4cCI6MTkwMDAwMDAwMH0.dummy_fallback_key';
+  typeof process !== 'undefined' && process.env && process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
+    ? process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
+    : DEFAULT_SUPABASE_ANON_KEY;
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {

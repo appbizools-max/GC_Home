@@ -1,156 +1,222 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAdmin } from '../../context/AdminContext';
-import { Clock, CheckCircle2, Star, FileText } from 'lucide-react';
-import { DocumentModal } from '../../components/DocumentModal';
+import { AllMaidsTab } from './AllMaidsTab';
+import { PendingMaidDetailsTab } from './PendingMaidDetailsTab';
+import { PendingKYCTab } from './PendingKYCTab';
+import { ApprovedMaidsTab } from './ApprovedMaidsTab';
+import { UnapprovedMaidsTab } from './UnapprovedMaidsTab';
+import { ActiveMaidsTab } from './ActiveMaidsTab';
+import { InactiveMaidsTab } from './InactiveMaidsTab';
+import { DocumentsManagementTab } from './DocumentsManagementTab';
+import { PerformanceTab } from './PerformanceTab';
+import { Plus, Users, Clock, ShieldCheck, CheckCircle2, XCircle, Wifi, FileText, TrendingUp } from 'lucide-react';
 
 export const MaidManagementPage: React.FC = () => {
-  const { maids, setSelectedMaidForReview } = useAdmin();
-  const [activeSubTab, setActiveSubTab] = useState<'pending' | 'approved' | 'all'>('pending');
+  const { maids, currentTab } = useAdmin();
 
-  const pendingList = maids.filter(m => m.status === 'pending');
-  const approvedList = maids.filter(m => m.status === 'approved');
+  // Selected sub-tab mapping with currentTab sync
+  const [activeSubTab, setActiveSubTab] = useState<
+    'all' | 'pending-details' | 'pending-kyc' | 'approved' | 'unapproved' | 'active' | 'inactive' | 'documents' | 'performance'
+  >('all');
 
-  const filtered = maids.filter(m => {
-    if (activeSubTab === 'pending') return m.status === 'pending';
-    if (activeSubTab === 'approved') return m.status === 'approved';
-    return true;
-  });
+  useEffect(() => {
+    if (currentTab === 'pending-maid-details') setActiveSubTab('pending-details');
+    else if (currentTab === 'pending-kyc') setActiveSubTab('pending-kyc');
+    else if (currentTab === 'approved-maids') setActiveSubTab('approved');
+    else if (currentTab === 'unapproved-maids') setActiveSubTab('unapproved');
+    else if (currentTab === 'active-maids') setActiveSubTab('active');
+    else if (currentTab === 'inactive-maids') setActiveSubTab('inactive');
+    else if (currentTab === 'documents') setActiveSubTab('documents');
+    else if (currentTab === 'performance') setActiveSubTab('performance');
+    else setActiveSubTab('all');
+  }, [currentTab]);
+
+  // Calculate Badge Counts dynamically from live database
+  const totalCount = maids.length;
+  const pendingDetailsCount = maids.filter(m => m.status === 'pending' && m.kycStatus === 'incomplete').length;
+  const pendingKycCount = maids.filter(m => m.status === 'pending' || m.kycStatus === 'under_review').length;
+  const approvedCount = maids.filter(m => m.status === 'approved').length;
+  const unapprovedCount = maids.filter(m => m.status === 'rejected').length;
+  const activeCount = maids.filter(m => m.status === 'approved' && m.isOnline).length;
+  const inactiveCount = maids.filter(m => m.status === 'approved' && !m.isOnline).length;
+
+  const renderSubView = () => {
+    switch (activeSubTab) {
+      case 'all':
+        return <AllMaidsTab />;
+      case 'pending-details':
+        return <PendingMaidDetailsTab />;
+      case 'pending-kyc':
+        return <PendingKYCTab />;
+      case 'approved':
+        return <ApprovedMaidsTab />;
+      case 'unapproved':
+        return <UnapprovedMaidsTab />;
+      case 'active':
+        return <ActiveMaidsTab />;
+      case 'inactive':
+        return <InactiveMaidsTab />;
+      case 'documents':
+        return <DocumentsManagementTab />;
+      case 'performance':
+        return <PerformanceTab />;
+      default:
+        return <AllMaidsTab />;
+    }
+  };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      <div style={{ display: 'flex', gap: 10, background: '#FFFFFF', padding: 12, borderRadius: 12, border: '1px solid #E2E8F0' }}>
+    <div className="flex flex-col gap-6 font-sans">
+      {/* Top Header Bar matching Screenshot 1 & 4 */}
+      {activeSubTab !== 'documents' && activeSubTab !== 'performance' && (
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+              Maid Partners
+            </h1>
+            <p className="text-xs text-slate-500 font-medium mt-0.5">
+              Manage all registered maids, view status, performance, documents and approve new registrations.
+            </p>
+          </div>
+
+          <button
+            onClick={() => alert('Add Maid Partner flow initialized.')}
+            className="px-4 py-2.5 bg-[#043927] hover:bg-[#064e3b] text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-md self-start md:self-auto"
+          >
+            <Plus className="w-4 h-4" /> Add Maid Partner
+          </button>
+        </div>
+      )}
+
+      {/* Horizontal Pill Navigation Bar matching all reference screens */}
+      <div className="bg-white p-1.5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-1.5 overflow-x-auto">
         <button
-          onClick={() => setActiveSubTab('pending')}
-          style={{
-            padding: '8px 16px',
-            borderRadius: 10,
-            border: 'none',
-            fontSize: 13,
-            fontWeight: 700,
-            cursor: 'pointer',
-            background: activeSubTab === 'pending' ? '#FEF3C7' : 'transparent',
-            color: activeSubTab === 'pending' ? '#D97706' : '#64748B',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6
-          }}
+          onClick={() => setActiveSubTab('all')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            activeSubTab === 'all'
+              ? 'bg-[#043927] text-white shadow-sm'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
         >
-          <Clock size={16} /> Pending Approvals ({pendingList.length})
+          <Users className="w-3.5 h-3.5" /> All Maids
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+            activeSubTab === 'all' ? 'bg-emerald-800 text-white' : 'bg-slate-100 text-slate-700'
+          }`}>
+            {totalCount}
+          </span>
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab('pending-details')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            activeSubTab === 'pending-details'
+              ? 'bg-amber-500 text-slate-950 shadow-sm font-black'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <Clock className="w-3.5 h-3.5" /> Pending Maid Details
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-900">
+            {pendingDetailsCount}
+          </span>
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab('pending-kyc')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            activeSubTab === 'pending-kyc'
+              ? 'bg-amber-600 text-white shadow-sm'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <ShieldCheck className="w-3.5 h-3.5" /> Pending KYC
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-900">
+            {pendingKycCount}
+          </span>
         </button>
 
         <button
           onClick={() => setActiveSubTab('approved')}
-          style={{
-            padding: '8px 16px',
-            borderRadius: 10,
-            border: 'none',
-            fontSize: 13,
-            fontWeight: 700,
-            cursor: 'pointer',
-            background: activeSubTab === 'approved' ? '#DCFCE7' : 'transparent',
-            color: activeSubTab === 'approved' ? '#166534' : '#64748B',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6
-          }}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            activeSubTab === 'approved'
+              ? 'bg-emerald-700 text-white shadow-sm'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
         >
-          <CheckCircle2 size={16} /> Active Roster ({approvedList.length})
+          <CheckCircle2 className="w-3.5 h-3.5" /> Approved Maids
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+            activeSubTab === 'approved' ? 'bg-emerald-900 text-white' : 'bg-emerald-100 text-emerald-800'
+          }`}>
+            {approvedCount}
+          </span>
         </button>
 
         <button
-          onClick={() => setActiveSubTab('all')}
-          style={{
-            padding: '8px 16px',
-            borderRadius: 10,
-            border: 'none',
-            fontSize: 13,
-            fontWeight: 700,
-            cursor: 'pointer',
-            background: activeSubTab === 'all' ? '#F1F5F9' : 'transparent',
-            color: activeSubTab === 'all' ? '#0F172A' : '#64748B'
-          }}
+          onClick={() => setActiveSubTab('unapproved')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            activeSubTab === 'unapproved'
+              ? 'bg-rose-700 text-white shadow-sm'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
         >
-          All Applications ({maids.length})
+          <XCircle className="w-3.5 h-3.5" /> Unapproved Maids
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-100 text-rose-800">
+            {unapprovedCount}
+          </span>
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab('active')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            activeSubTab === 'active'
+              ? 'bg-emerald-800 text-white shadow-sm'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <Wifi className="w-3.5 h-3.5" /> Active Maids
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800">
+            {activeCount}
+          </span>
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab('inactive')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            activeSubTab === 'inactive'
+              ? 'bg-slate-800 text-white shadow-sm'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          Inactive Maids
+          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-slate-100 text-slate-700">
+            {inactiveCount}
+          </span>
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab('documents')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            activeSubTab === 'documents'
+              ? 'bg-emerald-900 text-white shadow-sm'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <FileText className="w-3.5 h-3.5" /> Documents
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab('performance')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+            activeSubTab === 'performance'
+              ? 'bg-emerald-900 text-white shadow-sm'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <TrendingUp className="w-3.5 h-3.5" /> Performance
         </button>
       </div>
 
-      <div className="table-container">
-        <table>
-          <thead>
-            <tr>
-              <th>Maid Partner</th>
-              <th>Contact</th>
-              <th>Primary Locality</th>
-              <th>Status</th>
-              <th>Rating & Jobs</th>
-              <th>Applied Date</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map(m => (
-              <tr key={m.uid}>
-                <td>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <img src={m.photoUrl} alt={m.fullName} style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover' }} />
-                    <div>
-                      <strong style={{ fontSize: 14, color: '#0F172A', display: 'block' }}>{m.fullName}</strong>
-                      <span style={{ fontSize: 11, color: '#64748B' }}>Aadhaar: Verified</span>
-                    </div>
-                  </div>
-                </td>
-                <td style={{ fontSize: 13 }}>{m.phone}</td>
-                <td style={{ fontSize: 13 }}>{m.serviceArea} ({m.serviceRadiusKm} km)</td>
-                <td>
-                  <span style={{
-                    padding: '4px 10px',
-                    borderRadius: 20,
-                    fontSize: 11,
-                    fontWeight: 700,
-                    background: m.status === 'approved' ? '#DCFCE7' : (m.status === 'pending' ? '#FEF3C7' : '#FEE2E2'),
-                    color: m.status === 'approved' ? '#166534' : (m.status === 'pending' ? '#92400E' : '#991B1B'),
-                    textTransform: 'capitalize'
-                  }}>
-                    {m.status}
-                  </span>
-                </td>
-                <td>
-                  {m.status === 'approved' ? (
-                    <div style={{ fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <Star size={14} color="#F59E0B" fill="#F59E0B" /> {m.rating} ({m.completedJobsCount} jobs)
-                    </div>
-                  ) : (
-                    <span style={{ fontSize: 11, color: '#94A3B8' }}>N/A</span>
-                  )}
-                </td>
-                <td style={{ fontSize: 12, color: '#64748B' }}>{m.appliedAt}</td>
-                <td>
-                  <button
-                    onClick={() => setSelectedMaidForReview(m)}
-                    style={{
-                      padding: '6px 12px',
-                      background: m.status === 'pending' ? '#1E4E3D' : '#F1F5F9',
-                      color: m.status === 'pending' ? 'white' : '#334155',
-                      border: 'none',
-                      borderRadius: 8,
-                      fontSize: 12,
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 4
-                    }}
-                  >
-                    <FileText size={14} /> Review Documents
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <DocumentModal />
+      {/* Render Active Sub-View */}
+      {renderSubView()}
     </div>
   );
 };

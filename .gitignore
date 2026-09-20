@@ -22,6 +22,10 @@ pnpm-debug.log*
 .env
 .env.local
 .env.*.local
+admin-panel/.env
+admin-panel/.env.local
+user-app/.env
+user-app/.env.local
 
 # Editor directories and files
 .vscode/*

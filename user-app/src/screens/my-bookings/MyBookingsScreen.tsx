@@ -8,6 +8,9 @@ import {
   Image,
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
+import { useBooking } from '../../context/BookingContext';
+import { AppLogo } from '../../components/ui/AppLogo';
+import { resolveImageSource } from '../../utils/imageUtils';
 import {
   ArrowLeft,
   Calendar,
@@ -15,194 +18,187 @@ import {
   MapPin,
   ChevronRight,
   ShieldCheck,
-  CheckCircle,
+  CheckCircle2,
   Navigation,
+  RotateCcw,
+  Star,
+  Sparkles,
 } from 'lucide-react-native';
-import { Booking, BookingStatus } from '../../types';
+
+type BookingTabType = 'upcoming' | 'ongoing' | 'completed' | 'cancelled';
 
 export const MyBookingsScreen: React.FC = () => {
-  const { bookings, user, navigateTo, goBack } = useAuth();
-  const [filter, setFilter] = useState<'all' | 'active' | 'completed'>('all');
+  const { navigateTo } = useAuth();
+  const { bookings, selectBookingForTracking } = useBooking();
 
-  // Filter bookings belonging to customer (or demo customer)
-  const customerBookings = bookings.filter(
-    b => b.customerId === user?.uid || user?.role === 'customer'
-  );
+  const [activeTab, setActiveTab] = useState<BookingTabType>('upcoming');
 
-  const filtered = customerBookings.filter(b => {
-    if (filter === 'active') {
-      return ['pending_assignment', 'maid_assigned', 'maid_accepted', 'in_progress'].includes(
-        b.status
+  const filteredBookings = bookings.filter(b => {
+    if (activeTab === 'upcoming') {
+      return b.currentStage === 'confirmed' || b.currentStage === 'assigned';
+    }
+    if (activeTab === 'ongoing') {
+      return (
+        b.currentStage === 'on_the_way' ||
+        b.currentStage === 'arrived' ||
+        b.currentStage === 'cleaning'
       );
     }
-    if (filter === 'completed') {
-      return b.status === 'completed';
+    if (activeTab === 'completed') {
+      return b.currentStage === 'completed';
     }
-    return true;
+    return false;
   });
 
-  const getStatusBadge = (status: BookingStatus) => {
-    switch (status) {
-      case 'pending_assignment':
-        return { label: 'Pending Assignment', bg: '#FEF3C7', color: '#92400E' };
-      case 'maid_assigned':
-        return { label: 'Maid Assigned', bg: '#E0F2FE', color: '#075985' };
-      case 'maid_accepted':
-        return { label: 'Maid Confirmed', bg: '#DCFCE7', color: '#166534' };
-      case 'in_progress':
-        return { label: 'In Progress', bg: '#F3E8FF', color: '#6B21A8' };
-      case 'completed':
-        return { label: 'Completed', bg: '#DCFCE7', color: '#15803D' };
-      case 'cancelled':
-        return { label: 'Cancelled', bg: '#FEE2E2', color: '#991B1B' };
-      default:
-        return { label: status, bg: '#F1F5F9', color: '#475569' };
-    }
+  const handleTrackBooking = (bookingId: string) => {
+    selectBookingForTracking(bookingId);
+    navigateTo('booking-tracking');
+  };
+
+  const handleRateBooking = (bookingId: string) => {
+    selectBookingForTracking(bookingId);
+    navigateTo('rating-review');
   };
 
   return (
-    <View style={styles.container}>
-      {/* ── Top Bar ── */}
-      <View style={styles.headerBar}>
+    <View style={styles.safeContainer}>
+      {/* Header */}
+      <View style={styles.header}>
         <TouchableOpacity
-          onPress={() => goBack()}
-          style={styles.backButton}
+          style={styles.backBtn}
+          onPress={() => navigateTo('home')}
           activeOpacity={0.7}
         >
-          <ArrowLeft size={22} color="#0F172A" />
+          <ArrowLeft size={20} color="#10243A" />
         </TouchableOpacity>
-        <View style={styles.headerTextGroup}>
-          <Text style={styles.headerTitle}>My Bookings</Text>
-          <Text style={styles.headerSubtitle}>Track appointment history & live progress</Text>
-        </View>
+
+        <AppLogo size="sm" showTagline={true} align="left" />
+
+        <View style={{ width: 36 }} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* ── Filter Tabs ── */}
-        <View style={styles.tabRow}>
-          {[
-            { id: 'all', label: 'All Bookings' },
-            { id: 'active', label: 'Active' },
-            { id: 'completed', label: 'Completed' },
-          ].map(tab => {
-            const isSelected = filter === tab.id;
-            return (
-              <TouchableOpacity
-                key={tab.id}
-                onPress={() => setFilter(tab.id as any)}
-                style={[styles.tabButton, isSelected && styles.tabButtonActive]}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.tabText, isSelected && styles.tabTextActive]}>
-                  {tab.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+      {/* 4 Tabs: Upcoming, Ongoing, Completed, Cancelled */}
+      <View style={styles.tabsRow}>
+        {[
+          { id: 'upcoming', label: 'Upcoming' },
+          { id: 'ongoing', label: 'Ongoing' },
+          { id: 'completed', label: 'Completed' },
+          { id: 'cancelled', label: 'Cancelled' },
+        ].map(tab => {
+          const isSelected = activeTab === tab.id;
+          return (
+            <TouchableOpacity
+              key={tab.id}
+              style={[styles.tabButton, isSelected && styles.tabButtonSelected]}
+              onPress={() => setActiveTab(tab.id as BookingTabType)}
+              activeOpacity={0.8}
+            >
+              <Text style={[styles.tabText, isSelected && styles.tabTextSelected]}>
+                {tab.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
 
-        {/* ── Bookings List ── */}
-        {filtered.length === 0 ? (
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {filteredBookings.length === 0 ? (
           <View style={styles.emptyCard}>
-            <Calendar size={42} color="#94A3B8" style={{ marginBottom: 12, opacity: 0.6 }} />
-            <Text style={styles.emptyTitle}>No bookings found</Text>
-            <Text style={styles.emptySubtitle}>
-              You don't have any {filter === 'all' ? '' : filter} service appointments yet.
+            <View style={styles.emptyIconBox}>
+              <Calendar size={36} color="#168A68" />
+            </View>
+            <Text style={styles.emptyTitle}>No {activeTab} bookings</Text>
+            <Text style={styles.emptySub}>
+              You don't have any appointments in the {activeTab} section right now.
             </Text>
             <TouchableOpacity
-              onPress={() => navigateTo('services_listing')}
-              style={styles.browseButton}
-              activeOpacity={0.85}
+              style={styles.bookCleaningBtn}
+              onPress={() => navigateTo('services-listing')}
+              activeOpacity={0.88}
             >
-              <Text style={styles.browseButtonText}>Browse Cleaning Packages</Text>
-              <ChevronRight size={16} color="#FFFFFF" />
+              <Text style={styles.bookCleaningBtnText}>Book a Cleaning Service</Text>
             </TouchableOpacity>
           </View>
         ) : (
           <View style={styles.bookingsList}>
-            {filtered.map(booking => {
-              const badge = getStatusBadge(booking.status);
-              const isActive = [
-                'pending_assignment',
-                'maid_assigned',
-                'maid_accepted',
-                'in_progress',
-              ].includes(booking.status);
-
-              return (
-                <View key={booking.bookingId} style={styles.bookingCard}>
-                  {/* Card Header: ID, Date, Status */}
-                  <View style={styles.cardHeader}>
-                    <View>
-                      <View style={styles.idRow}>
-                        <Text style={styles.bookingId}>{booking.bookingId}</Text>
-                        <View style={[styles.statusBadge, { backgroundColor: badge.bg }]}>
-                          <Text style={[styles.statusBadgeText, { color: badge.color }]}>
-                            {badge.label}
-                          </Text>
-                        </View>
-                      </View>
-                      <Text style={styles.serviceName}>{booking.serviceName}</Text>
-                    </View>
-                    <Text style={styles.totalPrice}>₹{booking.totalAmount}</Text>
+            {filteredBookings.map(item => (
+              <View key={item.bookingId} style={styles.bookingCard}>
+                {/* Header: ID, Badge, Amount */}
+                <View style={styles.cardHeader}>
+                  <View>
+                    <Text style={styles.bookingIdText}>#{item.bookingId}</Text>
+                    <Text style={styles.serviceName}>{item.serviceName}</Text>
+                    <Text style={styles.homeSizeSubtitle}>{item.homeSize.label}</Text>
                   </View>
+                  <Text style={styles.totalPrice}>₹ {item.totalAmount}</Text>
+                </View>
 
-                  {/* Date & Location Details */}
-                  <View style={styles.detailsBox}>
-                    <View style={styles.detailRow}>
-                      <Calendar size={14} color="#2D8A68" />
-                      <Text style={styles.detailText}>
-                        {booking.date} • {booking.timeSlot}
-                      </Text>
-                    </View>
-                    <View style={styles.detailRow}>
-                      <MapPin size={14} color="#64748B" />
-                      <Text style={styles.detailText} numberOfLines={1}>
-                        {booking.address.street}, {booking.address.locality}
-                      </Text>
-                    </View>
+                {/* Schedule & Location */}
+                <View style={styles.detailsBox}>
+                  <View style={styles.infoRow}>
+                    <Calendar size={14} color="#168A68" />
+                    <Text style={styles.infoText}>
+                      {item.dateLabel} • {item.timeSlot}
+                    </Text>
                   </View>
+                  <View style={styles.infoRow}>
+                    <MapPin size={14} color="#68788C" />
+                    <Text style={styles.infoText} numberOfLines={1}>
+                      {item.address.street}, {item.address.locality}
+                    </Text>
+                  </View>
+                </View>
 
-                  {/* Assigned Maid Partner Section */}
-                  {booking.assignedMaidName && (
-                    <View style={styles.maidPartnerRow}>
-                      <Image
-                        source={{
-                          uri:
-                            booking.assignedMaidPhoto ||
-                            'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=200&q=80',
-                        }}
-                        style={styles.maidAvatar}
-                      />
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.maidLabel}>ASSIGNED MAID PARTNER</Text>
-                        <Text style={styles.maidName}>{booking.assignedMaidName}</Text>
-                      </View>
-                      {booking.startOtp && (
-                        <View style={styles.otpBox}>
-                          <Text style={styles.otpLabel}>START OTP</Text>
-                          <Text style={styles.otpCode}>{booking.startOtp}</Text>
-                        </View>
-                      )}
+                {/* Cleaner Info if assigned */}
+                {item.assignedPro && (
+                  <View style={styles.proRow}>
+                    <Image
+                      source={resolveImageSource(item.assignedPro.photoUrl)}
+                      style={styles.proThumb}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.proLabel}>ASSIGNED PROFESSIONAL</Text>
+                      <Text style={styles.proName}>{item.assignedPro.name}</Text>
                     </View>
-                  )}
+                    {item.startOtp && (
+                      <View style={styles.otpBox}>
+                        <Text style={styles.otpLabel}>START OTP</Text>
+                        <Text style={styles.otpDigits}>{item.startOtp}</Text>
+                      </View>
+                    )}
+                  </View>
+                )}
 
-                  {/* Action Buttons */}
-                  <View style={styles.cardActions}>
+                {/* Actions Row */}
+                <View style={styles.cardActions}>
+                  {activeTab === 'completed' ? (
                     <TouchableOpacity
-                      onPress={() => navigateTo('booking_tracking', { booking })}
-                      style={styles.trackButton}
+                      style={styles.actionBtnPrimary}
+                      onPress={() => handleRateBooking(item.bookingId)}
+                      activeOpacity={0.8}
+                    >
+                      <Star size={14} color="#FFFFFF" fill="#FFFFFF" />
+                      <Text style={styles.actionBtnTextPrimary}>
+                        {item.rating ? 'Edit Rating' : 'Rate Experience'}
+                      </Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity
+                      style={styles.actionBtnPrimary}
+                      onPress={() => handleTrackBooking(item.bookingId)}
                       activeOpacity={0.8}
                     >
                       <Navigation size={14} color="#FFFFFF" />
-                      <Text style={styles.trackButtonText}>
-                        {isActive ? 'Track Live Progress' : 'View Full Details'}
-                      </Text>
+                      <Text style={styles.actionBtnTextPrimary}>Track Booking</Text>
                     </TouchableOpacity>
-                  </View>
+                  )}
                 </View>
-              );
-            })}
+              </View>
+            ))}
           </View>
         )}
       </ScrollView>
@@ -211,231 +207,226 @@ export const MyBookingsScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  container: {
+  safeContainer: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FFFFFF',
   },
-  headerBar: {
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 14,
-    backgroundColor: '#FFFFFF',
+    paddingTop: 12,
+    paddingBottom: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-    gap: 12,
+    borderBottomColor: '#F0F4F2',
   },
-  backButton: {
-    width: 38,
-    height: 38,
+  backBtn: {
+    padding: 6,
     borderRadius: 12,
-    backgroundColor: '#F1F5F9',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  headerTextGroup: {
-    flex: 1,
-  },
-  headerTitle: {
-    fontSize: 17,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  headerSubtitle: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 1,
-  },
-  scrollContent: {
-    padding: 16,
-    gap: 16,
-    paddingBottom: 40,
-  },
-  tabRow: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    padding: 4,
-    borderRadius: 12,
+    backgroundColor: '#F5FCF8',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#E1E8E5',
+  },
+  tabsRow: {
+    flexDirection: 'row',
+    backgroundColor: '#F5FCF8',
+    padding: 4,
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E1E8E5',
   },
   tabButton: {
     flex: 1,
     paddingVertical: 8,
-    borderRadius: 8,
+    borderRadius: 10,
     alignItems: 'center',
   },
-  tabButtonActive: {
-    backgroundColor: '#1E4E3D',
+  tabButtonSelected: {
+    backgroundColor: '#0E5B47',
   },
   tabText: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '700',
-    color: '#64748B',
+    color: '#68788C',
   },
-  tabTextActive: {
+  tabTextSelected: {
     color: '#FFFFFF',
+    fontWeight: '800',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 40,
   },
   emptyCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    backgroundColor: '#F5FCF8',
+    borderRadius: 18,
     padding: 28,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#E1E8E5',
     marginTop: 20,
+  },
+  emptyIconBox: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#EAF8F1',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
   },
   emptyTitle: {
     fontSize: 16,
-    fontWeight: '800',
-    color: '#0F172A',
-    marginBottom: 4,
+    fontWeight: '900',
+    color: '#10243A',
   },
-  emptySubtitle: {
+  emptySub: {
     fontSize: 12,
-    color: '#64748B',
+    color: '#68788C',
     textAlign: 'center',
+    marginTop: 3,
     marginBottom: 16,
+    paddingHorizontal: 20,
   },
-  browseButton: {
-    backgroundColor: '#1E4E3D',
-    paddingHorizontal: 16,
+  bookCleaningBtn: {
+    backgroundColor: '#0E5B47',
+    paddingHorizontal: 18,
     paddingVertical: 10,
-    borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
+    borderRadius: 20,
   },
-  browseButtonText: {
+  bookCleaningBtnText: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#FFFFFF',
   },
   bookingsList: {
-    gap: 14,
+    gap: 12,
   },
   bookingCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    padding: 16,
+    padding: 14,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
+    borderColor: '#E1E8E5',
+    shadowColor: '#10243A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 5,
     elevation: 2,
-    gap: 12,
+    gap: 10,
   },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
   },
-  idRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 4,
-  },
-  bookingId: {
-    fontSize: 13,
+  bookingIdText: {
+    fontSize: 10.5,
     fontWeight: '800',
-    color: '#2D8A68',
-  },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  statusBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
+    color: '#168A68',
+    letterSpacing: 0.5,
   },
   serviceName: {
     fontSize: 15,
-    fontWeight: '800',
-    color: '#0F172A',
+    fontWeight: '900',
+    color: '#10243A',
+    marginTop: 1,
+  },
+  homeSizeSubtitle: {
+    fontSize: 11,
+    color: '#68788C',
   },
   totalPrice: {
     fontSize: 16,
     fontWeight: '900',
-    color: '#1E4E3D',
+    color: '#0E5B47',
   },
   detailsBox: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F5FCF8',
     padding: 10,
     borderRadius: 10,
     gap: 6,
+    borderWidth: 1,
+    borderColor: '#E1E8E5',
   },
-  detailRow: {
+  infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
-  detailText: {
-    fontSize: 12,
-    color: '#475569',
+  infoText: {
+    fontSize: 11.5,
+    color: '#10243A',
+    fontWeight: '600',
+    flex: 1,
   },
-  maidPartnerRow: {
+  proRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    paddingTop: 8,
+    paddingTop: 6,
     borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
+    borderTopColor: '#F0F4F2',
   },
-  maidAvatar: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+  proThumb: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#E2E8F0',
   },
-  maidLabel: {
-    fontSize: 9,
+  proLabel: {
+    fontSize: 8.5,
     fontWeight: '800',
-    color: '#94A3B8',
+    color: '#68788C',
     letterSpacing: 0.5,
   },
-  maidName: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#0F172A',
+  proName: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#10243A',
   },
   otpBox: {
-    backgroundColor: '#E6F4EA',
+    backgroundColor: '#EAF8F1',
     paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
     alignItems: 'center',
   },
   otpLabel: {
-    fontSize: 8,
+    fontSize: 7.5,
     fontWeight: '800',
-    color: '#1E4E3D',
+    color: '#0E5B47',
   },
-  otpCode: {
-    fontSize: 13,
+  otpDigits: {
+    fontSize: 11.5,
     fontWeight: '900',
-    color: '#1E4E3D',
-    letterSpacing: 1,
+    color: '#0E5B47',
+    letterSpacing: 0.5,
   },
   cardActions: {
     borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
-    paddingTop: 10,
+    borderTopColor: '#F0F4F2',
+    paddingTop: 8,
   },
-  trackButton: {
-    backgroundColor: '#1E4E3D',
+  actionBtnPrimary: {
+    backgroundColor: '#0E5B47',
+    borderRadius: 20,
     paddingVertical: 10,
-    borderRadius: 10,
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'center',
     gap: 6,
   },
-  trackButtonText: {
-    fontSize: 13,
-    fontWeight: '700',
+  actionBtnTextPrimary: {
+    fontSize: 12.5,
+    fontWeight: '800',
     color: '#FFFFFF',
   },
 });

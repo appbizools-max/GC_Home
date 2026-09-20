@@ -1,993 +1,395 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  Image,
   ScrollView,
-  Dimensions,
+  RefreshControl,
+  TouchableOpacity,
+  Alert,
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
+import { useCart } from '../../context/CartContext';
 import {
-  Search,
-  Sparkles,
-  MapPin,
-  ChevronDown,
-  ChevronRight,
-  UserCheck,
-  ShieldCheck,
-  Clock,
-  Navigation,
-  Star,
-  Plus,
-  ArrowRight,
-  Shield,
-  HeartHandshake,
-  SlidersHorizontal,
-  Home,
-  Droplets,
-  CheckCircle2,
-  Broom,
-} from 'lucide-react-native';
+  homeService,
+  HeroBanner,
+  ServiceCategory,
+  PromoOffer,
+  NotificationItem,
+  HERO_BANNERS_SEED,
+  SERVICE_CATEGORIES_SEED,
+  NEARBY_SERVICES_SEED,
+  PROMO_OFFER_SEED,
+  NOTIFICATIONS_SEED,
+} from '../../services/homeService';
 import { Service } from '../../types';
 
-const CATEGORIES = [
-  { id: 'all', label: 'All Services', icon: Sparkles },
-  { id: 'standard', label: 'Basic & Regular', icon: Home },
-  { id: 'premium', label: 'Deep Cleaning', icon: Droplets },
-  { id: 'specialized', label: 'Kitchen & Bath', icon: Broom },
-];
+// Subcomponents
+import { GCHeader } from '../../components/home/GCHeader';
+import { LocationSelectionModal } from '../../components/home/LocationSelectionModal';
+import { SearchServicesModal } from '../../components/home/SearchServicesModal';
+import { HeroBannerCarousel } from '../../components/home/HeroBannerCarousel';
+import { ServiceCategoryRow } from '../../components/home/ServiceCategoryRow';
+import { PromotionalOfferBanner } from '../../components/home/PromotionalOfferBanner';
+import { ServicesNearYouRow } from '../../components/home/ServicesNearYouRow';
+import { QuickAddServiceModal } from '../../components/home/QuickAddServiceModal';
+import { WhyChooseSection } from '../../components/home/WhyChooseSection';
+import { LowerBrandBanner } from '../../components/home/LowerBrandBanner';
+import { NotificationsModal } from '../../components/home/NotificationsModal';
+import { OffersModal } from '../../components/home/OffersModal';
+import { AboutGCModal } from '../../components/home/AboutGCModal';
+import { AddressInputModal } from '../../components/ui/AddressInputModal';
+import { DashboardSkeleton } from '../../components/home/DashboardSkeleton';
+
+// Icons
+import { Search, Sparkles, UserCheck, ChevronRight } from 'lucide-react-native';
 
 export const CustomerHomeScreen: React.FC = () => {
-  const { services, navigateTo, user, bookings } = useAuth();
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('all');
+  const { user, services, savedAddresses, navigateTo } = useAuth();
+  const { setCartService } = useCart();
 
-  const activeBooking = bookings.find(
-    b => b.status === 'maid_accepted' || b.status === 'in_progress' || b.status === 'pending_assignment'
-  );
+  // Selected Location State
+  const defaultLocation =
+    savedAddresses && savedAddresses.length > 0
+      ? `${savedAddresses[0].locality || savedAddresses[0].street}, ${savedAddresses[0].city} ${savedAddresses[0].pincode}`
+      : 'HSR Layout, Bengaluru, Karnataka 560102';
 
-  const filteredServices = services.filter(s => {
-    const matchesSearch =
-      s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.category.toLowerCase().includes(searchQuery.toLowerCase());
+  const [currentLocation, setCurrentLocation] = useState<string>(defaultLocation);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
 
-    if (!matchesSearch) return false;
+  // Dynamic Content State
+  const [banners, setBanners] = useState<HeroBanner[]>(HERO_BANNERS_SEED);
+  const [categories, setCategories] = useState<ServiceCategory[]>(SERVICE_CATEGORIES_SEED);
+  const [nearbyServices, setNearbyServices] = useState<
+    (Service & { isBestseller?: boolean; reviewCount?: string; rating?: number })[]
+  >(NEARBY_SERVICES_SEED);
+  const [promoOffer, setPromoOffer] = useState<PromoOffer>(PROMO_OFFER_SEED);
+  const [notifications, setNotifications] = useState<NotificationItem[]>(NOTIFICATIONS_SEED);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-    if (selectedCategory === 'all') return true;
-    if (selectedCategory === 'standard') return s.category.toLowerCase() === 'standard';
-    if (selectedCategory === 'premium') return s.category.toLowerCase() === 'premium';
-    if (selectedCategory === 'specialized') return s.category.toLowerCase() === 'specialized';
-    return true;
-  });
+  // Modals Visibility
+  const [showLocationModal, setShowLocationModal] = useState<boolean>(false);
+  const [showSearchModal, setShowSearchModal] = useState<boolean>(false);
+  const [showNotificationsModal, setShowNotificationsModal] = useState<boolean>(false);
+  const [showOffersModal, setShowOffersModal] = useState<boolean>(false);
+  const [showAboutModal, setShowAboutModal] = useState<boolean>(false);
+  const [showAddAddressModal, setShowAddAddressModal] = useState<boolean>(false);
+
+  // Quick Add State
+  const [selectedQuickAddService, setSelectedQuickAddService] = useState<Service | null>(null);
+
+  // Load Dashboard Data
+  const loadDashboard = async () => {
+    try {
+      const data = await homeService.getDashboardData(currentLocation);
+      setBanners(data.banners);
+      setCategories(data.categories);
+      setNearbyServices(data.services);
+      setPromoOffer(data.promoOffer);
+      setNotifications(data.notifications);
+    } catch {
+      // Fallbacks are already set in state
+    }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadDashboard();
+    setRefreshing(false);
+  };
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  // Quick Booking Handler from QuickAdd Modal
+  const handleProceedToBooking = (service: Service, roomCount: number, totalPrice: number) => {
+    navigateTo('booking_screen', {
+      service: {
+        ...service,
+        startingPrice: totalPrice,
+      },
+      roomCount,
+    });
+  };
+
+  const unreadCount = notifications.filter(n => !n.read).length;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
-      {/* ── Modern Urban Company Style Top Header ── */}
-      <View style={styles.topHeader}>
-        <View style={styles.headerLeft}>
-          <View style={styles.locationPinBox}>
-            <MapPin size={18} color="#1E4E3D" />
-          </View>
-          <TouchableOpacity activeOpacity={0.7} style={styles.addressContainer}>
-            <View style={styles.addressTitleRow}>
-              <Text style={styles.addressTitle}>Kondapur, Hyderabad</Text>
-              <ChevronDown size={16} color="#1E293B" />
-            </View>
-            <Text style={styles.addressSubtitle} numberOfLines={1}>
-              Flat 402, Green Glen Layout • 15 mins away
-            </Text>
-          </TouchableOpacity>
-        </View>
+    <View style={styles.screenContainer}>
+      {/* ── Fixed Compact Header (Logo, Tagline, Bell, Avatar & Location Below) ── */}
+      <GCHeader
+        currentLocation={currentLocation}
+        unreadNotificationsCount={unreadCount}
+        profilePhotoUri={user?.profilePhoto}
+        onOpenLocation={() => setShowLocationModal(true)}
+        onOpenNotifications={() => setShowNotificationsModal(true)}
+        onOpenProfile={() => navigateTo('user_profile')}
+      />
 
-        <View style={styles.headerRight}>
-          {user?.maidApplicationStatus === 'none' && (
-            <TouchableOpacity
-              onPress={() => navigateTo('become_maid_info')}
-              style={styles.earnBadge}
-              activeOpacity={0.8}
-            >
-              <UserCheck size={13} color="#1E4E3D" />
-              <Text style={styles.earnBadgeText}>Earn</Text>
-            </TouchableOpacity>
-          )}
-
-          <TouchableOpacity
-            onPress={() => navigateTo('user_profile')}
-            style={styles.profileAvatarButton}
-            activeOpacity={0.8}
-          >
-            <Image
-              source={{
-                uri:
-                  user?.profilePhoto ||
-                  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
-              }}
-              style={styles.profileAvatar}
-            />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* ── Search Bar ── */}
-      <View style={styles.searchWrapper}>
-        <Search size={18} color="#64748B" style={styles.searchIcon} />
-        <TextInput
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          placeholder="Search 'Deep Clean', 'Bathroom', 'Kitchen'..."
-          placeholderTextColor="#94A3B8"
-          style={styles.searchInput}
-        />
-        {searchQuery.length > 0 ? (
-          <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearSearchBtn}>
-            <Text style={styles.clearSearchText}>✕</Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.filterPill}>
-            <SlidersHorizontal size={14} color="#1E4E3D" />
-          </View>
-        )}
-      </View>
-
-      {/* ── Live Active Booking Bar (Floating Toast) ── */}
-      {activeBooking && (
-        <TouchableOpacity
-          style={styles.liveToastCard}
-          onPress={() => navigateTo('booking_tracking', { booking: activeBooking })}
-          activeOpacity={0.9}
-        >
-          <View style={styles.toastAccentBar} />
-          <Image
-            source={{
-              uri:
-                activeBooking.assignedMaidPhoto ||
-                'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=200&q=80',
-            }}
-            style={styles.toastAvatar}
+      {/* ── Main Scrollable Dashboard Content ── */}
+      <ScrollView
+        style={styles.scrollContainer}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            colors={['#168A68']}
+            tintColor="#168A68"
           />
-          <View style={styles.toastInfo}>
-            <View style={styles.toastTagRow}>
-              <View style={styles.toastBadge}>
-                <Text style={styles.toastBadgeText}>{activeBooking.bookingId}</Text>
-              </View>
-              <Text style={styles.toastMaidName}>
-                {activeBooking.assignedMaidName || 'Assigning Maid Partner...'}
-              </Text>
-            </View>
-            <View style={styles.toastTimeRow}>
-              <Clock size={12} color="#2D8A68" />
-              <Text style={styles.toastTimeText}>
-                {activeBooking.date || 'Today'} • {activeBooking.timeSlot || '10:00 AM'}
-              </Text>
-            </View>
-          </View>
-          <View style={styles.trackBtn}>
-            <Text style={styles.trackBtnText}>Track</Text>
-            <Navigation size={12} color="#FFFFFF" />
-          </View>
-        </TouchableOpacity>
-      )}
-
-      {/* ── Quick Category Horizontal Chips ── */}
-      <View style={styles.categoryChipsContainer}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryChipsList}>
-          {CATEGORIES.map(cat => {
-            const isSelected = selectedCategory === cat.id;
-            const IconComp = cat.icon;
-            return (
+        }
+      >
+        {isLoading ? (
+          <DashboardSkeleton />
+        ) : (
+          <>
+            {/* ── Search Bar Trigger ── */}
+            <View style={styles.searchSection}>
               <TouchableOpacity
-                key={cat.id}
-                onPress={() => setSelectedCategory(cat.id)}
-                style={[styles.categoryChip, isSelected && styles.categoryChipActive]}
-                activeOpacity={0.8}
+                style={styles.searchBarButton}
+                onPress={() => setShowSearchModal(true)}
+                activeOpacity={0.85}
+                accessibilityLabel="Search for cleaning services"
               >
-                <IconComp size={13} color={isSelected ? '#FFFFFF' : '#1E4E3D'} />
-                <Text style={[styles.categoryChipText, isSelected && styles.categoryChipTextActive]}>
-                  {cat.label}
+                <Search size={18} color="#168A68" />
+                <Text style={styles.searchPlaceholderText} numberOfLines={1}>
+                  Search for cleaning services, e.g. home cleaning...
                 </Text>
               </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-      </View>
-
-      {/* ── Promotional Hero Banner ── */}
-      <View style={styles.promoHeroCard}>
-        <View style={styles.promoLeft}>
-          <View style={styles.promoTag}>
-            <Sparkles size={11} color="#1E4E3D" />
-            <Text style={styles.promoTagText}>NEW CUSTOMER SPECIAL</Text>
-          </View>
-          <Text style={styles.promoTitle}>₹300 OFF On First Clean</Text>
-          <Text style={styles.promoSubtitle}>Hospitality-grade vetted cleaners</Text>
-          <View style={styles.couponPillRow}>
-            <Text style={styles.couponPrefix}>Use code:</Text>
-            <View style={styles.couponTag}>
-              <Text style={styles.couponCodeText}>GCNEW</Text>
             </View>
-          </View>
-        </View>
-        <Image
-          source={{
-            uri: 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?auto=format&fit=crop&q=80&w=400',
-          }}
-          style={styles.promoImage}
-        />
-      </View>
 
-      {/* ── 2-Column Grid: Cleaning Services ── */}
-      <View style={styles.servicesHeaderRow}>
-        <View>
-          <Text style={styles.servicesSectionTitle}>Most Booked Services</Text>
-          <Text style={styles.servicesSectionSub}>Instant booking with certified maid partners</Text>
-        </View>
-        <TouchableOpacity
-          onPress={() => navigateTo('services_listing')}
-          style={styles.viewAllButton}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.viewAllText}>View All</Text>
-          <ChevronRight size={14} color="#1E4E3D" />
-        </TouchableOpacity>
-      </View>
+            {/* ── 1. Hero Banner Carousel ── */}
+            <HeroBannerCarousel
+              banners={banners}
+              onPressBanner={banner => {
+                const targetService = nearbyServices.find(s => s.serviceId === banner.serviceId) || nearbyServices[0];
+                setCartService(targetService);
+                navigateTo('service-details');
+              }}
+            />
 
-      <View style={styles.twoColumnGrid}>
-        {filteredServices.map(service => (
-          <TouchableOpacity
-            key={service.serviceId}
-            onPress={() => navigateTo('service_details', { service })}
-            style={styles.gridCard}
-            activeOpacity={0.88}
-          >
-            <View style={styles.gridCardInner}>
-              {/* Service Image with Rating Overlay */}
-              <View style={styles.gridImageWrapper}>
-                <Image source={{ uri: service.imageUrl }} style={styles.gridImage} />
-                <View style={styles.gridRatingBadge}>
-                  <Star size={10} color="#F59E0B" fill="#F59E0B" />
-                  <Text style={styles.gridRatingText}>4.9</Text>
+            {/* ── 2. Service Categories (Horizontal Pastel Badges) ── */}
+            <ServiceCategoryRow
+              categories={categories}
+              onSelectCategory={cat => {
+                navigateTo('services-listing');
+              }}
+            />
+
+            {/* ── 3. Promotional Offer Banner ── */}
+            <PromotionalOfferBanner
+              offer={promoOffer}
+              onApplyOffer={code => {
+                showToast(`Promo code '${code}' copied! Apply at checkout.`);
+              }}
+            />
+
+            {/* ── Become a Maid Partner Banner ── */}
+            <TouchableOpacity
+              onPress={() => navigateTo('become_maid_info')}
+              style={{
+                backgroundColor: '#043927',
+                borderRadius: 16,
+                padding: 16,
+                marginHorizontal: 16,
+                marginVertical: 10,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                elevation: 3,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.15,
+                shadowRadius: 6,
+              }}
+              activeOpacity={0.88}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+                <View style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' }}>
+                  <UserCheck size={22} color="#FFFFFF" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '800', color: '#FFFFFF' }}>
+                    Become a GC Maid Partner
+                  </Text>
+                  <Text style={{ fontSize: 11, color: '#A7F3D0', marginTop: 2 }}>
+                    Earn up to ₹35,000/mo • Weekly payouts • Flexible hours
+                  </Text>
                 </View>
               </View>
+              <ChevronRight size={20} color="#FFFFFF" />
+            </TouchableOpacity>
 
-              {/* Service Details */}
-              <View style={styles.gridContent}>
-                <Text style={styles.gridDurationText}>⏱ {service.estimatedDuration}</Text>
-                <Text style={styles.gridServiceName} numberOfLines={1}>
-                  {service.name}
-                </Text>
-                <Text style={styles.gridServiceDesc} numberOfLines={2}>
-                  {service.description}
-                </Text>
+            {/* ── 4. Services Near You (Horizontal Cards with Quick Add) ── */}
+            <ServicesNearYouRow
+              services={nearbyServices}
+              currentLocationName={currentLocation}
+              onSelectService={service => {
+                setCartService(service);
+                navigateTo('service-details');
+              }}
+              onQuickAdd={service => {
+                setCartService(service);
+                navigateTo('service-details');
+              }}
+              onViewAll={() => {
+                navigateTo('services-listing');
+              }}
+            />
 
-                {/* Price & Book Action */}
-                <View style={styles.gridFooter}>
-                  <View>
-                    <Text style={styles.gridStartsFrom}>Starts from</Text>
-                    <Text style={styles.gridPrice}>₹{service.startingPrice}</Text>
-                  </View>
+            {/* ── 5. Why Choose GC Home Plus (5 Trust Badges) ── */}
+            <WhyChooseSection onViewAll={() => setShowAboutModal(true)} />
 
-                  <View style={styles.gridAddButton}>
-                    <Text style={styles.gridAddButtonText}>BOOK</Text>
-                  </View>
-                </View>
-              </View>
-            </View>
-          </TouchableOpacity>
-        ))}
-      </View>
+            {/* ── 6. Lower Brand Banner (Clean Homes Healthier Communities) ── */}
+            <LowerBrandBanner onPressKnowMore={() => setShowAboutModal(true)} />
+          </>
+        )}
+      </ScrollView>
 
-      {/* ── Partner Recruitment Banner ── */}
-      {user?.maidApplicationStatus === 'none' && (
-        <TouchableOpacity
-          style={styles.empowermentCard}
-          onPress={() => navigateTo('become_maid_info')}
-          activeOpacity={0.9}
-        >
-          <View style={styles.empowermentTopRow}>
-            <View style={styles.empowermentTag}>
-              <HeartHandshake size={12} color="#166534" />
-              <Text style={styles.empowermentTagText}>PARTNER RECRUITMENT</Text>
-            </View>
-            <View style={styles.zeroFeePill}>
-              <Text style={styles.zeroFeePillText}>100% FREE JOINING</Text>
-            </View>
-          </View>
-
-          <Text style={styles.empowermentTitle}>Become a Verified Maid Partner</Text>
-          <Text style={styles.empowermentSub}>
-            Earn up to <Text style={styles.boldText}>₹35,000 / month</Text> with guaranteed weekly Monday payouts, flexible hours, and ₹3L health insurance.
-          </Text>
-
-          <View style={styles.empowermentBottomRow}>
-            <View style={styles.partnerAvatarsCluster}>
-              <Image
-                source={{
-                  uri: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=100&q=80',
-                }}
-                style={[styles.clusterAvatar, { zIndex: 3 }]}
-              />
-              <Image
-                source={{
-                  uri: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=100&q=80',
-                }}
-                style={[styles.clusterAvatar, { marginLeft: -12, zIndex: 2 }]}
-              />
-              <Text style={styles.clusterLabel}>Join 5,000+ Partners</Text>
-            </View>
-
-            <View style={styles.applyBtnPill}>
-              <Text style={styles.applyBtnPillText}>Apply Now</Text>
-              <ArrowRight size={13} color="#FFFFFF" />
-            </View>
-          </View>
-        </TouchableOpacity>
+      {/* ── Floating Notification Toast ── */}
+      {toastMessage && (
+        <View style={styles.toastCard}>
+          <Sparkles size={16} color="#FFFFFF" />
+          <Text style={styles.toastText}>{toastMessage}</Text>
+        </View>
       )}
 
-      {/* ── Customer Social Proof & Rating Strip ── */}
-      <View style={styles.socialProofCard}>
-        <View style={styles.socialProofHeader}>
-          <View style={styles.starsCluster}>
-            {[1, 2, 3, 4, 5].map(i => (
-              <Star key={i} size={13} color="#FBBF24" fill="#FBBF24" />
-            ))}
-          </View>
-          <Text style={styles.socialProofScore}>4.92 / 5.0</Text>
-          <Text style={styles.socialProofSub}>• 24,000+ Cleaned Homes</Text>
-        </View>
-        <Text style={styles.socialProofQuote}>
-          "The maid arrived on time in complete uniform with sanitized eco-chemicals. Our kitchen grease was 100% gone. Best home service in Hyderabad!"
-        </Text>
-        <Text style={styles.socialProofAuthor}>— Shweta K., Resident at My Home Bhooja</Text>
-      </View>
+      {/* ── Modals & Bottom Sheets ── */}
+      <LocationSelectionModal
+        visible={showLocationModal}
+        currentLocation={currentLocation}
+        savedAddresses={savedAddresses}
+        onSelectAddress={addr => {
+          setCurrentLocation(addr);
+          showToast(`Location updated to ${addr.split(',')[0]}`);
+        }}
+        onAddNewAddress={() => {
+          setShowLocationModal(false);
+          setShowAddAddressModal(true);
+        }}
+        onClose={() => setShowLocationModal(false)}
+      />
 
-      {/* ── Trust & Quality Shield Reassurance Strip ── */}
-      <View style={styles.trustShieldCard}>
-        <View style={styles.trustItem}>
-          <ShieldCheck size={18} color="#1E4E3D" />
-          <View>
-            <Text style={styles.trustHeading}>100% Verified</Text>
-            <Text style={styles.trustSub}>Background checked</Text>
-          </View>
-        </View>
-        <View style={styles.trustDivider} />
-        <View style={styles.trustItem}>
-          <Sparkles size={18} color="#1E4E3D" />
-          <View>
-            <Text style={styles.trustHeading}>Eco Chemicals</Text>
-            <Text style={styles.trustSub}>Safe & non-toxic</Text>
-          </View>
-        </View>
-        <View style={styles.trustDivider} />
-        <View style={styles.trustItem}>
-          <CheckCircle2 size={18} color="#1E4E3D" />
-          <View>
-            <Text style={styles.trustHeading}>Free Re-clean</Text>
-            <Text style={styles.trustSub}>24h guarantee</Text>
-          </View>
-        </View>
-      </View>
-    </ScrollView>
+      <SearchServicesModal
+        visible={showSearchModal}
+        services={services && services.length > 0 ? services : nearbyServices}
+        onSelectService={service => {
+          setShowSearchModal(false);
+          navigateTo('service_details', { service });
+        }}
+        onClose={() => setShowSearchModal(false)}
+      />
+
+      <NotificationsModal
+        visible={showNotificationsModal}
+        notifications={notifications}
+        onMarkAllAsRead={() => {
+          setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+          showToast('All notifications marked as read.');
+        }}
+        onClose={() => setShowNotificationsModal(false)}
+      />
+
+      <OffersModal
+        visible={showOffersModal}
+        onApplyOffer={code => {
+          showToast(`Coupon '${code}' copied to clipboard!`);
+          setShowOffersModal(false);
+        }}
+        onClose={() => setShowOffersModal(false)}
+      />
+
+      <QuickAddServiceModal
+        visible={Boolean(selectedQuickAddService)}
+        service={selectedQuickAddService}
+        onProceedToBooking={handleProceedToBooking}
+        onClose={() => setSelectedQuickAddService(null)}
+      />
+
+      <AboutGCModal
+        visible={showAboutModal}
+        onClose={() => setShowAboutModal(false)}
+      />
+
+      <AddressInputModal
+        visible={showAddAddressModal}
+        currentAddress={currentLocation}
+        selectedCity="Bengaluru, Karnataka"
+        onSave={newAddr => {
+          setCurrentLocation(newAddr);
+          showToast('New address saved!');
+        }}
+        onClose={() => setShowAddAddressModal(false)}
+      />
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  screenContainer: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
-  },
-  contentContainer: {
-    padding: 16,
-    gap: 14,
-    paddingBottom: 40,
-  },
-  /* Top Header */
-  topHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 4,
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    marginRight: 10,
-  },
-  locationPinBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: '#E6F4EA',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 10,
-  },
-  addressContainer: {
-    flex: 1,
-  },
-  addressTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  addressTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  addressSubtitle: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 1,
-  },
-  headerRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  earnBadge: {
-    backgroundColor: '#E6F4EA',
-    borderColor: '#BBE9D2',
-    borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  earnBadgeText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#1E4E3D',
-  },
-  profileAvatarButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    borderWidth: 2,
-    borderColor: '#2D8A68',
-    overflow: 'hidden',
-  },
-  profileAvatar: {
-    width: '100%',
-    height: '100%',
-  },
-
-  /* Search */
-  searchWrapper: {
-    position: 'relative',
-    justifyContent: 'center',
-  },
-  searchIcon: {
-    position: 'absolute',
-    left: 14,
-    zIndex: 2,
-  },
-  searchInput: {
     backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+  },
+  scrollContainer: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 24,
+  },
+  searchSection: {
+    paddingHorizontal: 16,
+    paddingTop: 6,
+    paddingBottom: 14,
+  },
+  searchBarButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F5FCF8',
     borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E1E8E5',
+    paddingHorizontal: 14,
     paddingVertical: 12,
-    paddingLeft: 42,
-    paddingRight: 44,
-    fontSize: 13,
-    color: '#0F172A',
+    gap: 10,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
+    shadowOpacity: 0.03,
     shadowRadius: 3,
     elevation: 1,
   },
-  filterPill: {
-    position: 'absolute',
-    right: 12,
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    backgroundColor: '#F1F5F9',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  clearSearchBtn: {
-    position: 'absolute',
-    right: 14,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#CBD5E1',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  clearSearchText: {
-    fontSize: 10,
-    color: '#475569',
-    fontWeight: 'bold',
-  },
-
-  /* Active Booking Toast */
-  liveToastCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 2,
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  toastAccentBar: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 4,
-    backgroundColor: '#2D8A68',
-  },
-  toastAvatar: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    marginLeft: 6,
-  },
-  toastInfo: {
+  searchPlaceholderText: {
     flex: 1,
-    marginLeft: 10,
-  },
-  toastTagRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  toastBadge: {
-    backgroundColor: '#EBF8F2',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  toastBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#1E4E3D',
-  },
-  toastMaidName: {
     fontSize: 13,
-    fontWeight: '700',
-    color: '#1E293B',
+    color: '#68788C',
+    fontWeight: '500',
   },
-  toastTimeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 2,
-  },
-  toastTimeText: {
-    fontSize: 11,
-    color: '#64748B',
-  },
-  trackBtn: {
-    backgroundColor: '#1E4E3D',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+  toastCard: {
+    position: 'absolute',
+    bottom: 20,
+    left: 20,
+    right: 20,
+    backgroundColor: '#0E5B47',
     borderRadius: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  trackBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-
-  /* Category Chips */
-  categoryChipsContainer: {
-    marginHorizontal: -16,
-  },
-  categoryChipsList: {
     paddingHorizontal: 16,
-    gap: 8,
-  },
-  categoryChip: {
+    paddingVertical: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  categoryChipActive: {
-    backgroundColor: '#1E4E3D',
-    borderColor: '#1E4E3D',
-  },
-  categoryChipText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#1E4E3D',
-  },
-  categoryChipTextActive: {
-    color: '#FFFFFF',
-  },
-
-  /* Promo Banner */
-  promoHeroCard: {
-    backgroundColor: '#1E4E3D',
-    borderRadius: 18,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    overflow: 'hidden',
-  },
-  promoLeft: {
-    flex: 1,
-    paddingRight: 10,
-  },
-  promoTag: {
-    backgroundColor: '#BBE9D2',
-    alignSelf: 'flex-start',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginBottom: 6,
-  },
-  promoTagText: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#1E4E3D',
-    letterSpacing: 0.5,
-  },
-  promoTitle: {
-    fontSize: 17,
-    fontWeight: '900',
-    color: '#FFFFFF',
-  },
-  promoSubtitle: {
-    fontSize: 11,
-    color: '#D1E7DD',
-    marginTop: 2,
-  },
-  couponPillRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 8,
-  },
-  couponPrefix: {
-    fontSize: 11,
-    color: '#E2E8F0',
-  },
-  couponTag: {
-    backgroundColor: '#2D8A68',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  couponCodeText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: 1,
-  },
-  promoImage: {
-    width: 90,
-    height: 90,
-    borderRadius: 14,
-  },
-
-  /* Trust Shield Reassurance Strip */
-  trustShieldCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  trustItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flex: 1,
-  },
-  trustHeading: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  trustSub: {
-    fontSize: 9,
-    color: '#64748B',
-    marginTop: 1,
-  },
-  trustDivider: {
-    width: 1,
-    height: 24,
-    backgroundColor: '#F1F5F9',
-    marginHorizontal: 4,
-  },
-
-  /* 2-Column Grid Section */
-  servicesHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 6,
-  },
-  servicesSectionTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  servicesSectionSub: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 1,
-  },
-  viewAllButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    backgroundColor: '#E6F4EA',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 12,
-  },
-  viewAllText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#1E4E3D',
-  },
-  twoColumnGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginHorizontal: -5,
-  },
-  gridCard: {
-    width: '50%',
-    padding: 5,
-  },
-  gridCardInner: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    gap: 10,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 3,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 6,
+    zIndex: 99,
   },
-  gridImageWrapper: {
-    height: 110,
-    width: '100%',
-    position: 'relative',
-    backgroundColor: '#E2E8F0',
-  },
-  gridImage: {
-    width: '100%',
-    height: '100%',
-  },
-  gridRatingBadge: {
-    position: 'absolute',
-    top: 8,
-    left: 8,
-    backgroundColor: 'rgba(15, 23, 42, 0.75)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-  },
-  gridRatingText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  gridContent: {
-    padding: 10,
-    gap: 2,
-  },
-  gridDurationText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#64748B',
-    marginBottom: 2,
-  },
-  gridServiceName: {
+  toastText: {
     fontSize: 13,
     fontWeight: '800',
-    color: '#0F172A',
-  },
-  gridServiceDesc: {
-    fontSize: 10,
-    color: '#64748B',
-    lineHeight: 14,
-    marginBottom: 6,
-  },
-  gridFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
-    paddingTop: 6,
-  },
-  gridStartsFrom: {
-    fontSize: 9,
-    color: '#94A3B8',
-  },
-  gridPrice: {
-    fontSize: 14,
-    fontWeight: '900',
-    color: '#1E4E3D',
-  },
-  gridAddButton: {
-    backgroundColor: '#1E4E3D',
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 8,
-  },
-  gridAddButtonText: {
-    fontSize: 11,
-    fontWeight: '900',
     color: '#FFFFFF',
-    letterSpacing: 0.5,
-  },
-
-  /* Empowerment Partner Hub */
-  empowermentCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 16,
-    borderWidth: 1.5,
-    borderColor: '#DCFCE7',
-    gap: 8,
-    shadowColor: '#166534',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 5,
-    elevation: 2,
-  },
-  empowermentTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  empowermentTag: {
-    backgroundColor: '#DCFCE7',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  empowermentTagText: {
-    fontSize: 9.5,
-    fontWeight: '800',
-    color: '#166534',
-  },
-  zeroFeePill: {
-    backgroundColor: '#FEF3C7',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  zeroFeePillText: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#B45309',
-  },
-  empowermentTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  empowermentSub: {
-    fontSize: 12,
-    color: '#64748B',
-    lineHeight: 18,
-  },
-  boldText: {
-    fontWeight: '800',
-    color: '#1E4E3D',
-  },
-  empowermentBottomRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  partnerAvatarsCluster: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  clusterAvatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-  },
-  clusterLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#475569',
-    marginLeft: 8,
-  },
-  applyBtnPill: {
-    backgroundColor: '#1E4E3D',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  applyBtnPillText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-
-  /* Social Proof & Reviews */
-  socialProofCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    gap: 8,
-  },
-  socialProofHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  starsCluster: {
-    flexDirection: 'row',
-    gap: 2,
-  },
-  socialProofScore: {
-    fontSize: 13,
-    fontWeight: '900',
-    color: '#0F172A',
-  },
-  socialProofSub: {
-    fontSize: 11,
-    color: '#64748B',
-  },
-  socialProofQuote: {
-    fontSize: 11.5,
-    color: '#334155',
-    lineHeight: 17,
-    fontStyle: 'italic',
-  },
-  socialProofAuthor: {
-    fontSize: 10.5,
-    fontWeight: '700',
-    color: '#1E4E3D',
+    flex: 1,
   },
 });

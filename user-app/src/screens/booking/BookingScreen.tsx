@@ -206,7 +206,15 @@ export const BookingScreen: React.FC = () => {
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* ── Selected Service Summary Card ── */}
         <View style={styles.summaryCard}>
-          <Image source={{ uri: selectedService.imageUrl }} style={styles.serviceThumb} />
+          <Image
+            source={{
+              uri:
+                selectedService.imageUrl && selectedService.imageUrl.trim().length > 0
+                  ? selectedService.imageUrl
+                  : 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?auto=format&fit=crop&w=400&q=80',
+            }}
+            style={styles.serviceThumb}
+          />
           <View style={styles.summaryInfo}>
             <View style={styles.verifiedRow}>
               <ShieldCheck size={12} color="#1E4E3D" />
