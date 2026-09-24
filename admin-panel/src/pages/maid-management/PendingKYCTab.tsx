@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import { supabase } from '../../config/supabase';
 import { MaidProfile, KycDocument } from '../../types';
@@ -89,30 +89,50 @@ export const PendingKYCTab: React.FC = () => {
   }, [targetMaid?.uid]);
 
     const profileDocs: KycDocument[] = [];
-    if (targetMaid.aadhaarDocUrl || targetMaid.idProofUrl) {
+    const rawKyc = (targetMaid as any).rawKycDocuments || (targetMaid as any).kyc_documents || {};
+
+    const frontUrl = (targetMaid as any).aadhaarFrontUrl || targetMaid.aadhaarDocUrl || targetMaid.idProofUrl || rawKyc.aadhaarFrontUrl;
+    if (frontUrl) {
       profileDocs.push({
-        id: 'doc_aadhaar',
+        id: 'doc_aadhaar_front',
         type: 'aadhaar',
-        title: 'Aadhaar Card',
-        fileName: 'aadhaar_card.jpg',
-        fileUrl: targetMaid.aadhaarDocUrl || targetMaid.idProofUrl,
-        fileSize: '240 KB',
+        title: 'Aadhaar Card (Front)',
+        fileName: 'aadhaar_front.jpg',
+        fileUrl: frontUrl,
+        fileSize: 'Uploaded File',
         status: 'under_review',
         uploadedAt: targetMaid.appliedAt || 'Recent',
       });
     }
-    if (targetMaid.panDocUrl) {
+
+    const backUrl = (targetMaid as any).aadhaarBackUrl || rawKyc.aadhaarBackUrl;
+    if (backUrl) {
+      profileDocs.push({
+        id: 'doc_aadhaar_back',
+        type: 'aadhaar_back',
+        title: 'Aadhaar Card (Back)',
+        fileName: 'aadhaar_back.jpg',
+        fileUrl: backUrl,
+        fileSize: 'Uploaded File',
+        status: 'under_review',
+        uploadedAt: targetMaid.appliedAt || 'Recent',
+      });
+    }
+
+    const panUrl = targetMaid.panDocUrl || rawKyc.panDocUrl;
+    if (panUrl) {
       profileDocs.push({
         id: 'doc_pan',
         type: 'pan',
         title: 'PAN Card',
         fileName: 'pan_card.jpg',
-        fileUrl: targetMaid.panDocUrl,
-        fileSize: '180 KB',
+        fileUrl: panUrl,
+        fileSize: 'Uploaded File',
         status: 'under_review',
         uploadedAt: targetMaid.appliedAt || 'Recent',
       });
     }
+
     if (targetMaid.addressProofUrl) {
       profileDocs.push({
         id: 'doc_address',
@@ -120,33 +140,50 @@ export const PendingKYCTab: React.FC = () => {
         title: 'Address Proof',
         fileName: 'address_proof.jpg',
         fileUrl: targetMaid.addressProofUrl,
-        fileSize: '310 KB',
-        status: 'under_review',
-        uploadedAt: targetMaid.appliedAt || 'Recent',
-      });
-    }
-    if (targetMaid.otherDocsUrls && targetMaid.otherDocsUrls.length > 0) {
-      profileDocs.push({
-        id: 'doc_other',
-        type: 'other',
-        title: 'Supporting Documents',
-        fileName: 'supporting_docs.pdf',
-        fileUrl: targetMaid.otherDocsUrls[0],
-        fileSize: '450 KB',
+        fileSize: 'Uploaded File',
         status: 'under_review',
         uploadedAt: targetMaid.appliedAt || 'Recent',
       });
     }
 
-    const fallbackDocs: KycDocument[] = [
-      { id: 'doc_1', type: 'aadhaar', title: 'Aadhaar Card', fileName: 'aadhaar_saroja.pdf', fileUrl: targetMaid.aadhaarDocUrl || targetMaid.idProofUrl || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=800', fileSize: '245 KB', status: 'under_review', uploadedAt: targetMaid.appliedAt || 'Recent' },
-      { id: 'doc_2', type: 'pan', title: 'PAN Card', fileName: 'pan_saroja.pdf', fileUrl: targetMaid.panDocUrl || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=800', fileSize: '190 KB', status: 'under_review', uploadedAt: targetMaid.appliedAt || 'Recent' },
-      { id: 'doc_3', type: 'address_proof', title: 'Address Proof', fileName: 'address_saroja.pdf', fileUrl: targetMaid.addressProofUrl || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=800', fileSize: '320 KB', status: 'under_review', uploadedAt: targetMaid.appliedAt || 'Recent' },
-    ];
+    if (Array.isArray(rawKyc?.documents) && rawKyc.documents.length > 0) {
+      rawKyc.documents.forEach((d: any, index: number) => {
+        if (d && d.fileUrl && !profileDocs.some(pd => pd.fileUrl === d.fileUrl)) {
+          const isPdf = d.fileType === 'pdf' || d.fileUrl.endsWith('.pdf') || d.name?.endsWith('.pdf');
+          profileDocs.push({
+            id: d.id || `doc_${index}`,
+            type: (isPdf ? 'other' : 'aadhaar') as any,
+            title: d.name || `Verification Document ${index + 1}`,
+            fileName: d.name || `document_${index + 1}`,
+            fileUrl: d.fileUrl,
+            fileSize: d.fileSize ? `${(d.fileSize / 1024).toFixed(0)} KB` : 'Uploaded File',
+            status: 'under_review',
+            uploadedAt: d.uploadedAt || targetMaid.appliedAt || 'Recent',
+          });
+        }
+      });
+    }
+
+    if (targetMaid.otherDocsUrls && targetMaid.otherDocsUrls.length > 0) {
+      targetMaid.otherDocsUrls.forEach((url: string, idx: number) => {
+        if (url && !profileDocs.some(pd => pd.fileUrl === url)) {
+          profileDocs.push({
+            id: `doc_other_${idx}`,
+            type: 'other',
+            title: `Verification File ${idx + 1}`,
+            fileName: url.split('/').pop() || `verification_file_${idx + 1}`,
+            fileUrl: url,
+            fileSize: 'Uploaded File',
+            status: 'under_review',
+            uploadedAt: targetMaid.appliedAt || 'Recent',
+          });
+        }
+      });
+    }
 
     const kycDocs: KycDocument[] = dbKycDocs.length > 0
       ? dbKycDocs
-      : (profileDocs.length > 0 ? profileDocs : fallbackDocs);
+      : profileDocs;
 
   const currentActiveDoc = kycDocs.find(d => d.type === activeDocType) || kycDocs[0];
 
@@ -208,17 +245,28 @@ export const PendingKYCTab: React.FC = () => {
             className="w-16 h-16 rounded-2xl object-cover border-2 border-amber-500 shadow-sm"
           />
           <div>
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2.5 flex-wrap">
               <h2 className="text-lg font-black text-slate-900">{targetMaid.fullName}</h2>
               <span className="px-2.5 py-0.5 bg-amber-100 text-amber-800 rounded-full text-[11px] font-extrabold flex items-center gap-1">
                 ★ Pending Approval
               </span>
+              {Boolean(targetMaid.reapplicationCount && targetMaid.reapplicationCount > 0) && (
+                <span className="px-2.5 py-0.5 bg-purple-100 text-purple-800 rounded-full text-[11px] font-extrabold flex items-center gap-1 border border-purple-200">
+                  ↺ Re-Application #{targetMaid.reapplicationCount}
+                </span>
+              )}
             </div>
             <p className="text-xs text-slate-500 font-semibold mt-1">Maid ID: {targetMaid.maidId || targetMaid.uid}</p>
             <div className="flex flex-wrap items-center gap-4 text-xs font-semibold text-slate-600 mt-2">
               <span className="flex items-center gap-1"><Phone className="w-3.5 h-3.5 text-slate-400" /> {targetMaid.phone}</span>
               <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5 text-slate-400" /> {targetMaid.serviceArea}</span>
-              <span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5 text-slate-400" /> Applied on {targetMaid.appliedAt}</span>
+              <span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5 text-slate-400" /> First Applied: {targetMaid.appliedAt}</span>
+              {targetMaid.latestAppliedAt && targetMaid.latestAppliedAt !== targetMaid.appliedAt && (
+                <span className="flex items-center gap-1 text-purple-700"><Clock className="w-3.5 h-3.5 text-purple-500" /> Latest Re-applied: {targetMaid.latestAppliedAt}</span>
+              )}
+              {targetMaid.rejectedAt && (
+                <span className="flex items-center gap-1 text-rose-600"><XCircle className="w-3.5 h-3.5 text-rose-500" /> Last Rejected: {new Date(targetMaid.rejectedAt).toISOString().split('T')[0]}</span>
+              )}
             </div>
           </div>
         </div>
@@ -289,6 +337,7 @@ export const PendingKYCTab: React.FC = () => {
                 </div>
                 <div className="text-[11px] text-slate-500 space-y-0.5 pl-7">
                   <p>Home Address: <strong className="text-slate-800">{targetMaid.address}</strong></p>
+                  <p>Preferred Work Cities: <strong className="text-emerald-700 font-bold">{targetMaid.preferredCities && targetMaid.preferredCities.length > 0 ? targetMaid.preferredCities.join(', ') : (targetMaid.preferredServiceArea || targetMaid.serviceArea || targetMaid.city || 'Not specified')}</strong></p>
                   <p>Service Radius: <strong className="text-slate-800">{targetMaid.serviceRadiusKm} km</strong></p>
                 </div>
               </div>
@@ -356,6 +405,97 @@ export const PendingKYCTab: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {/* Application History & Timeline Card */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-purple-600" />
+                <h3 className="text-sm font-black text-slate-900 uppercase tracking-wide">Application History & Timeline</h3>
+              </div>
+              <span className="px-2 py-0.5 bg-purple-100 text-purple-800 rounded-full text-[10px] font-extrabold">
+                {((targetMaid.reapplicationCount || 0) + 1)} {((targetMaid.reapplicationCount || 0) + 1) === 1 ? 'Application' : 'Total Applications'}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500 mb-3">
+              Complete audit trail of all partner applications, re-submissions, and administrative decisions.
+            </p>
+
+            <div className="relative pl-5 border-l-2 border-slate-200 space-y-4">
+              {/* Previous Application Versions (Historical Snapshots) */}
+              {Array.isArray(targetMaid.applicationHistory) && targetMaid.applicationHistory.length > 0 ? (
+                targetMaid.applicationHistory.map((hist: any, idx: number) => (
+                  <div key={idx} className="relative">
+                    <div className="absolute -left-[27px] top-1 w-3.5 h-3.5 rounded-full bg-rose-500 border-2 border-white shadow-sm" />
+                    <div className="p-3 bg-rose-50/60 rounded-xl border border-rose-200 text-xs">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-extrabold text-slate-900">Application Version {hist.version || idx + 1}</span>
+                        <span className="px-2 py-0.5 bg-rose-100 text-rose-800 rounded-full text-[9px] font-black uppercase">
+                          {hist.status || 'Rejected'}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-600 space-y-0.5">
+                        <p>Applied on: <strong className="text-slate-800">{hist.appliedAt ? new Date(hist.appliedAt).toISOString().split('T')[0] : 'Past'}</strong></p>
+                        {hist.rejectedAt && (
+                          <p>Rejected on: <strong className="text-rose-700">{new Date(hist.rejectedAt).toISOString().split('T')[0]}</strong></p>
+                        )}
+                        {hist.rejectionReason && (
+                          <p className="mt-1 pt-1 border-t border-rose-200/60 text-rose-900 font-medium">
+                            Reason: &ldquo;{hist.rejectionReason}&rdquo;
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : targetMaid.rejectedAt || targetMaid.rejectionReason ? (
+                <div className="relative">
+                  <div className="absolute -left-[27px] top-1 w-3.5 h-3.5 rounded-full bg-rose-500 border-2 border-white shadow-sm" />
+                  <div className="p-3 bg-rose-50/60 rounded-xl border border-rose-200 text-xs">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-extrabold text-slate-900">Application Version 1</span>
+                      <span className="px-2 py-0.5 bg-rose-100 text-rose-800 rounded-full text-[9px] font-black uppercase">
+                        Rejected
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-600 space-y-0.5">
+                      <p>Applied on: <strong className="text-slate-800">{targetMaid.appliedAt}</strong></p>
+                      {targetMaid.rejectedAt && (
+                        <p>Rejected on: <strong className="text-rose-700">{new Date(targetMaid.rejectedAt).toISOString().split('T')[0]}</strong></p>
+                      )}
+                      {targetMaid.rejectionReason && (
+                        <p className="mt-1 pt-1 border-t border-rose-200/60 text-rose-900 font-medium">
+                          Reason: &ldquo;{targetMaid.rejectionReason}&rdquo;
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Current Active Application (Under Review) */}
+              <div className="relative">
+                <div className="absolute -left-[27px] top-1 w-3.5 h-3.5 rounded-full bg-emerald-600 border-2 border-white shadow-sm ring-2 ring-emerald-200" />
+                <div className="p-3 bg-emerald-50/70 rounded-xl border border-emerald-200 text-xs">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-extrabold text-emerald-950">
+                      {(targetMaid.reapplicationCount && targetMaid.reapplicationCount > 0)
+                        ? `Application Version ${(targetMaid.reapplicationCount || 0) + 1} (Latest Re-Application)`
+                        : 'Application Version 1 (Initial)'}
+                    </span>
+                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full text-[9px] font-black uppercase">
+                      Under Review
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-600 space-y-0.5">
+                    <p>Submitted on: <strong className="text-slate-900">{targetMaid.latestAppliedAt || targetMaid.appliedAt}</strong></p>
+                    <p>Status: <strong className="text-emerald-800 font-bold">Pending Administrative Operations Review</strong></p>
+                    <p className="text-[10px] text-slate-500 mt-1">Review applicant details and documents to issue final approval or revision.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* Right Column: KYC Documents Review Panel (7 cols) */}
@@ -366,48 +506,68 @@ export const PendingKYCTab: React.FC = () => {
 
             {/* Document Tabs Bar */}
             <div className="flex items-center gap-2 border-b border-slate-200 pb-3 overflow-x-auto">
-              {[
-                { type: 'aadhaar', label: 'Aadhaar' },
-                { type: 'pan', label: 'PAN' },
-                { type: 'address_proof', label: 'Address Proof' },
-                { type: 'police_verification', label: 'Police Verification' },
-                { type: 'bank_passbook', label: 'Bank Details' }
-              ].map(tab => (
+              {kycDocs.map(tab => (
                 <button
-                  key={tab.type}
+                  key={tab.id || tab.type}
                   onClick={() => {
                     setActiveDocType(tab.type);
                     setZoomScale(100);
                   }}
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                    activeDocType === tab.type
+                    (currentActiveDoc?.type === tab.type || activeDocType === tab.type)
                       ? 'bg-emerald-50 text-emerald-800 border border-emerald-300 shadow-sm'
                       : 'bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100'
                   }`}
                 >
-                  {tab.label}
+                  {tab.title}
                 </button>
               ))}
             </div>
 
             {/* Interactive Document View Canvas */}
             <div className="mt-4 border border-slate-200 rounded-2xl p-4 bg-slate-50 flex flex-col md:flex-row gap-4 items-center">
-              {/* Document Image Preview Box */}
+              {/* Document Image / PDF Preview Box */}
               <div className="w-full md:w-1/2 h-60 bg-white rounded-xl border border-slate-200 relative overflow-hidden flex items-center justify-center p-3">
-                <img
-                  src={currentActiveDoc.fileUrl || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=800'}
-                  alt={currentActiveDoc.title}
-                  className="max-h-full object-contain transition-transform duration-200"
-                  style={{ transform: `scale(${zoomScale / 100})` }}
-                />
+                {currentActiveDoc?.fileUrl ? (
+                  currentActiveDoc.fileName?.toLowerCase().endsWith('.pdf') || currentActiveDoc.fileUrl.toLowerCase().includes('.pdf') ? (
+                    <div className="flex flex-col items-center justify-center p-4 text-center">
+                      <FileText className="w-12 h-12 text-sky-600 mb-2" />
+                      <span className="text-xs font-bold text-slate-800 max-w-[200px] truncate block">
+                        {currentActiveDoc.fileName || 'PDF Document'}
+                      </span>
+                      <a
+                        href={currentActiveDoc.fileUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-3 px-3 py-1.5 bg-sky-600 text-white rounded-lg text-xs font-bold hover:bg-sky-700 flex items-center gap-1.5"
+                      >
+                        <Download className="w-3.5 h-3.5" /> Open / Download
+                      </a>
+                    </div>
+                  ) : (
+                    <img
+                      src={currentActiveDoc.fileUrl}
+                      alt={currentActiveDoc.title}
+                      className="max-h-full object-contain transition-transform duration-200"
+                      style={{ transform: `scale(${zoomScale / 100})` }}
+                    />
+                  )
+                ) : (
+                  <div className="text-center p-4 text-slate-400">
+                    <AlertCircle className="w-10 h-10 mx-auto mb-2 text-slate-300" />
+                    <p className="text-xs font-semibold">Document not uploaded yet</p>
+                  </div>
+                )}
 
-                {/* Canvas Controls overlay */}
-                <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-slate-900/80 text-white px-3 py-1 rounded-full text-xs font-bold flex items-center gap-2 shadow-lg backdrop-blur-sm">
-                  <button onClick={() => setZoomScale(s => Math.max(50, s - 25))} className="hover:text-emerald-400"><ZoomOut className="w-3.5 h-3.5" /></button>
-                  <span>{zoomScale}%</span>
-                  <button onClick={() => setZoomScale(s => Math.min(200, s + 25))} className="hover:text-emerald-400"><ZoomIn className="w-3.5 h-3.5" /></button>
-                  <button onClick={() => setZoomScale(100)} className="hover:text-emerald-400 ml-1"><RotateCcw className="w-3.5 h-3.5" /></button>
-                </div>
+                {/* Canvas Controls overlay (only when image is displayed) */}
+                {currentActiveDoc?.fileUrl && !(currentActiveDoc.fileName?.toLowerCase().endsWith('.pdf') || currentActiveDoc.fileUrl.toLowerCase().includes('.pdf')) && (
+                  <div className="absolute bottom-2 left-1/2 -translate-x-1/2 bg-slate-900/80 text-white px-3 py-1 rounded-full text-xs font-bold flex items-center gap-2 shadow-lg backdrop-blur-sm">
+                    <button onClick={() => setZoomScale(s => Math.max(50, s - 25))} className="hover:text-emerald-400"><ZoomOut className="w-3.5 h-3.5" /></button>
+                    <span>{zoomScale}%</span>
+                    <button onClick={() => setZoomScale(s => Math.min(200, s + 25))} className="hover:text-emerald-400"><ZoomIn className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => setZoomScale(100)} className="hover:text-emerald-400 ml-1"><RotateCcw className="w-3.5 h-3.5" /></button>
+                  </div>
+                )}
               </div>
 
               {/* Document File Info Details */}

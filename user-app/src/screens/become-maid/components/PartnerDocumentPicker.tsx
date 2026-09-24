@@ -9,289 +9,574 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
+  Linking,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import {
   FileText,
   Camera,
   Upload,
   Image as ImageIcon,
-  CheckCircle2,
   Eye,
   RefreshCw,
   Trash2,
   X,
-  ShieldCheck,
-  AlertCircle,
+  ExternalLink,
+  Plus,
+  FileCheck,
 } from 'lucide-react-native';
 import { supabase } from '../../../config/supabase';
 
+// Safe dynamic accessor for expo-document-picker
+const getDocumentPicker = (): any => {
+  try {
+    return require('expo-document-picker');
+  } catch {
+    return null;
+  }
+};
+
+export interface UploadedDocItem {
+  id: string;
+  name: string;
+  fileUrl: string;
+  fileType: 'pdf' | 'image' | 'file';
+  mimeType?: string;
+  fileSize?: number;
+  uploadedAt: string;
+}
+
+// Backward-compatibility type definition
 export interface DocItemState {
   id: string;
   name: string;
-  subTitle: string;
-  required: boolean;
+  subTitle?: string;
+  required?: boolean;
   uploaded: boolean;
   fileUrl?: string;
   fileName?: string;
-  fileType?: string; // 'image' | 'pdf'
+  fileType?: 'image' | 'pdf' | 'file';
+  fileSize?: number;
 }
 
 interface PartnerDocumentPickerProps {
-  documents: {
-    aadhaarFront: DocItemState;
-    aadhaarBack: DocItemState;
-    pan: DocItemState;
-  };
-  onDocumentChange: (docKey: 'aadhaarFront' | 'aadhaarBack' | 'pan', updated: DocItemState) => void;
+  documents: UploadedDocItem[] | Record<string, DocItemState>;
+  onDocumentsChange?: (docs: UploadedDocItem[]) => void;
+  onDocumentChange?: (docKey: string, updated: DocItemState) => void;
+  partnerIdentifier?: string;
 }
 
 export const PartnerDocumentPicker: React.FC<PartnerDocumentPickerProps> = ({
   documents,
+  onDocumentsChange,
   onDocumentChange,
+  partnerIdentifier,
 }) => {
-  // Modal states
-  const [activeDocKey, setActiveDocKey] = useState<'aadhaarFront' | 'aadhaarBack' | 'pan' | null>(null);
-  const [previewDoc, setPreviewDoc] = useState<DocItemState | null>(null);
-  const [cameraPendingImage, setCameraPendingImage] = useState<{ docKey: 'aadhaarFront' | 'aadhaarBack' | 'pan'; dataUrl: string; file: File } | null>(null);
-  const [isUploading, setIsUploading] = useState<string | null>(null);
+  // Normalize incoming documents to UploadedDocItem array
+  const docList: UploadedDocItem[] = React.useMemo(() => {
+    if (Array.isArray(documents)) {
+      return documents;
+    }
+    if (documents && typeof documents === 'object') {
+      return Object.entries(documents)
+        .filter(([_, d]) => d && d.uploaded && d.fileUrl)
+        .map(([k, d]) => ({
+          id: d.id || k,
+          name: d.fileName || d.name || 'Document',
+          fileUrl: d.fileUrl || '',
+          fileType: (d.fileType as any) || (d.fileUrl?.endsWith('.pdf') ? 'pdf' : 'image'),
+          fileSize: d.fileSize,
+          uploadedAt: new Date().toISOString(),
+        }));
+    }
+    return [];
+  }, [documents]);
 
-  // Hidden file inputs
-  const pdfInputRef = useRef<HTMLInputElement | null>(null);
-  const imgInputRef = useRef<HTMLInputElement | null>(null);
-  const camInputRef = useRef<HTMLInputElement | null>(null);
+  const [showOptionsModal, setShowOptionsModal] = useState(false);
+  const [replacingDocId, setReplacingDocId] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [previewDoc, setPreviewDoc] = useState<UploadedDocItem | null>(null);
 
-  const triggerUpload = (docKey: 'aadhaarFront' | 'aadhaarBack' | 'pan', mode: 'pdf' | 'image' | 'camera') => {
-    setActiveDocKey(docKey);
-    if (Platform.OS === 'web') {
-      if (mode === 'pdf' && pdfInputRef.current) {
-        pdfInputRef.current.value = '';
-        pdfInputRef.current.click();
-      } else if (mode === 'image' && imgInputRef.current) {
-        imgInputRef.current.value = '';
-        imgInputRef.current.click();
-      } else if (mode === 'camera' && camInputRef.current) {
-        camInputRef.current.value = '';
-        camInputRef.current.click();
-      }
-    } else {
-      // In native environments, fallback to simulated upload or prompt
-      handleMockUpload(docKey, mode === 'pdf' ? 'pdf' : 'image');
+  // Web fallback file inputs
+  const webPdfInputRef = useRef<HTMLInputElement | null>(null);
+  const webImgInputRef = useRef<HTMLInputElement | null>(null);
+  const webCamInputRef = useRef<HTMLInputElement | null>(null);
+
+  const notifyChange = (updatedList: UploadedDocItem[]) => {
+    if (onDocumentsChange) {
+      onDocumentsChange(updatedList);
+    }
+    if (onDocumentChange) {
+      // Compatibility bridge
+      updatedList.forEach((d, idx) => {
+        const key = idx === 0 ? 'aadhaarFront' : idx === 1 ? 'aadhaarBack' : idx === 2 ? 'pan' : `doc_${idx}`;
+        onDocumentChange(key, {
+          id: d.id,
+          name: d.name,
+          uploaded: true,
+          fileUrl: d.fileUrl,
+          fileName: d.name,
+          fileType: d.fileType,
+          fileSize: d.fileSize,
+        });
+      });
     }
   };
 
-  const handleMockUpload = (docKey: 'aadhaarFront' | 'aadhaarBack' | 'pan', type: 'image' | 'pdf') => {
-    const mockUrl = type === 'pdf'
-      ? `https://example.com/${docKey}_document.pdf`
-      : `https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=80`;
-    
-    onDocumentChange(docKey, {
-      ...documents[docKey],
-      uploaded: true,
-      fileUrl: mockUrl,
-      fileName: `${docKey}_verified.${type === 'pdf' ? 'pdf' : 'jpg'}`,
-      fileType: type,
-    });
-    Alert.alert('Document Attached', `${documents[docKey].name} attached successfully.`);
-  };
+  /**
+   * Upload binary file to Supabase Storage
+   * Priority: 'partner-kyc' -> fallback 'gc-home-assets'
+   */
+  const uploadBinaryToSupabase = async (
+    fileUri: string,
+    fileName: string,
+    mimeType: string,
+    base64?: string
+  ): Promise<string> => {
+    const cleanId = (partnerIdentifier || 'partner').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const ext = fileName.split('.').pop()?.toLowerCase() || (mimeType.includes('pdf') ? 'pdf' : 'jpg');
+    const filePath = `partners/kyc/${cleanId}_doc_${Date.now()}.${ext}`;
 
-  const uploadFileToSupabase = async (docKey: 'aadhaarFront' | 'aadhaarBack' | 'pan', file: File): Promise<string> => {
-    const cleanDocName = docKey.toLowerCase();
-    const timestamp = Date.now();
-    const ext = file.name.split('.').pop()?.toLowerCase() || (file.type.includes('pdf') ? 'pdf' : 'jpg');
-    const filePath = `partners/kyc/${cleanDocName}_${timestamp}.${ext}`;
+    let body: any;
+    if (Platform.OS === 'web') {
+      const response = await fetch(fileUri);
+      body = await response.blob();
+    } else if (base64) {
+      const byteCharacters = atob(base64);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      body = new Uint8Array(byteNumbers);
+    } else {
+      const response = await fetch(fileUri);
+      body = await response.blob();
+    }
 
+    // Try 'partner-kyc' bucket first
     try {
-      // Try 'partner-kyc' first, fallback to 'gc-home-assets'
-      let targetBucket = 'partner-kyc';
-      let { data, error } = await supabase.storage.from(targetBucket).upload(filePath, file, {
-        contentType: file.type || (ext === 'pdf' ? 'application/pdf' : 'image/jpeg'),
+      const { data, error } = await supabase.storage.from('partner-kyc').upload(filePath, body, {
+        contentType: mimeType || (ext === 'pdf' ? 'application/pdf' : 'image/jpeg'),
         upsert: true,
       });
 
-      if (error && (error.message?.includes('Bucket not found') || (error as any).code === 'NoSuchBucket')) {
-        targetBucket = 'gc-home-assets';
-        const fallback = await supabase.storage.from(targetBucket).upload(filePath, file, {
-          contentType: file.type || (ext === 'pdf' ? 'application/pdf' : 'image/jpeg'),
-          upsert: true,
-        });
-        data = fallback.data;
-        error = fallback.error;
+      if (!error && data) {
+        const { data: urlData } = supabase.storage.from('partner-kyc').getPublicUrl(filePath);
+        if (urlData?.publicUrl) return urlData.publicUrl;
+      }
+    } catch {
+      // Proceed to fallback bucket
+    }
+
+    // Fallback: 'gc-home-assets' bucket
+    try {
+      const { data, error } = await supabase.storage.from('gc-home-assets').upload(filePath, body, {
+        contentType: mimeType || (ext === 'pdf' ? 'application/pdf' : 'image/jpeg'),
+        upsert: true,
+      });
+
+      if (!error && data) {
+        const { data: urlData } = supabase.storage.from('gc-home-assets').getPublicUrl(filePath);
+        if (urlData?.publicUrl) return urlData.publicUrl;
+      }
+      if (error) {
+        throw new Error(error.message);
+      }
+    } catch (err: any) {
+      throw new Error(err?.message || 'Storage upload failed. Please check internet connection.');
+    }
+
+    throw new Error('Could not retrieve public URL for uploaded document.');
+  };
+
+  /**
+   * Save uploaded file to state
+   */
+  const handleUploadSuccess = (
+    publicUrl: string,
+    fileName: string,
+    fileType: 'pdf' | 'image' | 'file',
+    mimeType?: string,
+    fileSize?: number
+  ) => {
+    const newDoc: UploadedDocItem = {
+      id: replacingDocId || `doc_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      name: fileName,
+      fileUrl: publicUrl,
+      fileType,
+      mimeType,
+      fileSize,
+      uploadedAt: new Date().toISOString(),
+    };
+
+    let nextList: UploadedDocItem[];
+    if (replacingDocId) {
+      nextList = docList.map(d => (d.id === replacingDocId ? newDoc : d));
+    } else {
+      nextList = [...docList, newDoc];
+    }
+
+    notifyChange(nextList);
+    setReplacingDocId(null);
+  };
+
+  /**
+   * 1. 📷 Take Photo / Camera
+   */
+  const handleCaptureCamera = async () => {
+    setShowOptionsModal(false);
+    setUploadError(null);
+
+    if (Platform.OS === 'web') {
+      if (webCamInputRef.current) {
+        webCamInputRef.current.value = '';
+        webCamInputRef.current.click();
+      }
+      return;
+    }
+
+    try {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert(
+          'Permission Required',
+          'Camera access is required to take a photo of your verification document.'
+        );
+        return;
       }
 
-      if (error || !data) {
-        console.warn('Storage upload note:', error?.message);
-        // Fallback to local object URL or reliable reference so registration is not blocked by storage permissions
-        return URL.createObjectURL(file);
+      const result = await ImagePicker.launchCameraAsync({
+        cameraType: ImagePicker.CameraType.back,
+        quality: 0.85,
+        base64: true,
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        setReplacingDocId(null);
+        return;
       }
 
-      const { data: urlData } = supabase.storage.from(targetBucket).getPublicUrl(filePath);
-      return urlData.publicUrl || URL.createObjectURL(file);
-    } catch (e: any) {
-      console.warn('Storage upload exception:', e);
-      return URL.createObjectURL(file);
+      const asset = result.assets[0];
+      setIsUploading(true);
+
+      const fileName = `document_${Date.now()}.jpg`;
+      const publicUrl = await uploadBinaryToSupabase(
+        asset.uri,
+        fileName,
+        'image/jpeg',
+        asset.base64 || undefined
+      );
+
+      handleUploadSuccess(publicUrl, fileName, 'image', 'image/jpeg', asset.fileSize);
+    } catch (err: any) {
+      const errMsg = err?.message || 'Failed to capture photo.';
+      setUploadError(errMsg);
+      Alert.alert('Camera Error', errMsg);
+      setReplacingDocId(null);
+    } finally {
+      setIsUploading(false);
     }
   };
 
-  const handleFileChange = async (event: any, type: 'pdf' | 'image' | 'camera') => {
+  /**
+   * 2. 🖼️ Choose from Gallery
+   */
+  const handlePickGalleryImage = async () => {
+    setShowOptionsModal(false);
+    setUploadError(null);
+
+    if (Platform.OS === 'web') {
+      if (webImgInputRef.current) {
+        webImgInputRef.current.value = '';
+        webImgInputRef.current.click();
+      }
+      return;
+    }
+
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert(
+          'Permission Required',
+          'Gallery access is required to upload your verification document.'
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: false,
+        quality: 0.85,
+        base64: true,
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        setReplacingDocId(null);
+        return;
+      }
+
+      const asset = result.assets[0];
+      setIsUploading(true);
+
+      const fileName = asset.fileName || `document_${Date.now()}.jpg`;
+      const publicUrl = await uploadBinaryToSupabase(
+        asset.uri,
+        fileName,
+        'image/jpeg',
+        asset.base64 || undefined
+      );
+
+      handleUploadSuccess(publicUrl, fileName, 'image', 'image/jpeg', asset.fileSize);
+    } catch (err: any) {
+      const errMsg = err?.message || 'Failed to upload photo from gallery.';
+      setUploadError(errMsg);
+      Alert.alert('Upload Error', errMsg);
+      setReplacingDocId(null);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  /**
+   * 3. 📄 Choose File (PDF / Images / Any device document)
+   */
+  const handlePickFile = async () => {
+    setShowOptionsModal(false);
+    setUploadError(null);
+
+    if (Platform.OS === 'web') {
+      if (webPdfInputRef.current) {
+        webPdfInputRef.current.value = '';
+        webPdfInputRef.current.click();
+      }
+      return;
+    }
+
+    const DocumentPicker = getDocumentPicker();
+    if (!DocumentPicker || typeof DocumentPicker.getDocumentAsync !== 'function') {
+      // Fallback to gallery if native document picker module is absent
+      Alert.alert(
+        'Choose Document',
+        'You can select your document photo directly from your gallery or capture with camera.',
+        [
+          { text: 'Cancel', style: 'cancel', onPress: () => setReplacingDocId(null) },
+          { text: 'Gallery', onPress: handlePickGalleryImage },
+          { text: 'Camera', onPress: handleCaptureCamera },
+        ]
+      );
+      return;
+    }
+
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['*/*'],
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        setReplacingDocId(null);
+        return;
+      }
+
+      const asset = result.assets[0];
+      setIsUploading(true);
+
+      const isPdf = asset.mimeType?.includes('pdf') || asset.name?.toLowerCase().endsWith('.pdf');
+      const docType: 'pdf' | 'image' | 'file' = isPdf
+        ? 'pdf'
+        : asset.mimeType?.startsWith('image/')
+        ? 'image'
+        : 'file';
+
+      const fileName = asset.name || `document_${Date.now()}.${isPdf ? 'pdf' : 'jpg'}`;
+      const publicUrl = await uploadBinaryToSupabase(
+        asset.uri,
+        fileName,
+        asset.mimeType || (isPdf ? 'application/pdf' : 'image/jpeg')
+      );
+
+      handleUploadSuccess(publicUrl, fileName, docType, asset.mimeType, asset.size);
+    } catch (err: any) {
+      const errMsg = err?.message || 'Failed to upload document file.';
+      setUploadError(errMsg);
+      Alert.alert('Upload Error', errMsg);
+      setReplacingDocId(null);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  /**
+   * Web file input change handler
+   */
+  const handleWebFileChange = async (event: any, type: 'file' | 'image' | 'camera') => {
     const files = event.target?.files;
-    if (!files || files.length === 0 || !activeDocKey) return;
+    if (!files || files.length === 0) return;
 
     const file: File = files[0];
-    const docKey = activeDocKey;
-
-    // Check size limit: 10MB
-    if (file.size > 10 * 1024 * 1024) {
-      Alert.alert('File Too Large', 'Maximum file size allowed is 10 MB.');
-      return;
-    }
-
-    if (type === 'camera') {
-      // Camera flow: Show Preview -> Use Photo / Retake -> Upload
-      const reader = new FileReader();
-      reader.onload = () => {
-        setCameraPendingImage({
-          docKey,
-          dataUrl: reader.result as string,
-          file,
-        });
-      };
-      reader.readAsDataURL(file);
-      return;
-    }
-
-    // Direct PDF or Image upload
-    setIsUploading(docKey);
-    try {
-      const publicUrl = await uploadFileToSupabase(docKey, file);
-      onDocumentChange(docKey, {
-        ...documents[docKey],
-        uploaded: true,
-        fileUrl: publicUrl,
-        fileName: file.name,
-        fileType: type === 'pdf' ? 'pdf' : 'image',
-      });
-      Alert.alert('Upload Successful', `${documents[docKey].name} uploaded.`);
-    } catch (err: any) {
-      Alert.alert('Upload Error', err.message || 'Failed to upload document.');
-    } finally {
-      setIsUploading(null);
-      setActiveDocKey(null);
-    }
-  };
-
-  // Confirm Camera Photo
-  const handleUseCameraPhoto = async () => {
-    if (!cameraPendingImage) return;
-    const { docKey, file } = cameraPendingImage;
-    setIsUploading(docKey);
-    setCameraPendingImage(null);
+    setIsUploading(true);
+    setUploadError(null);
 
     try {
-      const publicUrl = await uploadFileToSupabase(docKey, file);
-      onDocumentChange(docKey, {
-        ...documents[docKey],
-        uploaded: true,
-        fileUrl: publicUrl,
-        fileName: `photo_${docKey}_${Date.now()}.jpg`,
-        fileType: 'image',
-      });
-      Alert.alert('Photo Uploaded', `${documents[docKey].name} photo attached successfully.`);
+      const blobUrl = URL.createObjectURL(file);
+      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+      const docType: 'pdf' | 'image' | 'file' = isPdf
+        ? 'pdf'
+        : file.type.startsWith('image/')
+        ? 'image'
+        : 'file';
+
+      const publicUrl = await uploadBinaryToSupabase(
+        blobUrl,
+        file.name,
+        file.type || (isPdf ? 'application/pdf' : 'image/jpeg')
+      );
+
+      handleUploadSuccess(publicUrl, file.name, docType, file.type, file.size);
     } catch (err: any) {
-      Alert.alert('Upload Error', err.message || 'Failed to upload camera capture.');
+      const errMsg = err?.message || 'Failed to upload file.';
+      setUploadError(errMsg);
+      Alert.alert('Upload Error', errMsg);
+      setReplacingDocId(null);
     } finally {
-      setIsUploading(null);
-      setActiveDocKey(null);
+      setIsUploading(false);
     }
   };
 
-  const handleRetakeCameraPhoto = () => {
-    const key = cameraPendingImage?.docKey;
-    setCameraPendingImage(null);
-    if (key) {
-      triggerUpload(key, 'camera');
-    }
+  /**
+   * Remove document from list
+   */
+  const handleRemove = (docId: string) => {
+    const updated = docList.filter(d => d.id !== docId);
+    notifyChange(updated);
   };
 
-  const handleRemoveDoc = (docKey: 'aadhaarFront' | 'aadhaarBack' | 'pan') => {
-    onDocumentChange(docKey, {
-      ...documents[docKey],
-      uploaded: false,
-      fileUrl: undefined,
-      fileName: undefined,
-      fileType: undefined,
-    });
+  /**
+   * Trigger Replace flow
+   */
+  const handleReplace = (docId: string) => {
+    setReplacingDocId(docId);
+    setShowOptionsModal(true);
   };
 
-  const renderDocCard = (key: 'aadhaarFront' | 'aadhaarBack' | 'pan', doc: DocItemState) => {
-    const isThisUploading = isUploading === key;
+  /**
+   * Trigger new upload flow
+   */
+  const handleStartUpload = () => {
+    setReplacingDocId(null);
+    setShowOptionsModal(true);
+  };
 
-    return (
-      <View key={key} style={styles.docCard}>
-        <View style={styles.cardHeaderRow}>
-          <View style={styles.docTitleBlock}>
-            <View style={styles.docTitleRow}>
-              <Text style={styles.docName}>{doc.name}</Text>
-              {doc.required && <Text style={styles.requiredAsterisk}> *</Text>}
-            </View>
-            <Text style={styles.docSubTitle}>{doc.subTitle}</Text>
-          </View>
+  return (
+    <View style={styles.container}>
+      {/* Hidden Web file inputs */}
+      {Platform.OS === 'web' && (
+        <div style={{ display: 'none' }}>
+          <input
+            ref={webPdfInputRef as any}
+            type="file"
+            accept="application/pdf,image/*,.doc,.docx"
+            onChange={e => handleWebFileChange(e, 'file')}
+          />
+          <input
+            ref={webImgInputRef as any}
+            type="file"
+            accept="image/png,image/jpeg,image/jpg,image/webp"
+            onChange={e => handleWebFileChange(e, 'image')}
+          />
+          <input
+            ref={webCamInputRef as any}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={e => handleWebFileChange(e, 'camera')}
+          />
+        </div>
+      )}
 
-          {doc.uploaded ? (
-            <View style={styles.uploadedBadge}>
-              <CheckCircle2 size={13} color="#168A68" />
-              <Text style={styles.uploadedBadgeText}>Uploaded ✓</Text>
-            </View>
-          ) : (
-            <View style={styles.pendingBadge}>
-              <Text style={styles.pendingBadgeText}>Required</Text>
-            </View>
-          )}
+      {/* Uploading Spinner Indicator */}
+      {isUploading && (
+        <View style={styles.uploadingBanner}>
+          <ActivityIndicator size="small" color="#168A68" />
+          <Text style={styles.uploadingText}>Uploading document to secure storage...</Text>
         </View>
+      )}
 
-        {isThisUploading ? (
-          <View style={styles.uploadingBox}>
-            <ActivityIndicator size="small" color="#168A68" />
-            <Text style={styles.uploadingText}>Uploading securely...</Text>
-          </View>
-        ) : doc.uploaded ? (
-          /* Document Management: Uploaded Status, View, Replace, Remove */
-          <View style={styles.docManageContainer}>
-            <View style={styles.fileInfoRow}>
-              {doc.fileType === 'pdf' ? (
-                <FileText size={18} color="#0284C7" />
-              ) : (
-                <ImageIcon size={18} color="#168A68" />
-              )}
-              <Text style={styles.fileNameText} numberOfLines={1}>
-                {doc.fileName || `${doc.name} (Attached)`}
-              </Text>
+      {/* Upload Error Banner */}
+      {uploadError && !isUploading && (
+        <View style={styles.errorBanner}>
+          <Text style={styles.errorText}>{uploadError}</Text>
+          <TouchableOpacity onPress={handleStartUpload} style={styles.retryBtn}>
+            <RefreshCw size={13} color="#DC2626" />
+            <Text style={styles.retryBtnText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* List of Uploaded Document Cards */}
+      {docList.map(doc => {
+        const isPdf = doc.fileType === 'pdf' || doc.name.toLowerCase().endsWith('.pdf');
+
+        return (
+          <View key={doc.id} style={styles.docCard}>
+            <View style={styles.docCardMain}>
+              {/* File Icon / Thumbnail */}
+              <View style={[styles.fileIconBox, isPdf ? styles.pdfIconBox : styles.imageIconBox]}>
+                {isPdf ? (
+                  <FileText size={22} color="#0284C7" />
+                ) : (
+                  <ImageIcon size={22} color="#168A68" />
+                )}
+              </View>
+
+              {/* File Details */}
+              <View style={styles.fileDetails}>
+                <Text style={styles.fileName} numberOfLines={1}>
+                  {doc.name}
+                </Text>
+                <View style={styles.fileMetaRow}>
+                  <View style={styles.fileTypeBadge}>
+                    <Text style={styles.fileTypeBadgeText}>
+                      {isPdf ? 'PDF' : doc.fileType === 'image' ? 'IMAGE' : 'FILE'}
+                    </Text>
+                  </View>
+                  {doc.fileSize ? (
+                    <Text style={styles.fileSizeText}>
+                      {(doc.fileSize / 1024).toFixed(0)} KB
+                    </Text>
+                  ) : null}
+                  <View style={styles.uploadedTag}>
+                    <FileCheck size={11} color="#166534" />
+                    <Text style={styles.uploadedTagText}>Uploaded</Text>
+                  </View>
+                </View>
+              </View>
             </View>
 
-            <View style={styles.docActionButtonsRow}>
-              {/* View */}
+            {/* Action Buttons: [Preview] [Replace] [Remove] */}
+            <View style={styles.cardActionsRow}>
               <TouchableOpacity
-                style={styles.actionBtnOutline}
+                style={styles.actionBtn}
                 onPress={() => setPreviewDoc(doc)}
                 activeOpacity={0.7}
               >
                 <Eye size={13} color="#334155" />
-                <Text style={styles.actionBtnText}>View</Text>
+                <Text style={styles.actionBtnText}>Preview</Text>
               </TouchableOpacity>
 
-              {/* Replace */}
               <TouchableOpacity
-                style={styles.actionBtnOutline}
-                onPress={() => triggerUpload(key, 'image')}
+                style={styles.actionBtn}
+                onPress={() => handleReplace(doc.id)}
                 activeOpacity={0.7}
               >
                 <RefreshCw size={13} color="#334155" />
                 <Text style={styles.actionBtnText}>Replace</Text>
               </TouchableOpacity>
 
-              {/* Remove */}
               <TouchableOpacity
-                style={styles.actionBtnDanger}
-                onPress={() => handleRemoveDoc(key)}
+                style={[styles.actionBtn, styles.actionBtnDanger]}
+                onPress={() => handleRemove(doc.id)}
                 activeOpacity={0.7}
               >
                 <Trash2 size={13} color="#DC2626" />
@@ -299,143 +584,124 @@ export const PartnerDocumentPicker: React.FC<PartnerDocumentPickerProps> = ({
               </TouchableOpacity>
             </View>
           </View>
-        ) : (
-          /* 3 Upload Methods: Upload PDF | Upload Image | Take Photo */
-          <View style={styles.uploadOptionsRow}>
-            {/* Upload PDF */}
-            <TouchableOpacity
-              style={styles.methodButton}
-              onPress={() => triggerUpload(key, 'pdf')}
-              activeOpacity={0.75}
-            >
-              <FileText size={15} color="#0284C7" />
-              <Text style={styles.methodButtonText}>Upload PDF</Text>
-            </TouchableOpacity>
+        );
+      })}
 
-            {/* Upload Image */}
-            <TouchableOpacity
-              style={styles.methodButton}
-              onPress={() => triggerUpload(key, 'image')}
-              activeOpacity={0.75}
-            >
-              <ImageIcon size={15} color="#168A68" />
-              <Text style={styles.methodButtonText}>Upload Image</Text>
-            </TouchableOpacity>
-
-            {/* Take Photo */}
-            <TouchableOpacity
-              style={[styles.methodButton, styles.cameraButtonHighlight]}
-              onPress={() => triggerUpload(key, 'camera')}
-              activeOpacity={0.75}
-            >
-              <Camera size={15} color="#0F766E" />
-              <Text style={[styles.methodButtonText, styles.cameraButtonText]}>Take Photo</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      </View>
-    );
-  };
-
-  return (
-    <View style={styles.container}>
-      {/* Hidden file inputs for web/cross-platform execution */}
-      {Platform.OS === 'web' && (
-        <div style={{ display: 'none' }}>
-          <input
-            ref={pdfInputRef as any}
-            type="file"
-            accept="application/pdf"
-            onChange={(e) => handleFileChange(e, 'pdf')}
-          />
-          <input
-            ref={imgInputRef as any}
-            type="file"
-            accept="image/png,image/jpeg,image/jpg,image/webp"
-            onChange={(e) => handleFileChange(e, 'image')}
-          />
-          <input
-            ref={camInputRef as any}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            onChange={(e) => handleFileChange(e, 'camera')}
-          />
-        </div>
-      )}
-
-      {/* Security Privacy Notice */}
-      <View style={styles.securityBox}>
-        <ShieldCheck size={18} color="#168A68" />
-        <Text style={styles.securityBoxText}>
-          Documents are stored securely with end-to-end encryption and private access controls. Only authorized verification staff can review your KYC files.
+      {/* "+ Upload Document" / "+ Upload Another Document" Button */}
+      <TouchableOpacity
+        style={[
+          styles.uploadButton,
+          docList.length > 0 && styles.uploadButtonSecondary,
+        ]}
+        onPress={handleStartUpload}
+        disabled={isUploading}
+        activeOpacity={0.85}
+      >
+        <Plus size={18} color={docList.length > 0 ? '#168A68' : '#FFFFFF'} />
+        <Text
+          style={[
+            styles.uploadButtonText,
+            docList.length > 0 && styles.uploadButtonSecondaryText,
+          ]}
+        >
+          {docList.length === 0 ? '+ Upload Document' : '+ Upload Another Document'}
         </Text>
-      </View>
+      </TouchableOpacity>
 
-      {/* Render 3 Required Documents: Aadhaar Front, Aadhaar Back, PAN */}
-      {renderDocCard('aadhaarFront', documents.aadhaarFront)}
-      {renderDocCard('aadhaarBack', documents.aadhaarBack)}
-      {renderDocCard('pan', documents.pan)}
-
-      {/* ── CAMERA PREVIEW MODAL (Capture -> Preview -> Use Photo / Retake -> Upload) ── */}
+      {/* ── ACTION SHEET MODAL: UPLOAD OPTIONS ── */}
       <Modal
-        visible={Boolean(cameraPendingImage)}
+        visible={showOptionsModal}
         transparent
         animationType="fade"
-        onRequestClose={() => setCameraPendingImage(null)}
+        onRequestClose={() => {
+          setShowOptionsModal(false);
+          setReplacingDocId(null);
+        }}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.cameraPreviewCard}>
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => {
+            setShowOptionsModal(false);
+            setReplacingDocId(null);
+          }}
+        >
+          <View style={styles.modalSheet} onStartShouldSetResponder={() => true}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Photo Captured</Text>
+              <Text style={styles.modalTitle}>
+                {replacingDocId ? 'Replace Document' : 'Upload Document'}
+              </Text>
               <TouchableOpacity
-                onPress={() => setCameraPendingImage(null)}
-                style={styles.modalCloseBtn}
+                onPress={() => {
+                  setShowOptionsModal(false);
+                  setReplacingDocId(null);
+                }}
+                style={styles.closeBtn}
               >
                 <X size={18} color="#64748B" />
               </TouchableOpacity>
             </View>
-
-            <Text style={styles.modalSubText}>
-              Ensure the text is sharp, glare-free, and all 4 corners are clearly visible.
+            <Text style={styles.modalSubtitle}>
+              Select an option to upload your verification document:
             </Text>
 
-            {cameraPendingImage?.dataUrl && (
-              <View style={styles.previewImageWrapper}>
-                <Image
-                  source={{ uri: cameraPendingImage.dataUrl }}
-                  style={styles.previewImage}
-                  resizeMode="contain"
-                />
-              </View>
-            )}
-
-            <View style={styles.cameraActionsRow}>
-              {/* Retake */}
+            <View style={styles.optionsList}>
+              {/* Option 1: Take Photo */}
               <TouchableOpacity
-                style={styles.retakeBtn}
-                onPress={handleRetakeCameraPhoto}
-                activeOpacity={0.8}
+                style={styles.optionRow}
+                onPress={handleCaptureCamera}
+                activeOpacity={0.75}
               >
-                <RefreshCw size={14} color="#334155" />
-                <Text style={styles.retakeBtnText}>Retake</Text>
+                <View style={[styles.optionIcon, { backgroundColor: '#ECFDF5' }]}>
+                  <Camera size={20} color="#168A68" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.optionTitle}>Take Photo</Text>
+                  <Text style={styles.optionDescription}>
+                    Use camera to capture document directly
+                  </Text>
+                </View>
               </TouchableOpacity>
 
-              {/* Use Photo */}
+              {/* Option 2: Choose from Gallery */}
               <TouchableOpacity
-                style={styles.usePhotoBtn}
-                onPress={handleUseCameraPhoto}
-                activeOpacity={0.8}
+                style={styles.optionRow}
+                onPress={handlePickGalleryImage}
+                activeOpacity={0.75}
               >
-                <CheckCircle2 size={15} color="#FFFFFF" />
-                <Text style={styles.usePhotoBtnText}>Use Photo</Text>
+                <View style={[styles.optionIcon, { backgroundColor: '#F0FDF4' }]}>
+                  <ImageIcon size={20} color="#166534" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.optionTitle}>Choose from Gallery</Text>
+                  <Text style={styles.optionDescription}>
+                    Select JPG, JPEG, or PNG photo
+                  </Text>
+                </View>
+              </TouchableOpacity>
+
+              {/* Option 3: Choose File */}
+              <TouchableOpacity
+                style={styles.optionRow}
+                onPress={handlePickFile}
+                activeOpacity={0.75}
+              >
+                <View style={[styles.optionIcon, { backgroundColor: '#F0F9FF' }]}>
+                  <FileText size={20} color="#0284C7" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.optionTitle}>Choose File</Text>
+                  <Text style={styles.optionDescription}>
+                    Select PDF or supported device file
+                  </Text>
+                </View>
               </TouchableOpacity>
             </View>
           </View>
-        </View>
+        </TouchableOpacity>
       </Modal>
 
-      {/* ── DOCUMENT VIEW MODAL ── */}
+      {/* ── PREVIEW MODAL ── */}
       <Modal
         visible={Boolean(previewDoc)}
         transparent
@@ -443,47 +709,54 @@ export const PartnerDocumentPicker: React.FC<PartnerDocumentPickerProps> = ({
         onRequestClose={() => setPreviewDoc(null)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.docViewModalCard}>
+          <View style={styles.previewModal}>
             <View style={styles.modalHeader}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.modalTitle}>{previewDoc?.name}</Text>
-                <Text style={styles.docSubTitle}>{previewDoc?.fileName || 'Attached document'}</Text>
+                <Text style={styles.modalTitle} numberOfLines={1}>
+                  {previewDoc?.name}
+                </Text>
               </View>
-              <TouchableOpacity
-                onPress={() => setPreviewDoc(null)}
-                style={styles.modalCloseBtn}
-              >
+              <TouchableOpacity onPress={() => setPreviewDoc(null)} style={styles.closeBtn}>
                 <X size={18} color="#64748B" />
               </TouchableOpacity>
             </View>
 
-            {previewDoc?.fileType === 'pdf' ? (
-              <View style={styles.pdfPlaceholderBox}>
-                <FileText size={48} color="#0284C7" />
-                <Text style={styles.pdfTitleText}>PDF Document Attached</Text>
-                <Text style={styles.pdfSubText}>{previewDoc.fileName}</Text>
+            {previewDoc?.fileType === 'pdf' || previewDoc?.name.toLowerCase().endsWith('.pdf') ? (
+              <View style={styles.pdfPreviewBox}>
+                <FileText size={52} color="#0284C7" />
+                <Text style={styles.pdfPreviewTitle}>PDF Document</Text>
+                <Text style={styles.pdfPreviewName} numberOfLines={2}>
+                  {previewDoc?.name}
+                </Text>
+                {previewDoc?.fileUrl ? (
+                  <TouchableOpacity
+                    style={styles.openPdfBtn}
+                    onPress={() => {
+                      if (previewDoc?.fileUrl) Linking.openURL(previewDoc.fileUrl);
+                    }}
+                    activeOpacity={0.85}
+                  >
+                    <ExternalLink size={15} color="#FFFFFF" />
+                    <Text style={styles.openPdfBtnText}>Open Document</Text>
+                  </TouchableOpacity>
+                ) : null}
               </View>
             ) : previewDoc?.fileUrl ? (
-              <View style={styles.previewImageWrapper}>
+              <View style={styles.imagePreviewBox}>
                 <Image
                   source={{ uri: previewDoc.fileUrl }}
                   style={styles.previewImage}
                   resizeMode="contain"
                 />
               </View>
-            ) : (
-              <View style={styles.pdfPlaceholderBox}>
-                <AlertCircle size={40} color="#94A3B8" />
-                <Text style={styles.pdfSubText}>No preview available</Text>
-              </View>
-            )}
+            ) : null}
 
             <TouchableOpacity
-              style={styles.closeViewBtn}
+              style={styles.closePreviewBtn}
               onPress={() => setPreviewDoc(null)}
-              activeOpacity={0.8}
+              activeOpacity={0.85}
             >
-              <Text style={styles.closeViewBtnText}>Close Preview</Text>
+              <Text style={styles.closePreviewBtnText}>Close Preview</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -494,301 +767,340 @@ export const PartnerDocumentPicker: React.FC<PartnerDocumentPickerProps> = ({
 
 const styles = StyleSheet.create({
   container: {
-    gap: 14,
+    gap: 12,
   },
-  securityBox: {
+  uploadingBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    padding: 12,
     backgroundColor: '#F0FDF4',
     borderWidth: 1,
     borderColor: '#BBF7D0',
     borderRadius: 10,
-    padding: 12,
   },
-  securityBoxText: {
+  uploadingText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#166534',
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 10,
+  },
+  errorText: {
     flex: 1,
     fontSize: 12,
-    color: '#166534',
-    lineHeight: 17,
+    color: '#DC2626',
+    fontWeight: '500',
   },
+  retryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    borderRadius: 6,
+  },
+  retryBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#DC2626',
+  },
+
+  // Document Card
   docCard: {
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#E2E8F0',
     borderRadius: 12,
     padding: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  docCardMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 12,
+    marginBottom: 12,
   },
-  cardHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: 10,
-  },
-  docTitleBlock: {
-    flex: 1,
-  },
-  docTitleRow: {
-    flexDirection: 'row',
+  fileIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  docName: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#0F172A',
+  pdfIconBox: {
+    backgroundColor: '#F0F9FF',
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
   },
-  requiredAsterisk: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#EF4444',
-  },
-  docSubTitle: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 2,
-    lineHeight: 15,
-  },
-  uploadedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
+  imageIconBox: {
     backgroundColor: '#ECFDF5',
     borderWidth: 1,
     borderColor: '#A7F3D0',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 16,
   },
-  uploadedBadgeText: {
-    fontSize: 11,
+  fileDetails: {
+    flex: 1,
+  },
+  fileName: {
+    fontSize: 14,
     fontWeight: '700',
-    color: '#065F46',
+    color: '#0F172A',
+    marginBottom: 4,
   },
-  pendingBadge: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 16,
-  },
-  pendingBadgeText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  uploadOptionsRow: {
+  fileMetaRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
     flexWrap: 'wrap',
   },
-  methodButton: {
-    flex: 1,
-    minWidth: 90,
+  fileTypeBadge: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  fileTypeBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#475569',
+    letterSpacing: 0.5,
+  },
+  fileSizeText: {
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  uploadedTag: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
+    gap: 3,
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  uploadedTagText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#166534',
+  },
+
+  // Actions Row: [Preview] [Replace] [Remove]
+  cardActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    paddingTop: 10,
+  },
+  actionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
     backgroundColor: '#F8FAFC',
     borderWidth: 1,
     borderColor: '#CBD5E1',
     borderRadius: 8,
-    paddingVertical: 9,
-    paddingHorizontal: 8,
-  },
-  methodButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#334155',
-  },
-  cameraButtonHighlight: {
-    backgroundColor: '#F0FDFA',
-    borderColor: '#99F6E4',
-  },
-  cameraButtonText: {
-    color: '#0F766E',
-  },
-  uploadingBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 12,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 8,
-  },
-  uploadingText: {
-    fontSize: 12,
-    color: '#168A68',
-    fontWeight: '600',
-  },
-  docManageContainer: {
-    gap: 10,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 8,
-    padding: 10,
-  },
-  fileInfoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  fileNameText: {
-    flex: 1,
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#1E293B',
-  },
-  docActionButtonsRow: {
-    flexDirection: 'row',
-    gap: 8,
-    justifyContent: 'flex-end',
-  },
-  actionBtnOutline: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingVertical: 5,
-    paddingHorizontal: 9,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    backgroundColor: '#FFFFFF',
-  },
-  actionBtnDanger: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingVertical: 5,
-    paddingHorizontal: 9,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#FECACA',
-    backgroundColor: '#FEF2F2',
   },
   actionBtnText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
     color: '#334155',
   },
+  actionBtnDanger: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+    marginLeft: 'auto',
+  },
+
+  // Primary Upload Button
+  uploadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    backgroundColor: '#168A68',
+    borderRadius: 10,
+    shadowColor: '#168A68',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  uploadButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  uploadButtonSecondary: {
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: '#168A68',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  uploadButtonSecondaryText: {
+    color: '#168A68',
+  },
+
+  // Modal Sheet
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.65)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     padding: 20,
-  },
-  cameraPreviewCard: {
-    width: '100%',
-    maxWidth: 420,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 18,
-    gap: 12,
-  },
-  docViewModalCard: {
-    width: '100%',
-    maxWidth: 440,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 18,
-    gap: 14,
+    paddingBottom: Platform.OS === 'ios' ? 36 : 24,
   },
   modalHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
   },
   modalTitle: {
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 17,
+    fontWeight: '800',
     color: '#0F172A',
   },
-  modalSubText: {
-    fontSize: 12,
+  modalSubtitle: {
+    fontSize: 13,
     color: '#64748B',
-    lineHeight: 16,
+    marginBottom: 16,
   },
-  modalCloseBtn: {
-    padding: 4,
+  closeBtn: {
+    padding: 6,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
   },
-  previewImageWrapper: {
+  optionsList: {
+    gap: 10,
+  },
+  optionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    padding: 14,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+  },
+  optionIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  optionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 2,
+  },
+  optionDescription: {
+    fontSize: 11,
+    color: '#64748B',
+  },
+
+  // Preview Modal
+  previewModal: {
+    backgroundColor: '#FFFFFF',
+    margin: 20,
+    borderRadius: 16,
+    padding: 18,
+    maxHeight: '85%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+    alignSelf: 'center',
+    width: '92%',
+  },
+  imagePreviewBox: {
     width: '100%',
-    height: 260,
+    height: 320,
     backgroundColor: '#0F172A',
     borderRadius: 10,
     overflow: 'hidden',
-    justifyContent: 'center',
-    alignItems: 'center',
+    marginVertical: 14,
   },
   previewImage: {
     width: '100%',
     height: '100%',
   },
-  cameraActionsRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 6,
-  },
-  retakeBtn: {
-    flex: 1,
-    flexDirection: 'row',
+  pdfPreviewBox: {
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
+    paddingVertical: 36,
+    paddingHorizontal: 16,
     backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    marginVertical: 14,
+    gap: 10,
   },
-  retakeBtnText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#334155',
+  pdfPreviewTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0F172A',
   },
-  usePhotoBtn: {
-    flex: 1,
+  pdfPreviewName: {
+    fontSize: 12,
+    color: '#64748B',
+    textAlign: 'center',
+  },
+  openPdfBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 12,
-    borderRadius: 10,
-    backgroundColor: '#168A68',
+    gap: 8,
+    backgroundColor: '#0284C7',
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginTop: 8,
   },
-  usePhotoBtnText: {
+  openPdfBtnText: {
     fontSize: 13,
     fontWeight: '700',
     color: '#FFFFFF',
   },
-  pdfPlaceholderBox: {
-    paddingVertical: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F0F9FF',
-    borderRadius: 10,
-    gap: 8,
-  },
-  pdfTitleText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#0369A1',
-  },
-  pdfSubText: {
-    fontSize: 12,
-    color: '#64748B',
-  },
-  closeViewBtn: {
+  closePreviewBtn: {
+    paddingVertical: 12,
     backgroundColor: '#F1F5F9',
     borderRadius: 10,
-    paddingVertical: 11,
     alignItems: 'center',
   },
-  closeViewBtnText: {
-    fontSize: 13,
-    fontWeight: '600',
+  closePreviewBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
     color: '#334155',
   },
 });

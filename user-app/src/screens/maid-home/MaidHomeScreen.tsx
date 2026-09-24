@@ -40,12 +40,13 @@ import {
   RotateCcw,
   ArrowLeft,
   RefreshCw,
+  User,
 } from 'lucide-react-native';
 
 // ── SWIPEABLE JOB CARD COMPONENT ──
 interface SwipeableJobCardProps {
   job: Booking;
-  netPayout: number;
+  payoutDisplay: string;
   category: { icon: string; label: string };
   formatAddress: (addr: any) => string;
   formatDateLabel: (dateStr?: string) => string;
@@ -59,7 +60,7 @@ interface SwipeableJobCardProps {
 
 const SwipeableJobCard: React.FC<SwipeableJobCardProps> = ({
   job,
-  netPayout,
+  payoutDisplay,
   category,
   formatAddress,
   formatDateLabel,
@@ -159,8 +160,10 @@ const SwipeableJobCard: React.FC<SwipeableJobCardProps> = ({
             </View>
 
             <View style={styles.payoutBlock}>
-              <Text style={styles.payoutLabel}>NET PAYOUT</Text>
-              <Text style={styles.payoutAmount}>₹{netPayout}</Text>
+              <Text style={styles.payoutLabel}>PARTNER PAYOUT</Text>
+              <Text style={[styles.payoutAmount, payoutDisplay === 'Payout Pending' && { fontSize: 13, color: '#D97706' }]}>
+                {payoutDisplay}
+              </Text>
             </View>
           </View>
 
@@ -274,7 +277,7 @@ const swipeStyles = StyleSheet.create({
 });
 
 export const MaidHomeScreen: React.FC = () => {
-  const { maidProfile, toggleMaidOnline, bookings, updateBookingStatus, navigateTo, confirmMaidSlot } = useAuth();
+  const { user, maidProfile, toggleMaidOnline, bookings, updateBookingStatus, navigateTo, confirmMaidSlot } = useAuth();
 
   const [dismissedSlotReminderId, setDismissedSlotReminderId] = useState<string | null>(null);
 
@@ -453,9 +456,9 @@ export const MaidHomeScreen: React.FC = () => {
     b => maidId && (b.assignedMaidId === maidId || b.assignedMaidName === maidProfile?.fullName) && b.status === 'completed'
   );
 
-  // Earnings calculation
+  // Earnings calculation (strictly based on actual partner payout)
   const calculatedEarnings = completedJobs.reduce(
-    (acc, curr) => acc + Math.round((curr.totalAmount || 799) * 0.75),
+    (acc, curr) => acc + (curr.partnerPayout && curr.partnerPayout > 0 ? curr.partnerPayout : 0),
     0
   );
 
@@ -726,14 +729,18 @@ export const MaidHomeScreen: React.FC = () => {
         <View style={styles.profileRow}>
           <View style={styles.profileLeft}>
             <View style={styles.avatarContainer}>
-              <Image
-                source={{
-                  uri:
-                    maidProfile?.photoUrl ||
-                    'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=400',
-                }}
-                style={styles.profilePhoto}
-              />
+              {maidProfile?.photoUrl || user?.profilePhoto ? (
+                <Image
+                  source={{
+                    uri: maidProfile?.photoUrl || user?.profilePhoto,
+                  }}
+                  style={styles.profilePhoto}
+                />
+              ) : (
+                <View style={[styles.profilePhoto, { backgroundColor: '#E8F8EE', alignItems: 'center', justifyContent: 'center' }]}>
+                  <User size={22} color="#0D8846" />
+                </View>
+              )}
               <View style={[styles.statusDot, isOnline ? styles.statusDotOnline : styles.statusDotOffline]} />
             </View>
 
@@ -897,7 +904,9 @@ export const MaidHomeScreen: React.FC = () => {
               <View style={styles.jobsList}>
                 {newJobs.map(job => {
                   const cat = getServiceCategory(job.serviceName);
-                  const netPayout = Math.round((job.totalAmount || 799) * 0.8);
+                  const payoutDisplay = job.partnerPayout && job.partnerPayout > 0
+                    ? `₹${job.partnerPayout}`
+                    : 'Payout Pending';
                   const isAcceptingThis = acceptingJobId === job.bookingId;
                   const isDecliningThis = isDecliningId === job.bookingId;
 
@@ -905,7 +914,7 @@ export const MaidHomeScreen: React.FC = () => {
                     <SwipeableJobCard
                       key={job.bookingId}
                       job={job}
-                      netPayout={netPayout}
+                      payoutDisplay={payoutDisplay}
                       category={cat}
                       formatAddress={formatAddress}
                       formatDateLabel={formatDateLabel}
@@ -945,7 +954,9 @@ export const MaidHomeScreen: React.FC = () => {
                       <View style={styles.serviceBadge}>
                         <Text style={styles.serviceBadgeText}>{job.serviceName}</Text>
                       </View>
-                      <Text style={styles.payoutText}>Net Payout: ₹{Math.round((job.totalAmount || 799) * 0.8)}</Text>
+                      <Text style={styles.payoutText}>
+                        {job.partnerPayout && job.partnerPayout > 0 ? `Payout: ₹${job.partnerPayout}` : 'Payout Pending'}
+                      </Text>
                     </View>
 
                     <View style={styles.jobDetailsGroup}>
@@ -1136,21 +1147,20 @@ export const MaidHomeScreen: React.FC = () => {
                   </Text>
                 </View>
 
-                {/* Payout Breakdown */}
+                {/* Partner Final Payout (Strict Privacy: No customer pricing shown) */}
                 <View style={styles.payoutBreakdownCard}>
-                  <Text style={styles.detailSectionLabel}>PAYOUT BREAKDOWN</Text>
-                  <View style={styles.breakdownRow}>
-                    <Text style={styles.breakdownLabel}>Base payout</Text>
-                    <Text style={styles.breakdownValue}>₹{Math.round((selectedJobDetails.totalAmount || 799) * 0.7)}</Text>
-                  </View>
-                  <View style={styles.breakdownRow}>
-                    <Text style={styles.breakdownLabel}>On-Time Bonus</Text>
-                    <Text style={styles.breakdownValue}>+ ₹{Math.round((selectedJobDetails.totalAmount || 799) * 0.1)}</Text>
-                  </View>
+                  <Text style={styles.detailSectionLabel}>PARTNER PAYOUT</Text>
                   <View style={[styles.breakdownRow, styles.breakdownTotalRow]}>
-                    <Text style={styles.breakdownTotalLabel}>Net Payout</Text>
-                    <Text style={styles.breakdownTotalValue}>₹{Math.round((selectedJobDetails.totalAmount || 799) * 0.8)}</Text>
+                    <Text style={styles.breakdownTotalLabel}>Final Payout</Text>
+                    <Text style={styles.breakdownTotalValue}>
+                      {selectedJobDetails.partnerPayout && selectedJobDetails.partnerPayout > 0
+                        ? `₹${selectedJobDetails.partnerPayout}`
+                        : 'Payout Pending'}
+                    </Text>
                   </View>
+                  <Text style={{ fontSize: 11, color: '#64748B', marginTop: 8, fontStyle: 'italic' }}>
+                    Payout is finalized from Supabase based on the partner agreement. Customer pricing and invoices are kept strictly confidential.
+                  </Text>
                 </View>
 
                 {/* Special instructions */}

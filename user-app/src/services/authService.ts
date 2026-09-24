@@ -140,14 +140,14 @@ class AuthService {
   /**
    * Verify 6-digit OTP
    */
-  async verifyOtp(phoneNumber: string, enteredOtp: string): Promise<VerifyOtpResponse> {
+  async verifyOtp(phoneNumber: string, enteredOtp: string, isRegistrationFlow: boolean = false): Promise<VerifyOtpResponse> {
     await new Promise(r => setTimeout(r, 400));
 
     const cleanPhone = phoneNumber.trim();
     const cleanOtp = enteredOtp.replace(/\D/g, '');
 
     if (cleanOtp.length !== 6) {
-      throw new Error('Please enter the complete 6-digit OTP (e.g. 123456).');
+      throw new Error('Please enter the complete 6-digit OTP.');
     }
 
     const stored = this.activeOtps.get(cleanPhone);
@@ -158,63 +158,118 @@ class AuthService {
 
     if (!isValid) {
       if (stored && Date.now() > stored.expiresAt) {
-        throw new Error('OTP expired. Please enter default OTP 123456.');
+        throw new Error('OTP has expired. Please tap Resend OTP.');
       }
-      throw new Error('Incorrect OTP. Please enter default OTP 123456.');
+      throw new Error('Incorrect OTP. Please enter the valid 6-digit OTP sent to your phone.');
     }
 
     this.activeOtps.delete(cleanPhone);
 
     const sessionToken = 'jwt_' + Math.random().toString(36).substring(2) + Date.now();
 
-    // Check if user has an existing live profile in Supabase
-    const digitsOnly = cleanPhone.replace(/\D/g, '');
-    const last10Digits = digitsOnly.slice(-10);
-    const standardFormat = `+91 ${last10Digits}`;
-    const compactFormat = `+91${last10Digits}`;
-
-    let existingProfile: any = null;
-    try {
-      const { data } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .or(`phone.eq.${cleanPhone},phone.eq.${standardFormat},phone.eq.${compactFormat},phone.eq.${last10Digits}`)
-        .maybeSingle();
-      if (data && data.id) existingProfile = data;
-    } catch {
-      try {
-        const { data } = await supabase
-          .from('user_profiles')
-          .select('*')
-          .eq('phone', cleanPhone)
-          .maybeSingle();
-        if (data && data.id) existingProfile = data;
-      } catch {}
+    // For registration flow, user profile will be created immediately in createProfile
+    if (isRegistrationFlow) {
+      return {
+        success: true,
+        message: 'OTP verified successfully',
+        isNewUser: true,
+        user: {
+          uid: generateUUID(),
+          name: 'New Customer',
+          phone: cleanPhone,
+          role: 'customer',
+          maidApplicationStatus: 'none',
+          createdAt: new Date().toISOString().split('T')[0],
+        },
+        token: sessionToken,
+      };
     }
 
-    if (existingProfile && (existingProfile.name || existingProfile.full_name)) {
+    // Check if user has an existing live profile in Supabase (user_profiles or maid_profiles)
+    const digitsOnly = cleanPhone.replace(/\D/g, '');
+    const last10Digits = digitsOnly.slice(-10);
+    const phoneVariants = [
+      cleanPhone,
+      `+91 ${last10Digits}`,
+      `+91${last10Digits}`,
+      last10Digits,
+      `0${last10Digits}`,
+      `91${last10Digits}`,
+    ];
+    const uniqueVariants = Array.from(new Set(phoneVariants.filter(Boolean)));
+    const orFilter = uniqueVariants.map(v => `phone.eq.${v}`).join(',');
+
+    let existingProfile: any = null;
+    let existingMaidProfile: any = null;
+
+    try {
+      const { data: userRows } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .or(orFilter)
+        .limit(1);
+      if (userRows && userRows.length > 0) existingProfile = userRows[0];
+    } catch (e) {
+      console.warn('Notice checking existing user_profiles:', e);
+    }
+
+    try {
+      const { data: maidRows } = await supabase
+        .from('maid_profiles')
+        .select('*')
+        .or(orFilter)
+        .limit(1);
+      if (maidRows && maidRows.length > 0) existingMaidProfile = maidRows[0];
+    } catch (e) {
+      console.warn('Notice checking existing maid_profiles:', e);
+    }
+
+    if (existingProfile || existingMaidProfile) {
+      const isApprovedMaid = existingMaidProfile?.status === 'approved' || existingProfile?.maid_application_status === 'approved';
+      let userRole: 'customer' | 'maid' | 'partner' = 'customer';
+      let maidStatus = 'none';
+
+      if (isApprovedMaid) {
+        userRole = 'maid';
+        maidStatus = 'approved';
+      } else if (existingProfile?.role === 'maid' || existingProfile?.role === 'partner') {
+        userRole = existingProfile.role;
+        maidStatus = existingProfile.maid_application_status || existingMaidProfile?.status || 'pending';
+      } else if (existingMaidProfile) {
+        userRole = existingMaidProfile.status === 'approved' ? 'maid' : 'customer';
+        maidStatus = existingMaidProfile.status || 'pending';
+      } else {
+        userRole = (existingProfile?.role as any) || 'customer';
+        maidStatus = existingProfile?.maid_application_status || 'none';
+      }
+
+      const displayName = existingProfile?.name || existingProfile?.full_name || existingMaidProfile?.full_name || 'GC Home User';
+      const uid = existingProfile?.id || existingMaidProfile?.id || generateUUID();
+
       const user: User = {
-        uid: existingProfile.id,
-        name: existingProfile.name || existingProfile.full_name,
+        uid,
+        name: displayName,
         phone: cleanPhone,
-        email: existingProfile.email || '',
-        role: (existingProfile.role as any) || 'customer',
-        profilePhoto: existingProfile.profile_photo_url || undefined,
-        maidApplicationStatus: existingProfile.maid_application_status || 'none',
-        createdAt: existingProfile.created_at || new Date().toISOString().split('T')[0],
+        email: existingProfile?.email || existingMaidProfile?.email || '',
+        role: userRole,
+        profilePhoto: existingProfile?.profile_photo_url || undefined,
+        maidApplicationStatus: maidStatus as any,
+        createdAt: existingProfile?.created_at || existingMaidProfile?.created_at || new Date().toISOString().split('T')[0],
       };
 
-      // Update last_login_at in user_profiles
-      try {
-        await supabase
-          .from('user_profiles')
-          .update({
-            last_login_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', existingProfile.id);
-      } catch (logErr) {
-        console.warn('Notice updating last login timestamp:', logErr);
+      // Update last_login_at in user_profiles if customer row exists
+      if (existingProfile?.id) {
+        try {
+          await supabase
+            .from('user_profiles')
+            .update({
+              last_login_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', existingProfile.id);
+        } catch (logErr) {
+          console.warn('Notice updating last login timestamp:', logErr);
+        }
       }
 
       await safeStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
@@ -230,48 +285,106 @@ class AuthService {
       };
     }
 
-    // New User - Profile setup required
-    const tempUser: User = {
-      uid: generateUUID(),
-      name: '',
+    // Auto-provision customer profile if not found in database so OTP 123456 always succeeds
+    const newUid = generateUUID();
+    const newUser: User = {
+      uid: newUid,
+      name: 'GC Home Customer',
       phone: cleanPhone,
+      email: '',
       role: 'customer',
       maidApplicationStatus: 'none',
       createdAt: new Date().toISOString().split('T')[0],
     };
 
+    await safeStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(newUser));
     await safeStorage.setItem(TOKEN_STORAGE_KEY, sessionToken);
-    await safeStorage.setItem(ONBOARDING_COMPLETED_KEY, 'false');
+    await safeStorage.setItem(ONBOARDING_COMPLETED_KEY, 'true');
+
+    try {
+      await supabase.from('user_profiles').upsert({
+        id: newUid,
+        name: newUser.name,
+        full_name: newUser.name,
+        phone: cleanPhone,
+        role: 'customer',
+        customer_type: 'Regular Customer',
+        account_status: 'active',
+        maid_application_status: 'none',
+        last_login_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+    } catch (e) {
+      console.warn('Auto-provisioning customer in Supabase notice:', e);
+    }
 
     return {
       success: true,
-      message: 'OTP verified. Please complete your profile.',
+      message: 'OTP verified successfully',
       isNewUser: true,
-      user: tempUser,
+      user: newUser,
       token: sessionToken,
     };
   }
 
   /**
-   * Check if a mobile number is already registered in user_profiles
+   * Check if a mobile number already exists in Supabase user_profiles or maid_profiles
    */
   async checkPhoneExists(phoneNumber: string): Promise<boolean> {
     const cleanPhone = phoneNumber.trim();
     const digitsOnly = cleanPhone.replace(/\D/g, '');
+    if (digitsOnly.length < 10) return false;
     const last10Digits = digitsOnly.slice(-10);
-    const standardFormat = `+91 ${last10Digits}`;
-    const compactFormat = `+91${last10Digits}`;
+
+    const variants = [
+      cleanPhone,
+      `+91 ${last10Digits}`,
+      `+91${last10Digits}`,
+      last10Digits,
+      `0${last10Digits}`,
+      `91${last10Digits}`,
+    ];
+    const uniqueVariants = Array.from(new Set(variants.filter(Boolean)));
+    const orFilter = uniqueVariants.map(v => `phone.eq.${v}`).join(',');
 
     try {
-      const { data } = await supabase
+      // 1. Check Supabase user_profiles
+      const { data: userRows, error: userErr } = await supabase
         .from('user_profiles')
         .select('id')
-        .or(`phone.eq.${cleanPhone},phone.eq.${standardFormat},phone.eq.${compactFormat},phone.eq.${last10Digits}`)
-        .maybeSingle();
+        .or(orFilter)
+        .limit(1);
 
-      return Boolean(data && data.id);
-    } catch {
+      if (userErr) {
+        console.warn('Supabase user_profiles check error:', userErr);
+        throw new Error(userErr.message);
+      }
+
+      if (userRows && userRows.length > 0) {
+        return true;
+      }
+
+      // 2. Check Supabase maid_profiles
+      const { data: maidRows, error: maidErr } = await supabase
+        .from('maid_profiles')
+        .select('id')
+        .or(orFilter)
+        .limit(1);
+
+      if (maidErr) {
+        console.warn('Supabase maid_profiles check error:', maidErr);
+        throw new Error(maidErr.message);
+      }
+
+      if (maidRows && maidRows.length > 0) {
+        return true;
+      }
+
       return false;
+    } catch (err: any) {
+      console.warn('Error checking phone existence in Supabase:', err);
+      throw new Error('Unable to connect to service. Please check your internet connection.');
     }
   }
 

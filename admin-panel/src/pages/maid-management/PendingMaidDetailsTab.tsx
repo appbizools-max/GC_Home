@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import { MaidProfile } from '../../types';
 import {
@@ -155,17 +155,28 @@ export const PendingMaidDetailsTab: React.FC = () => {
                 <tr key={maid.uid} className="hover:bg-slate-50/80 transition-all">
                   <td className="py-3.5 px-4">
                     <div className="flex items-center gap-3">
-                      <img
-                        src={maid.photoUrl || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80'}
-                        alt={maid.fullName}
-                        className="w-10 h-10 rounded-full object-cover border border-slate-200"
-                      />
+                      {maid.photoUrl ? (
+                        <img
+                          src={maid.photoUrl}
+                          alt={maid.fullName}
+                          className="w-10 h-10 rounded-full object-cover border border-slate-200"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-800 font-bold flex items-center justify-center border border-emerald-200 text-xs">
+                          {maid.fullName ? maid.fullName.charAt(0).toUpperCase() : 'P'}
+                        </div>
+                      )}
                       <div>
-                        <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                        <div className="font-bold text-slate-900 flex items-center gap-1.5 flex-wrap">
                           {maid.fullName}
                           <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md">
                             {maid.maidId || 'GC-PARTNER'}
                           </span>
+                          {Boolean(maid.reapplicationCount && maid.reapplicationCount > 0) && (
+                            <span className="text-[9px] font-extrabold text-purple-800 bg-purple-100 px-1.5 py-0.5 rounded border border-purple-200">
+                              Re-App #{maid.reapplicationCount}
+                            </span>
+                          )}
                         </div>
                         <div className="text-[11px] text-slate-500 mt-0.5">{maid.serviceArea || maid.city}</div>
                       </div>
@@ -230,20 +241,32 @@ export const PendingMaidDetailsTab: React.FC = () => {
               {/* Drawer Header */}
               <div className="px-6 py-5 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
                 <div className="flex items-center gap-3">
-                  <img
-                    src={activeDrawerMaid.photoUrl || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80'}
-                    alt={activeDrawerMaid.fullName}
-                    className="w-12 h-12 rounded-full object-cover border-2 border-emerald-500"
-                  />
+                  {activeDrawerMaid.photoUrl ? (
+                    <img
+                      src={activeDrawerMaid.photoUrl}
+                      alt={activeDrawerMaid.fullName}
+                      className="w-12 h-12 rounded-full object-cover border-2 border-emerald-500"
+                    />
+                  ) : (
+                    <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-800 font-extrabold flex items-center justify-center border-2 border-emerald-500 text-sm">
+                      {activeDrawerMaid.fullName ? activeDrawerMaid.fullName.charAt(0).toUpperCase() : 'P'}
+                    </div>
+                  )}
                   <div>
-                    <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+                    <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2 flex-wrap">
                       {activeDrawerMaid.fullName}
                       <span className="text-[10px] bg-amber-100 text-amber-800 font-extrabold px-2 py-0.5 rounded-full">
                         {activeDrawerMaid.status === 'correction_requested' ? 'Correction Requested' : 'Pending Verification'}
                       </span>
+                      {Boolean(activeDrawerMaid.reapplicationCount && activeDrawerMaid.reapplicationCount > 0) && (
+                        <span className="text-[10px] bg-purple-100 text-purple-800 font-extrabold px-2 py-0.5 rounded-full border border-purple-200">
+                          Re-Application #{activeDrawerMaid.reapplicationCount}
+                        </span>
+                      )}
                     </h3>
                     <p className="text-xs text-slate-500 font-medium mt-0.5">
                       Partner ID: {activeDrawerMaid.maidId || activeDrawerMaid.uid} • Applied: {activeDrawerMaid.appliedAt}
+                      {activeDrawerMaid.latestAppliedAt && activeDrawerMaid.latestAppliedAt !== activeDrawerMaid.appliedAt && ` • Latest: ${activeDrawerMaid.latestAppliedAt}`}
                     </p>
                   </div>
                 </div>

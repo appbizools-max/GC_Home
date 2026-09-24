@@ -125,15 +125,13 @@ export const OtpVerificationScreen: React.FC = () => {
       return;
     }
 
-    let success = false;
-    if (isRegistration) {
-      success = await verifyRegistrationOtp(otpCode);
-    } else {
-      success = await verifyLoginOtp(otpCode);
-    }
+    setLocalError('');
+    const res = isRegistration
+      ? await verifyRegistrationOtp(otpCode)
+      : await verifyLoginOtp(otpCode);
 
-    if (!success) {
-      setLocalError('Invalid OTP code. Please try again.');
+    if (!res.success) {
+      setLocalError(res.message || 'Invalid OTP code. Please try again.');
     }
   };
 
@@ -213,8 +211,8 @@ export const OtpVerificationScreen: React.FC = () => {
             </View>
 
             {/* Inline Error Message */}
-            {(localError || authError) ? (
-              <Text style={styles.errorText}>{localError || authError}</Text>
+            {(authError || localError) ? (
+              <Text style={styles.errorText}>{authError || localError}</Text>
             ) : null}
 
             {/* Resend OTP with Countdown */}

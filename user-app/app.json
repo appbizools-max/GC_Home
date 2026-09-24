@@ -2,9 +2,15 @@
   "expo": {
     "name": "GC Home Plus",
     "slug": "gc-home-plus",
-    "version": "2.0.0",
+    "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "icon": "./assets/gc-home-logo.png",
+    "splash": {
+      "image": "./assets/gc-home-logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
     "assetBundlePatterns": [
       "**/*"
     ],
@@ -12,7 +18,11 @@
       "supportsTablet": true
     },
     "android": {
-      "package": "com.gchomeplus.app"
+      "package": "com.gchomeplus.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/gc-home-logo.png",
+        "backgroundColor": "#ffffff"
+      }
     }
   }
 }

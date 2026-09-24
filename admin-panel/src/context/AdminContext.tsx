@@ -576,6 +576,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             },
             serviceArea: row.service_area || row.preferred_service_area || row.city || 'Bengaluru',
             preferredServiceArea: row.preferred_service_area || row.service_area,
+            preferredCities: Array.isArray(row.preferred_cities) ? row.preferred_cities : (row.service_area ? row.service_area.split(',').map((s: string) => s.trim()) : []),
             serviceRadiusKm: row.service_radius_km || 5,
             healthSafetyDecl: Boolean(row.health_safety_decl),
             status: row.status || 'pending',
@@ -604,12 +605,23 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             approvedAt: row.approved_at,
             aadhaarDocUrl: row.aadhaar_doc_url || parsedKycDocs?.aadhaarFrontUrl,
             panDocUrl: row.pan_doc_url || parsedKycDocs?.panUrl,
-            addressProofUrl: row.address_proof_url || parsedKycDocs?.addressProofUrl,
-            otherDocsUrls: Array.isArray(row.other_docs_urls) ? row.other_docs_urls : (parsedKycDocs?.otherDocs || []),
+            otherDocsUrls: Array.isArray(row.other_docs_urls)
+              ? row.other_docs_urls
+              : (Array.isArray(parsedKycDocs?.documents)
+                  ? parsedKycDocs.documents.map((d: any) => d.fileUrl).filter(Boolean)
+                  : (parsedKycDocs?.otherDocs || [])),
+            rawKycDocuments: parsedKycDocs,
             termsAccepted: Boolean(row.terms_accepted),
             privacyAccepted: Boolean(row.privacy_accepted),
             accuracyConfirmed: Boolean(row.accuracy_confirmed),
             correctionRequested: Boolean(row.correction_requested),
+            reapplicationCount: row.reapplication_count || (Array.isArray(row.application_history) ? row.application_history.length : 0),
+            latestAppliedAt: row.latest_applied_at ? new Date(row.latest_applied_at).toISOString().split('T')[0] : (row.applied_at ? new Date(row.applied_at).toISOString().split('T')[0] : undefined),
+            applicationHistory: Array.isArray(row.application_history)
+              ? row.application_history
+              : (typeof row.application_history === 'string'
+                  ? (() => { try { return JSON.parse(row.application_history); } catch { return []; } })()
+                  : []),
           };
         });
         setMaids(fetchedProfiles);
@@ -752,7 +764,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           name: p.name || p.full_name || (maidMatch ? maidMatch.full_name : 'Registered Customer'),
           phone: p.phone || (maidMatch ? maidMatch.phone : ''),
           email: p.email || (maidMatch ? maidMatch.email : ''),
-          avatarUrl: p.profile_photo_url || (maidMatch ? maidMatch.photo_url : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300'),
+          avatarUrl: p.profile_photo_url || (maidMatch ? maidMatch.photo_url : '') || '',
           customerType: p.customer_type || custType,
           locality: p.city || (maidMatch ? maidMatch.service_area : 'Karimnagar'),
           address: {
@@ -1233,6 +1245,33 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setAdminError(error.message);
       return;
     }
+
+    try {
+      const targetMaid = maids.find(m => m.uid === uid || (m as any).id === uid);
+      if (targetMaid?.phone) {
+        const cleanPhone = targetMaid.phone.replace(/\D/g, '').slice(-10);
+        await supabase
+          .from('user_profiles')
+          .update({
+            maid_application_status: 'approved',
+            role: 'maid',
+            updated_at: approvedAtIso,
+          })
+          .or(`id.eq.${uid},phone.eq.${targetMaid.phone},phone.eq.+91${cleanPhone},phone.eq.${cleanPhone}`);
+      } else {
+        await supabase
+          .from('user_profiles')
+          .update({
+            maid_application_status: 'approved',
+            role: 'maid',
+            updated_at: approvedAtIso,
+          })
+          .eq('id', uid);
+      }
+    } catch (uErr) {
+      console.warn('Could not update user_profiles on maid approval:', uErr);
+    }
+
     await fetchMaids();
   };
 
@@ -1255,6 +1294,43 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setAdminError(error.message);
       return;
     }
+
+    try {
+      const targetMaid = maids.find(m => m.uid === uid || (m as any).id === uid);
+      if (targetMaid?.phone) {
+        const cleanPhone = targetMaid.phone.replace(/\D/g, '').slice(-10);
+        await supabase
+          .from('user_profiles')
+          .update({
+            maid_application_status: 'rejected',
+            updated_at: rejectedAtIso,
+          })
+          .or(`id.eq.${uid},phone.eq.${targetMaid.phone},phone.eq.+91${cleanPhone},phone.eq.${cleanPhone}`);
+      } else {
+        await supabase
+          .from('user_profiles')
+          .update({
+            maid_application_status: 'rejected',
+            updated_at: rejectedAtIso,
+          })
+          .eq('id', uid);
+      }
+    } catch (uErr) {
+      console.warn('Could not update user_profiles on maid rejection:', uErr);
+    }
+
+    try {
+      await supabase.from('maid_history').insert({
+        maid_id: uid,
+        action: 'Application Rejected',
+        actor_id: adminUser?.id || null,
+        actor_name: rejectedBy,
+        details: reason,
+      });
+    } catch (hErr) {
+      console.warn('Could not log rejection in maid_history:', hErr);
+    }
+
     await fetchMaids();
   };
 

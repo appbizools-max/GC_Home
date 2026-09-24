@@ -49,7 +49,8 @@ export const UnapprovedMaidsTab: React.FC = () => {
     location: m.serviceArea,
     exp: m.experience || '1+ Years',
     lang: (m.languages || ['Telugu']).join(', '),
-    dob: m.dob || 'N/A'
+    dob: m.dob || 'N/A',
+    reapplicationCount: m.reapplicationCount || 0,
   }));
 
   const filtered = unapprovedMaidsList.filter(m => {
@@ -214,6 +215,11 @@ export const UnapprovedMaidsTab: React.FC = () => {
                     <div className="flex items-center gap-2.5">
                       <img src={m.photo} alt={m.name} className="w-8 h-8 rounded-full object-cover border border-slate-200" />
                       <strong className="text-slate-900 font-bold">{m.name}</strong>
+                      {m.reapplicationCount > 0 && (
+                        <span className="text-[9px] font-extrabold text-purple-800 bg-purple-100 px-1.5 py-0.5 rounded border border-purple-200">
+                          Re-App #{m.reapplicationCount}
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td className="py-3.5 px-4 font-semibold text-slate-700">{m.phone}</td>

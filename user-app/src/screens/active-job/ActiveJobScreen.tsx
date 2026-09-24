@@ -5,6 +5,7 @@ import { useBooking } from '../../context/BookingContext';
 import { ArrowLeft, MapPin, MessageSquare, Camera, CheckCircle2, Lock } from 'lucide-react-native';
 import { InAppChatModal } from '../../components/InAppChatModal';
 import { resizeImageBase64 } from '../../utils/imageUtils';
+import * as ImagePicker from 'expo-image-picker';
 
 export const ActiveJobScreen: React.FC = () => {
   const { selectedBooking, updateBookingStatus, navigateTo, user } = useAuth();
@@ -17,6 +18,27 @@ export const ActiveJobScreen: React.FC = () => {
   const [completionNotes, setCompletionNotes] = useState('');
   const [isChatModalOpen, setIsChatModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleTakeProofPhoto = async (type: 'before' | 'after') => {
+    try {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Permission Required', 'Camera access is required to take proof photos.');
+        return;
+      }
+      const res = await ImagePicker.launchCameraAsync({
+        quality: 0.7,
+        base64: true,
+      });
+      if (!res.canceled && res.assets && res.assets.length > 0) {
+        const photoUri = res.assets[0].uri;
+        if (type === 'before') setBeforePhoto(photoUri);
+        else setAfterPhoto(photoUri);
+      }
+    } catch (e: any) {
+      Alert.alert('Camera Error', e.message || 'Could not open camera.');
+    }
+  };
 
   if (!selectedBooking) {
     navigateTo('maid_home');
@@ -191,22 +213,22 @@ export const ActiveJobScreen: React.FC = () => {
             <Text style={styles.cardTitle}>Job Proof Photos</Text>
             <View style={styles.photoRow}>
               <TouchableOpacity
-                onPress={() => setBeforePhoto('https://images.unsplash.com/photo-1581578731548-c64695cc6952?auto=format&fit=crop&q=80&w=400')}
+                onPress={() => handleTakeProofPhoto('before')}
                 style={[styles.photoBox, beforePhoto ? styles.photoBoxActive : styles.photoBoxInactive]}
               >
                 <Camera size={24} color="#2D8A68" style={{ alignSelf: 'center', marginBottom: 4 }} />
                 <Text style={styles.photoBoxText}>
-                  {beforePhoto ? '✓ Before Photo' : 'Upload Before'}
+                  {beforePhoto ? '✓ Before Photo' : 'Take Before Photo'}
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                onPress={() => setAfterPhoto('https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&q=80&w=400')}
+                onPress={() => handleTakeProofPhoto('after')}
                 style={[styles.photoBox, afterPhoto ? styles.photoBoxActive : styles.photoBoxInactive]}
               >
                 <Camera size={24} color="#2D8A68" style={{ alignSelf: 'center', marginBottom: 4 }} />
                 <Text style={styles.photoBoxText}>
-                  {afterPhoto ? '✓ After Photo' : 'Upload After'}
+                  {afterPhoto ? '✓ After Photo' : 'Take After Photo'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -215,7 +237,7 @@ export const ActiveJobScreen: React.FC = () => {
           <TouchableOpacity onPress={handleMarkCompleted} style={styles.completeBtn} activeOpacity={0.85}>
             <CheckCircle2 size={20} color="#FFFFFF" />
             <Text style={styles.completeBtnText}>
-              Mark Job Completed (Payout ₹{Math.round(selectedBooking.totalAmount * 0.8)})
+              Mark Job Completed {selectedBooking.partnerPayout && selectedBooking.partnerPayout > 0 ? `(Payout: ₹${selectedBooking.partnerPayout})` : '(Payout Pending)'}
             </Text>
           </TouchableOpacity>
         </View>

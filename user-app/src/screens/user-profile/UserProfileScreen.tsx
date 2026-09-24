@@ -13,6 +13,8 @@ import {
   Modal,
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
+import * as ImagePicker from 'expo-image-picker';
+import { supabase } from '../../config/supabase';
 import {
   Settings,
   Camera,
@@ -111,26 +113,103 @@ export const UserProfileScreen: React.FC = () => {
       : Alert.alert('Edit Profile', 'Profile Details:\n\n• Name: ' + userName + '\n• Phone: ' + userPhone + '\n• Email: ' + userEmail);
   };
 
+  const savePhotoToStorage = async (uri: string, base64?: string): Promise<string> => {
+    const ext = 'jpg';
+    const filePath = `profile-photos/customer/${user?.uid || 'user'}_${Date.now()}.${ext}`;
+
+    try {
+      let body: any;
+      if (Platform.OS === 'web') {
+        const response = await fetch(uri);
+        body = await response.blob();
+      } else if (base64) {
+        const byteCharacters = atob(base64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        body = new Uint8Array(byteNumbers);
+      } else {
+        const response = await fetch(uri);
+        body = await response.blob();
+      }
+
+      const { data, error } = await supabase.storage.from('gc-home-assets').upload(filePath, body, {
+        contentType: 'image/jpeg',
+        upsert: true,
+      });
+
+      if (!error && data) {
+        const { data: urlData } = supabase.storage.from('gc-home-assets').getPublicUrl(filePath);
+        if (urlData?.publicUrl) return urlData.publicUrl;
+      }
+
+      if (base64) return `data:image/jpeg;base64,${base64}`;
+      return uri;
+    } catch {
+      if (base64) return `data:image/jpeg;base64,${base64}`;
+      return uri;
+    }
+  };
+
   const handleAvatarChange = () => {
-    Alert.alert('Change Profile Photo', 'Choose photo source:', [
+    Alert.alert('Change Profile Photo', 'Select photo source:', [
       {
-        text: 'Camera',
-        onPress: () => {
-          updateUserProfile({
-            profilePhoto:
-              'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
-          });
-          Alert.alert('Photo Updated', 'New profile photo set successfully.');
+        text: 'Take Photo (Front Camera)',
+        onPress: async () => {
+          try {
+            if (Platform.OS !== 'web') {
+              const { status } = await ImagePicker.requestCameraPermissionsAsync();
+              if (status !== 'granted') {
+                Alert.alert('Camera Permission Required', 'Camera permission is required to take your photo.');
+                return;
+              }
+            }
+            const result = await ImagePicker.launchCameraAsync({
+              cameraType: ImagePicker.CameraType.front,
+              allowsEditing: true,
+              aspect: [1, 1],
+              quality: 0.75,
+              base64: true,
+            });
+            if (!result.canceled && result.assets && result.assets.length > 0) {
+              const asset = result.assets[0];
+              const finalUrl = await savePhotoToStorage(asset.uri, asset.base64 || undefined);
+              updateUserProfile({ profilePhoto: finalUrl });
+              Alert.alert('Success', 'Profile photo updated successfully.');
+            }
+          } catch (e: any) {
+            Alert.alert('Camera Error', e?.message || 'Unable to open camera.');
+          }
         },
       },
       {
-        text: 'Photo Gallery',
-        onPress: () => {
-          updateUserProfile({
-            profilePhoto:
-              'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=300&q=80',
-          });
-          Alert.alert('Photo Selected', 'Gallery photo applied.');
+        text: 'Choose from Gallery',
+        onPress: async () => {
+          try {
+            if (Platform.OS !== 'web') {
+              const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+              if (status !== 'granted') {
+                Alert.alert('Gallery Permission Required', 'Gallery permission is required to choose a photo.');
+                return;
+              }
+            }
+            const result = await ImagePicker.launchImageLibraryAsync({
+              mediaTypes: ImagePicker.MediaTypeOptions.Images,
+              allowsEditing: true,
+              aspect: [1, 1],
+              quality: 0.75,
+              base64: true,
+            });
+            if (!result.canceled && result.assets && result.assets.length > 0) {
+              const asset = result.assets[0];
+              const finalUrl = await savePhotoToStorage(asset.uri, asset.base64 || undefined);
+              updateUserProfile({ profilePhoto: finalUrl });
+              Alert.alert('Success', 'Profile photo updated successfully.');
+            }
+          } catch (e: any) {
+            Alert.alert('Gallery Error', e?.message || 'Unable to open gallery.');
+          }
         },
       },
       { text: 'Cancel', style: 'cancel' },
@@ -177,14 +256,16 @@ export const UserProfileScreen: React.FC = () => {
         {/* Profile Card */}
         <View style={styles.profileCard}>
           <View style={styles.avatarContainer}>
-            <Image
-              source={{
-                uri:
-                  user?.profilePhoto ||
-                  'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=300',
-              }}
-              style={styles.avatarImg}
-            />
+            {user?.profilePhoto ? (
+              <Image
+                source={{ uri: user.profilePhoto }}
+                style={styles.avatarImg}
+              />
+            ) : (
+              <View style={[styles.avatarImg, styles.avatarPlaceholder]}>
+                <User size={38} color="#94A3B8" />
+              </View>
+            )}
             <TouchableOpacity
               style={styles.cameraBadge}
               onPress={handleAvatarChange}
@@ -811,6 +892,11 @@ const styles = StyleSheet.create({
     height: 68,
     borderRadius: 34,
     backgroundColor: '#E2E8F0',
+  },
+  avatarPlaceholder: {
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   cameraBadge: {
     position: 'absolute',

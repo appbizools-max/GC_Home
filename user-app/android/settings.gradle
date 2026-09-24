@@ -1,4 +1,4 @@
-rootProject.name = 'GCHomePlus'
+rootProject.name = 'GC Home Plus'
 
 dependencyResolutionManagement {
   versionCatalogs {

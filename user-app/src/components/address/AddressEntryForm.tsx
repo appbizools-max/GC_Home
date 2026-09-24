@@ -30,10 +30,12 @@ export interface AddressFormData {
 export interface AddressEntryFormProps {
   initialValues?: Partial<AddressFormData>;
   submitButtonText?: string;
-  onSubmit: (data: AddressFormData) => void | Promise<void>;
+  onSubmit?: (data: AddressFormData) => void | Promise<void>;
   isSubmitting?: boolean;
   onCancel?: () => void;
   showCancelButton?: boolean;
+  showSubmitButton?: boolean;
+  onChange?: (data: AddressFormData) => void;
   extraHeaderContent?: React.ReactNode;
   extraFooterContent?: React.ReactNode;
   cityOptions?: string[];
@@ -46,6 +48,8 @@ export const AddressEntryForm: React.FC<AddressEntryFormProps> = ({
   isSubmitting = false,
   onCancel,
   showCancelButton = false,
+  showSubmitButton = true,
+  onChange,
   extraHeaderContent,
   extraFooterContent,
   cityOptions,
@@ -99,6 +103,23 @@ export const AddressEntryForm: React.FC<AddressEntryFormProps> = ({
     initialValues?.pincode,
     initialValues?.postOffice,
   ]);
+
+  // Sync state upward via onChange callback
+  useEffect(() => {
+    if (onChange) {
+      onChange({
+        houseFlat,
+        street,
+        locality,
+        city,
+        district,
+        state,
+        pincode,
+        postOffice: selectedPostOffice,
+        landmark,
+      });
+    }
+  }, [houseFlat, street, locality, city, district, state, pincode, selectedPostOffice, landmark, onChange]);
 
   // Trigger PIN Code Lookup when 6 numeric digits are entered
   const handlePincodeChange = (text: string) => {
@@ -219,7 +240,7 @@ export const AddressEntryForm: React.FC<AddressEntryFormProps> = ({
       return;
     }
 
-    onSubmit({
+    onSubmit?.({
       houseFlat: houseFlat.trim(),
       street: street.trim(),
       locality: locality.trim(),
@@ -471,37 +492,39 @@ export const AddressEntryForm: React.FC<AddressEntryFormProps> = ({
       {extraFooterContent}
 
       {/* ── 9. Submit & Cancel Actions ── */}
-      <View style={styles.actionContainer}>
-        <TouchableOpacity
-          style={[styles.submitButton, isSubmitting && { opacity: 0.7 }]}
-          onPress={handleSubmit}
-          disabled={isSubmitting}
-          activeOpacity={0.88}
-          accessibilityRole="button"
-          accessibilityLabel={submitButtonText}
-        >
-          {isSubmitting ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
-          ) : (
-            <>
-              <Check size={16} color="#FFFFFF" strokeWidth={2.4} />
-              <Text style={styles.submitButtonText}>{submitButtonText}</Text>
-            </>
-          )}
-        </TouchableOpacity>
-
-        {showCancelButton && onCancel && (
+      {showSubmitButton && (
+        <View style={styles.actionContainer}>
           <TouchableOpacity
-            style={styles.cancelButton}
-            onPress={onCancel}
-            activeOpacity={0.7}
+            style={[styles.submitButton, isSubmitting && { opacity: 0.7 }]}
+            onPress={handleSubmit}
+            disabled={isSubmitting}
+            activeOpacity={0.88}
             accessibilityRole="button"
-            accessibilityLabel="Cancel"
+            accessibilityLabel={submitButtonText}
           >
-            <Text style={styles.cancelButtonText}>Cancel</Text>
+            {isSubmitting ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <>
+                <Check size={16} color="#FFFFFF" strokeWidth={2.4} />
+                <Text style={styles.submitButtonText}>{submitButtonText}</Text>
+              </>
+            )}
           </TouchableOpacity>
-        )}
-      </View>
+
+          {showCancelButton && onCancel && (
+            <TouchableOpacity
+              style={styles.cancelButton}
+              onPress={onCancel}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel"
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
     </View>
   );
 };

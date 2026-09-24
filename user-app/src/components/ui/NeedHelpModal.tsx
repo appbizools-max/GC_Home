@@ -1,6 +1,8 @@
 import React from 'react';
-import { View, Text, Modal, StyleSheet, TouchableOpacity } from 'react-native';
-import { MessageSquare, MessageCircle, HelpCircle, X, ExternalLink } from 'lucide-react-native';
+import { View, Text, Modal, StyleSheet, TouchableOpacity, Linking } from 'react-native';
+import { Mail, X, Send } from 'lucide-react-native';
+
+const SUPPORT_EMAIL = 'INFOHELP@GCHOMEPLUS.COM';
 
 interface NeedHelpModalProps {
   visible: boolean;
@@ -8,6 +10,11 @@ interface NeedHelpModalProps {
 }
 
 export const NeedHelpModal: React.FC<NeedHelpModalProps> = ({ visible, onClose }) => {
+  const handleEmailSupport = () => {
+    onClose();
+    Linking.openURL(`mailto:${SUPPORT_EMAIL}`).catch(() => {});
+  };
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
@@ -15,45 +22,32 @@ export const NeedHelpModal: React.FC<NeedHelpModalProps> = ({ visible, onClose }
           <View style={styles.headerRow}>
             <View style={styles.titleGroup}>
               <Text style={styles.modalTitle}>Need Assistance?</Text>
-              <Text style={styles.modalSub}>Our customer support team is available 24/7</Text>
+              <Text style={styles.modalSub}>Official Customer & Partner Support</Text>
             </View>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+            <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <X size={20} color="#68788C" />
             </TouchableOpacity>
           </View>
 
-          <View style={styles.optionsList}>
-            <TouchableOpacity style={styles.optionCard} onPress={onClose} activeOpacity={0.8}>
-              <View style={[styles.iconCircle, { backgroundColor: '#EAF8F1' }]}>
-                <MessageSquare size={20} color="#168A68" />
-              </View>
-              <View style={styles.optionTextCol}>
-                <Text style={styles.optionTitle}>In-App Live Support</Text>
-                <Text style={styles.optionSubtitle}>Instant answers & booking assistance</Text>
-              </View>
-              <ExternalLink size={16} color="#94A3B8" />
-            </TouchableOpacity>
+          <View style={styles.card}>
+            <View style={styles.iconCircle}>
+              <Mail size={28} color="#0D8846" strokeWidth={2.2} />
+            </View>
+            <Text style={styles.supportLabel}>Official Email Support</Text>
+            <Text style={styles.supportEmail} selectable>{SUPPORT_EMAIL}</Text>
+            <Text style={styles.supportDesc}>
+              Tap the button below to open your email application and send an inquiry directly to our support desk.
+            </Text>
 
-            <TouchableOpacity style={styles.optionCard} onPress={onClose} activeOpacity={0.8}>
-              <View style={[styles.iconCircle, { backgroundColor: '#E0F2FE' }]}>
-                <MessageCircle size={20} color="#0284C7" />
-              </View>
-              <View style={styles.optionTextCol}>
-                <Text style={styles.optionTitle}>WhatsApp Support</Text>
-                <Text style={styles.optionSubtitle}>Instant answers & booking help</Text>
-              </View>
-              <ExternalLink size={16} color="#94A3B8" />
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.optionCard} onPress={onClose} activeOpacity={0.8}>
-              <View style={[styles.iconCircle, { backgroundColor: '#FEF3C7' }]}>
-                <HelpCircle size={20} color="#D97706" />
-              </View>
-              <View style={styles.optionTextCol}>
-                <Text style={styles.optionTitle}>Help Center & FAQs</Text>
-                <Text style={styles.optionSubtitle}>Learn how GC Home Plus works</Text>
-              </View>
-              <ExternalLink size={16} color="#94A3B8" />
+            <TouchableOpacity
+              style={styles.emailButton}
+              onPress={handleEmailSupport}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel={`Email ${SUPPORT_EMAIL}`}
+            >
+              <Send size={16} color="#FFFFFF" strokeWidth={2.2} />
+              <Text style={styles.emailButtonText}>Email Support</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -83,7 +77,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 20,
+    marginBottom: 18,
   },
   titleGroup: {
     flex: 1,
@@ -101,38 +95,60 @@ const styles = StyleSheet.create({
   closeBtn: {
     padding: 4,
   },
-  optionsList: {
-    gap: 12,
-    marginBottom: 10,
-  },
-  optionCard: {
-    flexDirection: 'row',
+  card: {
+    backgroundColor: '#F8FCFA',
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
     alignItems: 'center',
-    padding: 14,
-    backgroundColor: '#F5FCF8',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#E1E8E5',
-    gap: 12,
+    marginBottom: 8,
   },
   iconCircle: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#EAF8F1',
     justifyContent: 'center',
     alignItems: 'center',
+    marginBottom: 12,
   },
-  optionTextCol: {
-    flex: 1,
-  },
-  optionTitle: {
-    fontSize: 14.5,
-    fontWeight: '700',
-    color: '#10243A',
-  },
-  optionSubtitle: {
+  supportLabel: {
     fontSize: 12,
-    color: '#68788C',
-    marginTop: 2,
+    fontWeight: '700',
+    color: '#64748B',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: 4,
+  },
+  supportEmail: {
+    fontSize: 15.5,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 10,
+  },
+  supportDesc: {
+    fontSize: 12.5,
+    lineHeight: 18,
+    color: '#64748B',
+    textAlign: 'center',
+    marginBottom: 18,
+    paddingHorizontal: 12,
+  },
+  emailButton: {
+    width: '100%',
+    backgroundColor: '#0D8846',
+    borderRadius: 12,
+    paddingVertical: 13,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  emailButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    letterSpacing: 0.2,
   },
 });

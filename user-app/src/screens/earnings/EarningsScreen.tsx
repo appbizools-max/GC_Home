@@ -22,7 +22,7 @@ export const EarningsScreen: React.FC = () => {
   );
 
   const totalEarnings = completedJobs.reduce(
-    (acc, curr) => acc + Math.round((curr.totalAmount || 799) * 0.8),
+    (acc, curr) => acc + (curr.partnerPayout && curr.partnerPayout > 0 ? curr.partnerPayout : 0),
     0
   );
 
@@ -54,8 +54,8 @@ export const EarningsScreen: React.FC = () => {
     id: j.bookingId || `TXN-${1000 + idx}`,
     service: j.serviceName || 'Home Cleaning Service',
     date: j.date || 'Sep 22, 2026',
-    payout: Math.round((j.totalAmount || 799) * 0.8),
-    status: j.paymentStatus === 'paid' ? 'Paid' : 'Processing',
+    payout: j.partnerPayout && j.partnerPayout > 0 ? `₹${j.partnerPayout}` : 'Payout Pending',
+    status: j.payoutStatus === 'disbursed' || j.payoutStatus === 'paid' ? 'Paid' : 'Processing',
     refCode: `REF-${89000 + idx}`,
   }));
 
@@ -186,7 +186,9 @@ export const EarningsScreen: React.FC = () => {
                   </View>
 
                   <View style={styles.transRight}>
-                    <Text style={styles.transAmountText}>+ ₹{item.payout}</Text>
+                    <Text style={[styles.transAmountText, item.payout === 'Payout Pending' && { fontSize: 13, color: '#D97706' }]}>
+                      {item.payout === 'Payout Pending' ? 'Payout Pending' : `+ ${item.payout}`}
+                    </Text>
                     <View
                       style={[
                         styles.transStatusBadge,

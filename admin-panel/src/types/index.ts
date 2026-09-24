@@ -4,7 +4,7 @@ export type KycDocStatus = 'verified' | 'under_review' | 'pending' | 'rejected' 
 
 export interface KycDocument {
   id: string;
-  type: 'aadhaar' | 'pan' | 'address_proof' | 'police_verification' | 'bank_passbook' | 'other';
+  type: 'aadhaar' | 'aadhaar_back' | 'pan' | 'address_proof' | 'police_verification' | 'bank_passbook' | 'other';
   title: string;
   fileName: string;
   fileUrl: string;
@@ -21,6 +21,20 @@ export interface MaidHistoryItem {
   action: string;
   actor: string;
   details?: string;
+}
+
+export interface ApplicationHistoryItem {
+  version: number;
+  status: MaidApplicationStatus;
+  appliedAt: string;
+  reviewedAt?: string;
+  rejectedAt?: string;
+  rejectionReason?: string;
+  adminNotes?: string;
+  reviewedBy?: string;
+  servicesProvided?: any[];
+  preferredCities?: string[];
+  kycDocuments?: any;
 }
 
 export interface BankDetails {
@@ -62,6 +76,7 @@ export interface MaidProfile {
   bankDetails: BankDetails;
   serviceArea: string;
   preferredServiceArea?: string;
+  preferredCities?: string[];
   serviceRadiusKm: number;
   healthSafetyDecl: boolean;
   status: MaidApplicationStatus;
@@ -107,6 +122,9 @@ export interface MaidProfile {
   lastUpdated?: string;
   quote?: string;
   history?: MaidHistoryItem[];
+  applicationHistory?: ApplicationHistoryItem[];
+  reapplicationCount?: number;
+  latestAppliedAt?: string;
   alternatePhone?: string;
 }
 

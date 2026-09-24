@@ -55,6 +55,7 @@ export interface MaidProfile {
   postOffice?: string;
   serviceArea: string;
   preferredServiceArea?: string;
+  preferredCities?: string[];
   serviceRadiusKm: number;
   healthSafetyDecl: boolean;
   bankDetails: BankDetails;
@@ -86,6 +87,25 @@ export interface MaidProfile {
   accuracyConfirmed?: boolean;
   correctionRequested?: boolean;
   adminNotes?: string;
+  applicationHistory?: ApplicationHistoryItem[];
+  reapplicationCount?: number;
+  latestAppliedAt?: string;
+  rejectedAt?: string;
+  rejectedBy?: string;
+}
+
+export interface ApplicationHistoryItem {
+  version: number;
+  status: MaidApplicationStatus;
+  appliedAt: string;
+  reviewedAt?: string;
+  rejectedAt?: string;
+  rejectionReason?: string;
+  adminNotes?: string;
+  reviewedBy?: string;
+  servicesProvided?: any[];
+  preferredCities?: string[];
+  kycDocuments?: any;
 }
 
 export interface Service {
@@ -141,6 +161,7 @@ export interface Address {
   state?: string;
   pincode: string;
   postOffice?: string;
+  fullAddress?: string;
   isDefault?: boolean;
 }
 
@@ -169,6 +190,8 @@ export interface Booking {
   remainingAmount?: number;
   advancePaid?: boolean;
   partnerEarnings?: number;
+  partnerPayout?: number | null;
+  payoutStatus?: string;
   platformCommission?: number;
   tipAmount?: number;
   startOtp?: string;

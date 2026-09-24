@@ -66,10 +66,10 @@ export const LoginScreen: React.FC = () => {
   const [apiError, setApiError] = useState('');
 
   // ── Staggered entrance animations ──────────────────────────────────────────
-  const logoAnim     = useSlotAnim(0);
-  const titleAnim    = useSlotAnim(80);
-  const inputAnim    = useSlotAnim(160);
-  const buttonAnim   = useSlotAnim(240);
+  const logoAnim = useSlotAnim(0);
+  const titleAnim = useSlotAnim(80);
+  const inputAnim = useSlotAnim(160);
+  const buttonAnim = useSlotAnim(240);
   const secondaryAnim = useSlotAnim(320);
 
   // Validate 10-digit Indian Mobile Number starting with 6-9
@@ -142,10 +142,10 @@ export const LoginScreen: React.FC = () => {
     try {
       const success = await sendLoginOtp(fullPhone);
       if (!success) {
-        setApiError('Unable to send verification code. Please try again.');
+        setApiError('Not an existing customer. Please create an account.');
       }
     } catch (err: any) {
-      setApiError(err?.message || 'Unable to send verification code. Please try again.');
+      setApiError(err?.message || 'Not an existing customer. Please create an account.');
     }
   };
 

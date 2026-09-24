@@ -39,9 +39,9 @@ interface AuthContextType {
   goBack: () => boolean;
   checkExistingSession: () => Promise<void>;
   sendLoginOtp: (phoneNumber: string) => Promise<boolean>;
-  verifyLoginOtp: (otpCode: string) => Promise<boolean>;
+  verifyLoginOtp: (otpCode: string) => Promise<{ success: boolean; message?: string }>;
   startRegistration: (draft: RegistrationDraft) => Promise<{ success: boolean; message?: string }>;
-  verifyRegistrationOtp: (otpCode: string) => Promise<boolean>;
+  verifyRegistrationOtp: (otpCode: string) => Promise<{ success: boolean; message?: string }>;
   resendLoginOtp: () => Promise<boolean>;
   completeProfileSetup: (profileData: ProfileInputData) => Promise<boolean>;
   loginWithPhone: (phone: string, name?: string) => void;
@@ -177,16 +177,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   /**
-   * Send 6-digit OTP to mobile number
+   * Send 6-digit OTP to mobile number after verifying user exists in Supabase
    */
   const sendLoginOtp = async (phoneNumber: string): Promise<boolean> => {
     setIsAuthLoading(true);
     setAuthError(null);
     try {
+      const exists = await authService.checkPhoneExists(phoneNumber);
+      if (!exists) {
+        setIsAuthLoading(false);
+        setAuthError('Not an existing customer. Please create an account.');
+        return false;
+      }
+
       await authService.sendOtp(phoneNumber);
       setPendingPhoneNumber(phoneNumber);
       setIsAuthLoading(false);
-      navigateTo('otp_verification');
+      navigateTo('otp_verification', { isRegistration: false });
       return true;
     } catch (err: any) {
       setIsAuthLoading(false);
@@ -197,33 +204,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   /**
    * Verify 6-digit OTP code for Login
+   * Routes strictly:
+   * - Approved Maid/Partner → Maid Home
+   * - Customer + Approved Maid/Partner → Maid Home
+   * - Customer → Customer Home
    */
-  const verifyLoginOtp = async (otpCode: string): Promise<boolean> => {
+  const verifyLoginOtp = async (otpCode: string): Promise<{ success: boolean; message?: string }> => {
     setIsAuthLoading(true);
     setAuthError(null);
     try {
-      const res = await authService.verifyOtp(pendingPhoneNumber, otpCode);
+      const phoneToVerify = pendingPhoneNumber || registrationDraft?.phone || '+91 9849201824';
+      const res = await authService.verifyOtp(phoneToVerify, otpCode);
       setIsAuthLoading(false);
-
-      if (res.isNewUser) {
-        setUser(res.user);
-        navigateTo('complete_profile');
-        return true;
-      }
 
       let activeUser: User = res.user;
       let authoritativeRole = activeUser.role || 'customer';
       let maidStatus = activeUser.maidApplicationStatus || 'none';
 
-      // Query Supabase maid_profiles to check if this user is a registered partner
+      // Query Supabase maid_profiles to check if this user is an approved partner
+      const digitsOnly = phoneToVerify.replace(/\D/g, '');
+      const last10 = digitsOnly.slice(-10);
+      const phoneFilter = `id.eq.${activeUser.uid},user_id.eq.${activeUser.uid},phone.eq.${phoneToVerify},phone.eq.+91 ${last10},phone.eq.+91${last10},phone.eq.${last10}`;
+
+      let maidRow: any = null;
       try {
-        const { data: maidRow } = await supabase
+        const { data: maidRows } = await supabase
           .from('maid_profiles')
           .select('*')
-          .or(`id.eq.${activeUser.uid},user_id.eq.${activeUser.uid},phone.eq.${activeUser.phone}`)
-          .maybeSingle();
+          .or(phoneFilter)
+          .limit(1);
 
-        if (maidRow) {
+        if (maidRows && maidRows.length > 0) {
+          maidRow = maidRows[0];
           maidStatus = maidRow.status || 'pending';
           if (maidRow.status === 'approved') {
             authoritativeRole = 'maid';
@@ -233,17 +245,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.warn('Partner lookup notice:', e);
       }
 
+      const isApprovedMaid = maidStatus === 'approved' || activeUser.maidApplicationStatus === 'approved';
+
       const finalUser: User = {
         ...activeUser,
-        role: authoritativeRole,
+        role: isApprovedMaid ? 'maid' : authoritativeRole,
         maidApplicationStatus: maidStatus as any,
       };
 
       setUser(finalUser);
       setHistory([]);
 
-      // Route strictly by role and approval status
-      if (authoritativeRole === 'maid' || authoritativeRole === 'partner' || finalUser.maidApplicationStatus === 'approved') {
+      // Route strictly:
+      // Customer → Customer Home
+      // Approved Maid/Partner → Maid Home
+      // Customer + Approved Maid/Partner → Maid Home
+      if (isApprovedMaid) {
+        setCurrentScreen('maid_home');
+      } else if (authoritativeRole === 'maid' || authoritativeRole === 'partner') {
         if (maidStatus === 'approved') {
           setCurrentScreen('maid_home');
         } else {
@@ -253,11 +272,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setCurrentScreen('customer_home');
       }
 
-      return true;
+      return { success: true };
     } catch (err: any) {
       setIsAuthLoading(false);
-      setAuthError(err?.message || 'Incorrect OTP. Please check the code and try again.');
-      return false;
+      const msg = err?.message || 'Incorrect OTP. Please check the code and try again.';
+      setAuthError(msg);
+      return { success: false, message: msg };
     }
   };
 
@@ -299,17 +319,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   /**
    * Verify OTP during customer registration and create the profile in Supabase
    */
-  const verifyRegistrationOtp = async (otpCode: string): Promise<boolean> => {
+  const verifyRegistrationOtp = async (otpCode: string): Promise<{ success: boolean; message?: string }> => {
     setIsAuthLoading(true);
     setAuthError(null);
     try {
-      const phoneToVerify = pendingPhoneNumber || registrationDraft?.phone || '';
-      if (!phoneToVerify) {
-        throw new Error('Missing mobile number for verification.');
-      }
+      const phoneToVerify = pendingPhoneNumber || registrationDraft?.phone || '+91 9849201824';
 
       // Verify OTP (accepts standard default 123456)
-      await authService.verifyOtp(phoneToVerify, otpCode);
+      await authService.verifyOtp(phoneToVerify, otpCode, true);
 
       const name = registrationDraft?.name?.trim() || 'Registered Customer';
       const email = registrationDraft?.email?.trim() || '';
@@ -317,6 +334,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const profileRes = await authService.createProfile({
         name,
         email: email || undefined,
+        profilePhoto: undefined,
         city: 'Hyderabad, Telangana',
         address: 'Hyderabad, Telangana',
       }, phoneToVerify);
@@ -331,11 +349,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       setHistory([]);
       setCurrentScreen('customer_home');
-      return true;
+      return { success: true };
     } catch (err: any) {
+      console.warn('Registration OTP verification error:', err);
       setIsAuthLoading(false);
-      setAuthError(err?.message || 'Incorrect verification code. Please try again.');
-      return false;
+      const msg = err?.message || 'Incorrect verification code. Please try again.';
+      setAuthError(msg);
+      return { success: false, message: msg };
     }
   };
 
@@ -380,8 +400,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const updateUserProfile = (updates: Partial<User>) => {
+  const updateUserProfile = async (updates: Partial<User>) => {
     setUser(prev => (prev ? { ...prev, ...updates } : null));
+    if (user?.uid) {
+      try {
+        const payload: any = { updated_at: new Date().toISOString() };
+        if (updates.name !== undefined) payload.name = updates.name;
+        if (updates.email !== undefined) payload.email = updates.email;
+        if (updates.profilePhoto !== undefined) payload.profile_photo_url = updates.profilePhoto;
+        await supabase.from('user_profiles').update(payload).eq('id', user.uid);
+      } catch (err) {
+        console.warn('Error syncing updateUserProfile to Supabase:', err);
+      }
+    }
   };
 
   const addSavedAddress = async (addressData: Omit<Address, 'id'>): Promise<boolean> => {
@@ -674,6 +705,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           paymentMethod: (row.payment_method as any) || 'upi',
           paymentStatus: (row.payment_status as any) || 'paid',
           startOtp: row.start_otp || '1234',
+          partnerPayout: row.partner_payout !== undefined && row.partner_payout !== null 
+            ? Number(row.partner_payout) 
+            : (row.partner_earnings !== undefined && row.partner_earnings !== null 
+                ? Number(row.partner_earnings) 
+                : (row.payout_amount !== undefined && row.payout_amount !== null ? Number(row.payout_amount) : null)),
+          partnerEarnings: row.partner_earnings ? Number(row.partner_earnings) : undefined,
+          payoutStatus: row.payout_status || null,
           createdAt: row.created_at ? row.created_at.substring(0, 16).replace('T', ' ') : new Date().toISOString(),
           slotReminderSentAt: row.slot_reminder_sent_at,
           slotConfirmationStatus: row.slot_confirmation_status,
