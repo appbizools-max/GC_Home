@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,258 +9,615 @@ import {
   Image,
   Alert,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../config/supabase';
+import { MaidApplicationStatus } from '../../types';
+import { AddressEntryForm, AddressFormData } from '../../components/address/AddressEntryForm';
+import { DynamicServiceSelector, SelectedServiceItem } from './components/DynamicServiceSelector';
+import { PartnerDocumentPicker, DocItemState } from './components/PartnerDocumentPicker';
 import {
   ArrowLeft,
-  CheckCircle,
-  Shield,
-  FileText,
-  MapPin,
-  Check,
-  Building,
-  Upload,
   User,
+  MapPin,
+  Briefcase,
+  ShieldCheck,
   CreditCard,
   ChevronRight,
   Sparkles,
   Clock,
-  Sliders,
+  Check,
   XCircle,
-  ShieldCheck,
-  Award,
-  HeartHandshake,
-  AlertTriangle,
   ArrowRight,
-  Zap,
+  Upload,
+  Calendar as CalendarIcon,
+  Globe,
+  Radio,
+  AlertCircle,
 } from 'lucide-react-native';
 
-const ALLERGY_OPTIONS = [
-  'No Known Allergies (Fit)',
-  'Dust & Mites Sensitivity',
-  'Strong Chemical Detergents',
-  'Pet Dander (Cats/Dogs)',
-  'Latex Gloves Sensitivity',
-];
+const STANDARD_LANGUAGES = ['Telugu', 'Hindi', 'English', 'Other'];
+const RADIUS_OPTIONS = [5, 10, 15, 20];
+const EXPERIENCE_OPTIONS = [1, 2, 3, 5, 8, 10];
 
-const CHRONIC_OPTIONS = [
-  'None (100% Medically Fit)',
-  'Asthma / Breathing Difficulties',
-  'Chronic Back / Spine Strain',
-  'Skin Eczema / Dermatitis',
-  'Heart / High Blood Pressure',
+export const PARTNER_SUPPORTED_CITIES = [
+  'Karimnagar',
+  'Kazipet',
+  'Hanamkonda',
+  'Warangal',
 ];
 
 export const MaidRegistrationFormScreen: React.FC = () => {
-  const { navigateTo, user, submitMaidApplication, simulateAdminApproval, maidProfile } = useAuth();
+  const { navigateTo, user, submitMaidApplication, maidProfile } = useAuth();
 
-  // Screen State: 4 Form Steps (1 to 4) + Step 5 (Reviewing / Wait for Approval)
-  const [currentStep, setCurrentStep] = useState<number>(
-    user?.maidApplicationStatus === 'pending' ? 5 : 1
-  );
-  const [isSubmitted, setIsSubmitted] = useState<boolean>(
-    user?.maidApplicationStatus === 'pending'
-  );
+  // Application Flow State (Steps 1 to 5, Step 6 = Confirmation)
+  const [currentStep, setCurrentStep] = useState<number>(1);
+  const [isSubmitted, setIsSubmitted] = useState<boolean>(false);
+  const [appStatus, setAppStatus] = useState<MaidApplicationStatus>('none');
 
-  // ── Step 1: Personal Details & Operating Zone ──
-  const [fullName, setFullName] = useState(user?.name || 'Sunita Devi');
-  const [phone, setPhone] = useState(user?.phone || '+91 98492 01824');
-  const [email, setEmail] = useState(user?.email || 'sunita.d@gchomeplus.com');
-  const [dob, setDob] = useState('14/08/1988');
+  // ── Step 1: Personal Details ──
+  const [fullName, setFullName] = useState(user?.name || '');
+  const [phone, setPhone] = useState(user?.phone || '');
+  const [email, setEmail] = useState(user?.email || '');
   const [gender, setGender] = useState<'Female' | 'Male' | 'Other'>('Female');
-  const [address, setAddress] = useState('Plot 44, Near Metro Station, Kondapur, Hyderabad');
-  const [emergencyContact, setEmergencyContact] = useState('Ramesh Kumar (+91 98765 43210)');
-  const [selectedCity, setSelectedCity] = useState('Hyderabad');
-  const [selectedHub, setSelectedHub] = useState('Kondapur Zone, Hyderabad');
-  const [serviceRadiusKm, setServiceRadiusKm] = useState(5);
-  const [photoUrl, setPhotoUrl] = useState(
-    'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=300&q=80'
-  );
-  const [isPhotoUploaded, setIsPhotoUploaded] = useState(true);
+  const [dob, setDob] = useState('');
+  const [showDobModal, setShowDobModal] = useState(false);
+  const [dobYear, setDobYear] = useState('1995');
+  const [dobMonth, setDobMonth] = useState('06');
+  const [dobDay, setDobDay] = useState('15');
 
-  // ── Step 2: Upload Documents & KYC ──
-  const [aadhaarNumber, setAadhaarNumber] = useState('9842 1048 2910');
-  const [isDigiLockerVerified, setIsDigiLockerVerified] = useState(true);
-  const [isVerifyingDigiLocker, setIsVerifyingDigiLocker] = useState(false);
-  const [aadhaarFrontUploaded, setAadhaarFrontUploaded] = useState(true);
-  const [aadhaarBackUploaded, setAadhaarBackUploaded] = useState(true);
-  const [policeCertUploaded, setPoliceCertUploaded] = useState(true);
+  const [emergencyContactName, setEmergencyContactName] = useState('');
+  const [emergencyContactPhone, setEmergencyContactPhone] = useState('');
+  const [profilePhotoUrl, setProfilePhotoUrl] = useState('');
+  const [isPhotoUploaded, setIsPhotoUploaded] = useState(false);
 
-  // ── Step 3: Health, Allergies, Diseases & Infections ──
-  const [selectedAllergies, setSelectedAllergies] = useState<string[]>([
-    'No Known Allergies (Fit)',
-  ]);
-  const [selectedChronicConditions, setSelectedChronicConditions] = useState<string[]>([
-    'None (100% Medically Fit)',
-  ]);
-  const [infectionClearanceDecl, setInfectionClearanceDecl] = useState(true);
-  const [physicalFitnessDecl, setPhysicalFitnessDecl] = useState(true);
-  const [uniformSafetyDecl, setUniformSafetyDecl] = useState(true);
-  const [bgCheckConsent, setBgCheckConsent] = useState(true);
+  // ── Step 2: Address Details ──
+  const [houseFlat, setHouseFlat] = useState('');
+  const [street, setStreet] = useState('');
+  const [fullAddress, setFullAddress] = useState('');
+  const [selectedCity, setSelectedCity] = useState('');
+  const [selectedDistrict, setSelectedDistrict] = useState('');
+  const [selectedState, setSelectedState] = useState('');
+  const [selectedPostOffice, setSelectedPostOffice] = useState('');
+  const [locality, setLocality] = useState('');
+  const [pincode, setPincode] = useState('');
 
-  // ── Step 4: Bank Payout Setup ──
-  const [bankAccountHolder, setBankAccountHolder] = useState('Sunita Devi');
-  const [bankName, setBankName] = useState('HDFC Bank');
-  const [accountNumber, setAccountNumber] = useState('50100234891204');
-  const [confirmAccountNumber, setConfirmAccountNumber] = useState('50100234891204');
-  const [ifscCode, setIfscCode] = useState('HDFC0001234');
-  const [accountType, setAccountType] = useState<'Savings' | 'Current'>('Savings');
-  const [upiId, setUpiId] = useState('sunita.devi@okhdfcbank');
+  // ── Step 3: Services & Availability ──
+  const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
+  const [selectedServices, setSelectedServices] = useState<SelectedServiceItem[]>([]);
+  const [experienceYears, setExperienceYears] = useState<number>(3);
+  const [selectedLanguages, setSelectedLanguages] = useState<string[]>(['Telugu', 'English']);
+  const [customLanguageInput, setCustomLanguageInput] = useState('');
+  const [customLanguagesList, setCustomLanguagesList] = useState<string[]>([]);
+  const [availabilityStatus, setAvailabilityStatus] = useState<'Available' | 'Not Available'>('Available');
+  const [serviceRadiusKm, setServiceRadiusKm] = useState<number>(5); // Initial dispatch radius: 5 KM
+  const [startTime, setStartTime] = useState<string>('08:00');
+  const [endTime, setEndTime] = useState<string>('20:00');
+  const [emergencyJobsAccepted, setEmergencyJobsAccepted] = useState<boolean>(true);
+
+  // ── Step 4: Document Verification (Aadhaar & PAN only) ──
+  const [documents, setDocuments] = useState<{
+    aadhaarFront: DocItemState;
+    aadhaarBack: DocItemState;
+    pan: DocItemState;
+  }>({
+    aadhaarFront: {
+      id: 'aadhaar_front',
+      name: 'Aadhaar Card (Front)',
+      subTitle: 'Clear photo showing your Name & Aadhaar Number',
+      required: true,
+      uploaded: false,
+    },
+    aadhaarBack: {
+      id: 'aadhaar_back',
+      name: 'Aadhaar Card (Back)',
+      subTitle: 'Clear photo showing your Residential Address',
+      required: true,
+      uploaded: false,
+    },
+    pan: {
+      id: 'pan',
+      name: 'PAN Card',
+      subTitle: 'Required for direct bank tax payout verification',
+      required: true,
+      uploaded: false,
+    },
+  });
+
+  // ── Step 5: Bank Details & Complete Registration ──
+  const [bankAccountHolder, setBankAccountHolder] = useState(user?.name || '');
+  const [bankName, setBankName] = useState('');
+  const [confirmBankName, setConfirmBankName] = useState('');
+  const [accountNumber, setAccountNumber] = useState('');
+  const [confirmAccountNumber, setConfirmAccountNumber] = useState('');
+  const [ifscCode, setIfscCode] = useState('');
+  const [upiId, setUpiId] = useState('');
+
+  // Declarations
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
+  const [accuracyConfirmed, setAccuracyConfirmed] = useState(false);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [generatedPartnerId, setGeneratedPartnerId] = useState('');
 
-  // ── Allergy Toggle Handler ──
-  const toggleAllergy = (opt: string) => {
-    if (opt === 'No Known Allergies (Fit)') {
-      setSelectedAllergies(['No Known Allergies (Fit)']);
-      return;
-    }
-    const filtered = selectedAllergies.filter(item => item !== 'No Known Allergies (Fit)');
-    if (filtered.includes(opt)) {
-      const next = filtered.filter(item => item !== opt);
-      setSelectedAllergies(next.length ? next : ['No Known Allergies (Fit)']);
-    } else {
-      setSelectedAllergies([...filtered, opt]);
-    }
-  };
+  // Load existing profile if application was already submitted / correction requested
+  useEffect(() => {
+    if (maidProfile) {
+      const isCorr =
+        maidProfile.status === 'correction_requested' ||
+        maidProfile.kycStatus === 'incomplete' ||
+        Boolean(maidProfile.adminNotes?.toLowerCase().includes('correction'));
 
-  // ── Chronic Condition Toggle Handler ──
-  const toggleChronic = (opt: string) => {
-    if (opt === 'None (100% Medically Fit)') {
-      setSelectedChronicConditions(['None (100% Medically Fit)']);
-      return;
-    }
-    const filtered = selectedChronicConditions.filter(item => item !== 'None (100% Medically Fit)');
-    if (filtered.includes(opt)) {
-      const next = filtered.filter(item => item !== opt);
-      setSelectedChronicConditions(next.length ? next : ['None (100% Medically Fit)']);
-    } else {
-      setSelectedChronicConditions([...filtered, opt]);
-    }
-  };
+      if (
+        maidProfile.status === 'pending' ||
+        maidProfile.status === 'approved' ||
+        maidProfile.status === 'rejected' ||
+        isCorr
+      ) {
+        setAppStatus(isCorr ? 'correction_requested' : maidProfile.status);
+        setIsSubmitted(true);
+        setCurrentStep(6); // Show confirmation/status screen
+        setGeneratedPartnerId(maidProfile.maidCode || 'GC-PARTNER-1001');
 
-  // ── Step Navigation & Validation ──
-  const handleNextStep = () => {
-    if (currentStep === 1) {
-      if (!fullName.trim() || !phone.trim() || !dob.trim() || !address.trim()) {
-        Alert.alert('Incomplete Profile', 'Please provide your full legal name, phone number, birth date, and residential address.');
+        if (maidProfile.fullName) setFullName(maidProfile.fullName);
+        if (maidProfile.phone) setPhone(maidProfile.phone);
+        if (maidProfile.email) setEmail(maidProfile.email);
+        if (maidProfile.dob) setDob(maidProfile.dob);
+        if (maidProfile.emergencyContactName) setEmergencyContactName(maidProfile.emergencyContactName);
+        if (maidProfile.emergencyContactPhone) setEmergencyContactPhone(maidProfile.emergencyContactPhone);
+
+        if (maidProfile.fullAddress) {
+          setFullAddress(maidProfile.fullAddress);
+          const parts = maidProfile.fullAddress.split(', ');
+          if (parts.length > 1) {
+            setHouseFlat(parts[0]);
+            setStreet(parts.slice(1).join(', '));
+          } else {
+            setHouseFlat(maidProfile.fullAddress);
+          }
+        }
+        if (maidProfile.city && PARTNER_SUPPORTED_CITIES.includes(maidProfile.city)) {
+          setSelectedCity(maidProfile.city);
+        }
+        if (maidProfile.locality) setLocality(maidProfile.locality);
+        if (maidProfile.district) setSelectedDistrict(maidProfile.district);
+        if (maidProfile.state) setSelectedState(maidProfile.state);
+        if (maidProfile.postOffice) setSelectedPostOffice(maidProfile.postOffice);
+        if (maidProfile.pincode) setPincode(maidProfile.pincode);
+
+        if (maidProfile.bankDetails) {
+          if (maidProfile.bankDetails.accountName) setBankAccountHolder(maidProfile.bankDetails.accountName);
+          if (maidProfile.bankDetails.accountNumber) {
+            setAccountNumber(maidProfile.bankDetails.accountNumber);
+            setConfirmAccountNumber(maidProfile.bankDetails.accountNumber);
+          }
+          if (maidProfile.bankDetails.bankName) {
+            setBankName(maidProfile.bankDetails.bankName);
+            setConfirmBankName(maidProfile.bankDetails.bankName);
+          }
+          if (maidProfile.bankDetails.ifscCode) setIfscCode(maidProfile.bankDetails.ifscCode);
+          if (maidProfile.bankDetails.upiId) setUpiId(maidProfile.bankDetails.upiId);
+        }
+
+        if (maidProfile.serviceRadiusKm) {
+          setServiceRadiusKm(maidProfile.serviceRadiusKm);
+        }
+
+        if (maidProfile.aadhaarFrontUrl) {
+          setDocuments(prev => ({
+            ...prev,
+            aadhaarFront: { ...prev.aadhaarFront, uploaded: true, fileUrl: maidProfile.aadhaarFrontUrl },
+          }));
+        }
+        if (maidProfile.aadhaarBackUrl) {
+          setDocuments(prev => ({
+            ...prev,
+            aadhaarBack: { ...prev.aadhaarBack, uploaded: true, fileUrl: maidProfile.aadhaarBackUrl },
+          }));
+        }
+        if (maidProfile.panDocUrl) {
+          setDocuments(prev => ({
+            ...prev,
+            pan: { ...prev.pan, uploaded: true, fileUrl: maidProfile.panDocUrl },
+          }));
+        }
+      }
+    }
+  }, [maidProfile]);
+
+  // ── Language Handlers ──
+  const toggleStandardLanguage = (lang: string) => {
+    if (selectedLanguages.includes(lang)) {
+      if (selectedLanguages.length <= 1 && customLanguagesList.length === 0) {
+        Alert.alert('Language Required', 'Please keep at least 1 language selected.');
         return;
       }
-      if (!selectedCity || !selectedHub) {
-        Alert.alert('Select Work Zone', 'Please select your operating city and preferred hub zone.');
+      setSelectedLanguages(prev => prev.filter(l => l !== lang));
+    } else {
+      setSelectedLanguages(prev => [...prev, lang]);
+    }
+  };
+
+  const handleAddCustomLanguage = () => {
+    const trimmed = customLanguageInput.trim();
+    if (!trimmed) return;
+    if (
+      !customLanguagesList.some(l => l.toLowerCase() === trimmed.toLowerCase()) &&
+      !selectedLanguages.some(l => l.toLowerCase() === trimmed.toLowerCase())
+    ) {
+      setCustomLanguagesList(prev => [...prev, trimmed]);
+    }
+    setCustomLanguageInput('');
+  };
+
+  const handleRemoveCustomLanguage = (lang: string) => {
+    setCustomLanguagesList(prev => prev.filter(l => l !== lang));
+  };
+
+  // ── Date of Birth Confirm Handler ──
+  const handleConfirmDob = () => {
+    const formatted = `${dobYear}-${dobMonth.padStart(2, '0')}-${dobDay.padStart(2, '0')}`;
+    setDob(formatted);
+    setShowDobModal(false);
+  };
+
+  // ── Step 2 Address Submit ──
+  const handlePartnerAddressSubmit = (data: AddressFormData) => {
+    if (!data.city || !PARTNER_SUPPORTED_CITIES.includes(data.city)) {
+      Alert.alert('City Selection Required', 'Please select your city.');
+      return;
+    }
+    setHouseFlat(data.houseFlat);
+    setStreet(data.street);
+    setLocality(data.locality);
+    setSelectedCity(data.city);
+    setSelectedDistrict(data.district || '');
+    setSelectedState(data.state);
+    setPincode(data.pincode);
+    setSelectedPostOffice(data.postOffice || '');
+    setFullAddress(`${data.houseFlat}${data.street ? ', ' + data.street : ''}`);
+
+    setCurrentStep(3);
+  };
+
+  // ── Document State Change Handler ──
+  const handleDocumentChange = (docKey: 'aadhaarFront' | 'aadhaarBack' | 'pan', updated: DocItemState) => {
+    setDocuments(prev => ({
+      ...prev,
+      [docKey]: updated,
+    }));
+  };
+
+  // ── Validation & Step Navigation ──
+  const handleNextStep = () => {
+    if (currentStep === 1) {
+      if (!fullName.trim()) {
+        Alert.alert('Full Name Required', 'Please enter your full legal name.');
+        return;
+      }
+      if (!phone.trim() || phone.replace(/\D/g, '').length < 10) {
+        Alert.alert('Valid Phone Required', 'Please enter a valid 10-digit mobile number.');
+        return;
+      }
+      if (email.trim() && !/\S+@\S+\.\S+/.test(email.trim())) {
+        Alert.alert('Invalid Email', 'Please enter a valid email address.');
+        return;
+      }
+      if (!dob.trim()) {
+        Alert.alert('Date of Birth Required', 'Please select your birth date.');
+        return;
+      }
+      if (!emergencyContactName.trim() || !emergencyContactPhone.trim()) {
+        Alert.alert('Emergency Contact Required', 'Please provide an emergency contact name and phone number.');
         return;
       }
     } else if (currentStep === 2) {
-      if (!aadhaarNumber.replace(/\s/g, '') || aadhaarNumber.replace(/\s/g, '').length < 12) {
-        Alert.alert('Valid Aadhaar Required', 'Please enter a valid 12-digit Aadhaar number.');
+      const hasHouse = houseFlat.trim() || fullAddress.trim();
+      if (!hasHouse || !locality.trim() || !pincode.trim() || !selectedCity.trim()) {
+        Alert.alert('Complete Address Required', 'Please fill in your address, locality, pincode, and select your city.');
         return;
       }
-      if (!aadhaarFrontUploaded || !aadhaarBackUploaded) {
-        Alert.alert('Upload Documents', 'Please upload both front and back photos of your Aadhaar card.');
+      if (!PARTNER_SUPPORTED_CITIES.includes(selectedCity.trim())) {
+        Alert.alert('City Selection Required', 'Please select your city.');
+        return;
+      }
+      if (pincode.replace(/\D/g, '').length < 6) {
+        Alert.alert('Valid Pincode Required', 'Please enter a valid 6-digit pincode.');
         return;
       }
     } else if (currentStep === 3) {
-      if (!infectionClearanceDecl || !physicalFitnessDecl || !uniformSafetyDecl || !bgCheckConsent) {
-        Alert.alert(
-          'Declarations Required',
-          'Please accept the infection clearance, fitness, uniform protocol, and background verification declarations to proceed.'
-        );
+      // Step 3 Validation: Services & Availability
+      if (selectedServices.length === 0) {
+        Alert.alert('Services Required', 'Please select at least one active service you provide.');
+        return;
+      }
+      if (!experienceYears || experienceYears <= 0) {
+        Alert.alert('Experience Required', 'Please select or enter your years of experience.');
+        return;
+      }
+      if (selectedLanguages.length === 0 && customLanguagesList.length === 0) {
+        Alert.alert('Language Required', 'Please select at least 1 language you speak.');
+        return;
+      }
+
+      // Validate working times: End time cannot be earlier than start time
+      const [startH, startM] = startTime.split(':').map(Number);
+      const [endH, endM] = endTime.split(':').map(Number);
+      const startTotalMins = (startH || 0) * 60 + (startM || 0);
+      const endTotalMins = (endH || 0) * 60 + (endM || 0);
+      if (endTotalMins <= startTotalMins) {
+        Alert.alert('Invalid Working Hours', 'End time cannot be earlier than or equal to start time.');
         return;
       }
     } else if (currentStep === 4) {
-      if (!bankName.trim() || !accountNumber.trim() || !ifscCode.trim()) {
-        Alert.alert('Missing Bank Details', 'Please enter your bank name, account number, and IFSC code for direct payouts.');
+      // Step 4 Validation: Aadhaar & PAN KYC
+      if (!documents.aadhaarFront.uploaded) {
+        Alert.alert('Aadhaar (Front) Required', 'Please upload or capture your Aadhaar Card (Front).');
         return;
       }
-      if (accountNumber !== confirmAccountNumber) {
-        Alert.alert('Account Mismatch', 'The bank account numbers you entered do not match. Please verify.');
+      if (!documents.aadhaarBack.uploaded) {
+        Alert.alert('Aadhaar (Back) Required', 'Please upload or capture your Aadhaar Card (Back).');
         return;
       }
-      handleFinalSubmission();
-      return;
+      if (!documents.pan.uploaded) {
+        Alert.alert('PAN Document Required', 'Please upload or capture your PAN Card.');
+        return;
+      }
     }
-    setCurrentStep(prev => Math.min(prev + 1, 4));
+
+    setCurrentStep(prev => Math.min(prev + 1, 5));
   };
 
   const handlePrevStep = () => {
     setCurrentStep(prev => Math.max(prev - 1, 1));
   };
 
-  // ── DigiLocker Verification Simulation ──
-  const handleDigiLockerVerify = () => {
-    setIsVerifyingDigiLocker(true);
-    setTimeout(() => {
-      setIsVerifyingDigiLocker(false);
-      setIsDigiLockerVerified(true);
-      Alert.alert(
-        'DigiLocker Verified',
-        'Identity & Aadhaar details verified successfully via Government DigiLocker Vault.'
-      );
-    }, 1200);
-  };
-
-  // ── Final Application Submission ──
+  // ── Final Application Submission (Step 5 -> Supabase -> Step 6 Confirmation) ──
   const handleFinalSubmission = async () => {
+    // 1. Bank Fields Validation
+    if (!bankAccountHolder.trim()) {
+      Alert.alert('Account Holder Required', 'Please enter your account holder name.');
+      return;
+    }
+    if (!accountNumber.trim() || accountNumber.replace(/\D/g, '').length < 9) {
+      Alert.alert('Account Number Required', 'Please enter a valid bank account number (9 to 18 digits).');
+      return;
+    }
+    if (!bankName.trim()) {
+      Alert.alert('Bank Name Required', 'Please enter your bank name.');
+      return;
+    }
+    if (!confirmBankName.trim()) {
+      Alert.alert('Confirm Bank Name Required', 'Please re-enter your bank name.');
+      return;
+    }
+    if (bankName.trim().toLowerCase() !== confirmBankName.trim().toLowerCase()) {
+      Alert.alert('Bank Name Mismatch', 'Bank Name and Confirm Bank Name do not match. Please verify.');
+      return;
+    }
+
+    const ifscClean = ifscCode.trim().toUpperCase();
+    const ifscRegex = /^[A-Z]{4}0[A-Z0-9]{6}$/;
+    if (!ifscRegex.test(ifscClean)) {
+      Alert.alert(
+        'Invalid IFSC Code',
+        'Please enter a valid 11-character Indian IFSC code (e.g. HDFC0001234, SBIN0000456).'
+      );
+      return;
+    }
+
+    if (upiId.trim()) {
+      const upiRegex = /^[a-zA-Z0-9.\-_]{2,49}@[a-zA-Z._]{2,49}$/;
+      if (!upiRegex.test(upiId.trim())) {
+        Alert.alert('Invalid UPI ID', 'Please enter a valid UPI ID (e.g. 9876543210@upi) or leave it blank.');
+        return;
+      }
+    }
+
+    // 2. Declarations Check
+    if (!termsAccepted || !privacyAccepted || !accuracyConfirmed) {
+      Alert.alert(
+        'Declarations Required',
+        'Please check all three boxes confirming Terms, Privacy Policy, and Information Accuracy to complete registration.'
+      );
+      return;
+    }
+
     setIsSubmitting(true);
     try {
-      const fullApplicationPayload = {
+      // 3. Backend Active Service Verification
+      const selectedIds = selectedServices.map(s => s.serviceId);
+      const { data: dbServices, error: dbServErr } = await supabase
+        .from('services')
+        .select('id, name, is_active')
+        .in('id', selectedIds);
+
+      if (!dbServErr && dbServices) {
+        const inactive = dbServices.filter(s => !s.is_active);
+        if (inactive.length > 0) {
+          Alert.alert(
+            'Service No Longer Active',
+            `The service "${inactive[0].name}" is currently deactivated in the Admin catalog. Please remove it and select active services.`
+          );
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
+      const partnerCode = `GC-PARTNER-${Math.floor(1000 + Math.random() * 9000)}`;
+      setGeneratedPartnerId(partnerCode);
+
+      const allLanguages = [
+        ...selectedLanguages.filter(l => l !== 'Other'),
+        ...customLanguagesList,
+      ];
+
+      const fullAddressStr = `${houseFlat || fullAddress}${street ? ', ' + street : ''}, ${locality}, ${selectedCity} ${pincode}`;
+
+      const partnerProvidedServices = selectedServices.map(s => ({
+        id: s.serviceId,
+        serviceId: s.serviceId,
+        serviceName: s.serviceName,
+        category: s.category || '',
+        experienceYears,
+      }));
+
+      const applicationPayload = {
+        maidCode: partnerCode,
         fullName,
         phone,
         email,
         dob,
         gender,
-        address,
-        serviceArea: selectedHub,
+        photoUrl:
+          profilePhotoUrl ||
+          'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=400',
+        idProofUrl: documents.aadhaarFront.fileUrl || '',
+        emergencyContact: `${emergencyContactName} (${emergencyContactPhone})`,
+        emergencyContactName,
+        emergencyContactPhone,
+        address: fullAddressStr,
+        fullAddress: `${houseFlat || fullAddress}${street ? ', ' + street : ''}`,
+        locality,
+        pincode,
+        city: selectedCity,
+        district: selectedDistrict || undefined,
+        state: selectedState || undefined,
+        postOffice: selectedPostOffice || undefined,
+        serviceArea: selectedCity,
+        preferredServiceArea: selectedCity,
         serviceRadiusKm,
-        emergencyContact,
-        healthSafetyDecl: infectionClearanceDecl && physicalFitnessDecl,
+        healthSafetyDecl: true,
         bankDetails: {
-          accountNumber,
-          ifscCode,
-          bankName,
           accountName: bankAccountHolder,
+          accountNumber,
+          ifscCode: ifscClean,
+          bankName,
+          upiId,
         },
+        workingDays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+        workingHours: `${startTime} - ${endTime}`,
+        emergencyJobsAccepted,
+        servicesProvided: partnerProvidedServices,
+        languagesSpoken: allLanguages,
+        aadhaarFrontUrl: documents.aadhaarFront.fileUrl,
+        aadhaarBackUrl: documents.aadhaarBack.fileUrl,
+        panDocUrl: documents.pan.fileUrl,
+        termsAccepted,
+        privacyAccepted,
+        accuracyConfirmed,
         status: 'pending' as const,
       };
 
-      // 1. Update state in AuthContext
-      submitMaidApplication(fullApplicationPayload);
+      // 1. Update Context
+      await submitMaidApplication(applicationPayload as any);
 
-      // 2. Persist in Supabase PostgreSQL `maid_profiles` table
+      // 2. Persist to Supabase `maid_profiles` table
+      const isUuid = Boolean(user?.uid && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.uid));
+      const profileId = isUuid && user?.uid
+        ? user.uid
+        : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+            const r = (Math.random() * 16) | 0;
+            const v = c === 'x' ? r : (r & 0x3) | 0x8;
+            return v.toString(16);
+          });
+
+      const dbPayload: any = {
+        id: profileId,
+        maid_code: partnerCode,
+        full_name: fullName,
+        phone: phone,
+        email: email,
+        dob: dob,
+        gender: gender,
+        emergency_contact: `${emergencyContactName} (${emergencyContactPhone})`,
+        emergency_contact_name: emergencyContactName,
+        emergency_contact_phone: emergencyContactPhone,
+        address: fullAddressStr,
+        full_address: fullAddress,
+        locality: locality,
+        pincode: pincode,
+        city: selectedCity,
+        service_area: selectedCity,
+        preferred_service_area: selectedCity,
+        service_radius_km: serviceRadiusKm,
+        working_days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+        working_hours: `${startTime} - ${endTime}`,
+        emergency_jobs_accepted: emergencyJobsAccepted,
+        skills: selectedServices.map(s => s.serviceName),
+        services_provided: partnerProvidedServices,
+        languages: allLanguages,
+        languages_spoken: allLanguages,
+        kyc_documents: {
+          aadhaarFrontUrl: documents.aadhaarFront.fileUrl,
+          aadhaarBackUrl: documents.aadhaarBack.fileUrl,
+          panDocUrl: documents.pan.fileUrl,
+          upiId,
+        },
+        aadhaar_doc_url: documents.aadhaarFront.fileUrl,
+        pan_doc_url: documents.pan.fileUrl,
+        bank_account_name: bankAccountHolder,
+        bank_account_number: accountNumber,
+        bank_ifsc: ifscClean,
+        bank_name: bankName,
+        upi_id: upiId,
+        terms_accepted: termsAccepted,
+        privacy_accepted: privacyAccepted,
+        accuracy_confirmed: accuracyConfirmed,
+        status: 'pending',
+        correction_requested: false,
+        applied_at: new Date().toISOString(),
+      };
+
+      const { error: upsertErr } = await supabase.from('maid_profiles').upsert(dbPayload);
+      if (upsertErr) throw upsertErr;
+
+      // Update customer user_profile to mark maid_application_status
       if (user?.uid) {
-        await supabase.from('maid_profiles').upsert({
-          id: user.uid,
-          full_name: fullName,
-          phone: phone,
-          email: email,
-          city: selectedCity,
-          service_area: selectedHub,
-          bank_account_number: accountNumber,
-          bank_ifsc: ifscCode,
-          bank_name: bankName,
-          status: 'pending',
-          applied_at: new Date().toISOString(),
-        });
+        try {
+          await supabase
+            .from('user_profiles')
+            .update({
+              maid_application_status: 'pending',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', user.uid);
+        } catch (uErr) {
+          console.warn('Notice updating user_profiles for partner application:', uErr);
+        }
       }
 
-      // Transition smoothly to Reviewing / Waiting for Approval screen
+      // 3. Attempt insertion into `partner_services` table
+      try {
+        const partnerServicesRows = selectedServices.map(s => ({
+          partner_id: dbPayload.id || partnerCode,
+          service_id: s.serviceId,
+          created_at: new Date().toISOString(),
+        }));
+        await supabase.from('partner_services').upsert(partnerServicesRows, { onConflict: 'partner_id,service_id' });
+      } catch (psErr) {
+        // Non-blocking if table is pending Supabase migration
+      }
+
+      setAppStatus('pending');
       setIsSubmitted(true);
-      setCurrentStep(5);
+      setCurrentStep(6);
     } catch (err: any) {
-      Alert.alert('Submission Error', err.message || 'Failed to submit application. Please try again.');
+      Alert.alert('Submission Error', err.message || 'Failed to submit application. Please check network connection.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
   // ─────────────────────────────────────────────────────────────
-  // STEP 5: REVIEWING / WAITING FOR APPROVAL SCREEN
+  // STEP 6: APPLICATION STATUS & CONFIRMATION SCREEN
   // ─────────────────────────────────────────────────────────────
-  if (currentStep === 5 || isSubmitted) {
+  if (currentStep === 6 || isSubmitted) {
     return (
       <View style={styles.container}>
-        {/* Top Header Bar */}
+        {/* Top Header */}
         <View style={styles.topHeader}>
           <TouchableOpacity
             onPress={() => navigateTo('become_maid_info')}
@@ -270,209 +627,198 @@ export const MaidRegistrationFormScreen: React.FC = () => {
             <ArrowLeft size={18} color="#0F172A" />
           </TouchableOpacity>
           <View style={styles.headerTitleContainer}>
-            <Text style={styles.headerTitleText}>Application Status</Text>
-            <Text style={styles.headerSubtitleText}>Ref #GC-9842 • Submitted</Text>
+            <Text style={styles.headerTitleText}>Partner Application</Text>
+            <Text style={styles.headerSubtitleText}>Status & Operations Verification</Text>
           </View>
           <View style={styles.reviewPill}>
-            <Clock size={11} color="#B45309" />
-            <Text style={styles.reviewPillText}>IN REVIEW</Text>
+            <Sparkles size={11} color="#B45309" />
+            <Text style={styles.reviewPillText}>
+              {appStatus === 'approved'
+                ? 'ACTIVE'
+                : appStatus === 'correction_requested'
+                ? 'ACTION REQUIRED'
+                : appStatus === 'rejected'
+                ? 'DECLINED'
+                : 'UNDER REVIEW'}
+            </Text>
           </View>
         </View>
 
         <ScrollView contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
-          {/* Main Hero Review Card */}
+          {/* Status Hero Card */}
           <View style={styles.reviewHeroCard}>
-            <View style={styles.reviewIconRing}>
-              <Clock size={36} color="#D97706" />
+            <View
+              style={[
+                styles.reviewIconRing,
+                appStatus === 'approved' && { backgroundColor: '#DCFCE7' },
+                appStatus === 'rejected' && { backgroundColor: '#FEE2E2' },
+              ]}
+            >
+              {appStatus === 'approved' ? (
+                <ShieldCheck size={36} color="#166534" />
+              ) : appStatus === 'rejected' ? (
+                <XCircle size={36} color="#DC2626" />
+              ) : (
+                <Clock size={36} color="#D97706" />
+              )}
             </View>
-            <Text style={styles.reviewHeroTitle}>Application Under Review</Text>
+
+            <Text style={styles.reviewHeroTitle}>
+              {appStatus === 'approved'
+                ? 'Application Approved!'
+                : appStatus === 'correction_requested'
+                ? 'Correction Requested by Admin'
+                : appStatus === 'rejected'
+                ? 'Application Rejected'
+                : 'Pending Operations Verification'}
+            </Text>
             <Text style={styles.reviewHeroSub}>
-              Thank you, <Text style={{ fontWeight: '800', color: '#0F172A' }}>{fullName}</Text>! Your 4-step partner registration has been submitted and is currently being verified by our Safety Operations team.
+              Hello <Text style={{ fontWeight: '800', color: '#0F172A' }}>{fullName || user?.name}</Text>!{' '}
+              {appStatus === 'approved'
+                ? 'Your partner profile has been verified and activated. You can now go online to accept service bookings.'
+                : appStatus === 'correction_requested'
+                ? maidProfile?.adminNotes || 'Admin has requested corrections to your submitted documents. Please edit and resubmit.'
+                : appStatus === 'rejected'
+                ? maidProfile?.rejectionReason || 'Your application did not meet our verification criteria. Contact support for help.'
+                : 'Your multi-service registration application has been received and is currently under verification by our Safety Operations team.'}
             </Text>
 
-            <View style={styles.estTimeBadge}>
-              <Sparkles size={13} color="#166534" />
-              <Text style={styles.estTimeText}>Estimated Review: 2 to 4 Hours</Text>
-            </View>
+            {appStatus === 'pending' && (
+              <View style={styles.estTimeBadge}>
+                <Sparkles size={13} color="#166534" />
+                <Text style={styles.estTimeText}>Estimated Review Time: 2 to 4 Hours</Text>
+              </View>
+            )}
           </View>
 
-          {/* Stepper Review Breakdown */}
+          {/* Action Buttons based on status */}
+          {appStatus === 'correction_requested' && (
+            <TouchableOpacity
+              style={styles.resubmitBtn}
+              onPress={() => {
+                setIsSubmitted(false);
+                setCurrentStep(1);
+              }}
+              activeOpacity={0.88}
+            >
+              <Text style={styles.resubmitBtnText}>Edit & Resubmit Application</Text>
+              <ArrowRight size={18} color="#FFFFFF" />
+            </TouchableOpacity>
+          )}
+
+          {appStatus === 'approved' && (
+            <TouchableOpacity
+              style={styles.approvedDashboardBtn}
+              onPress={() => navigateTo('maid_home')}
+              activeOpacity={0.88}
+            >
+              <Text style={styles.approvedDashboardBtnText}>Go to Partner Dashboard</Text>
+              <ChevronRight size={18} color="#FFFFFF" />
+            </TouchableOpacity>
+          )}
+
+          {/* Application Breakdown Summary */}
           <View style={styles.reviewStepsBox}>
-            <Text style={styles.reviewStepsBoxTitle}>Registration Verification Progress</Text>
+            <Text style={styles.reviewStepsBoxTitle}>Submitted Application Breakdown</Text>
 
-            {/* Step 1 Item */}
+            {/* Step 1: Personal */}
             <View style={styles.reviewStepRow}>
               <View style={styles.reviewCheckCircle}>
                 <Check size={13} color="#166534" strokeWidth={3} />
               </View>
               <View style={styles.reviewStepTextCol}>
-                <Text style={styles.reviewStepTitle}>Step 1: Personal Details & Hub Zone</Text>
+                <Text style={styles.reviewStepTitle}>Partner ID & Personal Info</Text>
                 <Text style={styles.reviewStepSub}>
-                  {selectedCity} • {selectedHub} ({serviceRadiusKm} km radius)
+                  ID #{generatedPartnerId || maidProfile?.maidCode || 'Pending'} • {fullName} ({phone})
                 </Text>
               </View>
-              <Text style={styles.verifiedTag}>Completed</Text>
             </View>
 
-            {/* Step 2 Item */}
+            {/* Step 2: Address & City */}
             <View style={styles.reviewStepRow}>
               <View style={styles.reviewCheckCircle}>
                 <Check size={13} color="#166534" strokeWidth={3} />
               </View>
               <View style={styles.reviewStepTextCol}>
-                <Text style={styles.reviewStepTitle}>Step 2: Aadhaar & Govt Documents</Text>
+                <Text style={styles.reviewStepTitle}>Service Location & City</Text>
                 <Text style={styles.reviewStepSub}>
-                  Aadhaar #{aadhaarNumber} • DigiLocker Verified
+                  {selectedCity ? `${selectedCity} (${pincode})` : `${locality || 'Registered Area'}`}
                 </Text>
               </View>
-              <Text style={styles.verifiedTag}>Verified</Text>
             </View>
 
-            {/* Step 3 Item */}
+            {/* Step 3: Selected Services */}
             <View style={styles.reviewStepRow}>
               <View style={styles.reviewCheckCircle}>
                 <Check size={13} color="#166534" strokeWidth={3} />
               </View>
               <View style={styles.reviewStepTextCol}>
-                <Text style={styles.reviewStepTitle}>Step 3: Health & Infection Declarations</Text>
+                <Text style={styles.reviewStepTitle}>
+                  Services Provided ({selectedServices.length > 0 ? selectedServices.length : 'Configured'})
+                </Text>
                 <Text style={styles.reviewStepSub}>
-                  Allergies, chronic conditions & safety agreements cleared
+                  {selectedServices.length > 0
+                    ? selectedServices.map(s => s.serviceName).join(', ')
+                    : 'Active Supabase Services Connected'}
                 </Text>
               </View>
-              <Text style={styles.verifiedTag}>Cleared</Text>
             </View>
 
-            {/* Step 4 Item */}
+            {/* Step 3: Availability & Hours */}
             <View style={styles.reviewStepRow}>
               <View style={styles.reviewCheckCircle}>
                 <Check size={13} color="#166534" strokeWidth={3} />
               </View>
               <View style={styles.reviewStepTextCol}>
-                <Text style={styles.reviewStepTitle}>Step 4: Bank Payout Setup</Text>
+                <Text style={styles.reviewStepTitle}>Availability & Dispatch</Text>
                 <Text style={styles.reviewStepSub}>
-                  {bankName} • Account ending in {accountNumber.slice(-4)}
+                  Status: {availabilityStatus} • Hours: {startTime} - {endTime} • Radius: {serviceRadiusKm} KM
                 </Text>
               </View>
-              <Text style={styles.verifiedTag}>Verified</Text>
             </View>
 
-            {/* Final Pending Review */}
+            {/* Step 4: Documents */}
+            <View style={styles.reviewStepRow}>
+              <View style={styles.reviewCheckCircle}>
+                <Check size={13} color="#166534" strokeWidth={3} />
+              </View>
+              <View style={styles.reviewStepTextCol}>
+                <Text style={styles.reviewStepTitle}>Document Verification</Text>
+                <Text style={styles.reviewStepSub}>
+                  Aadhaar Card (Front/Back) & PAN Card attached for KYC
+                </Text>
+              </View>
+            </View>
+
+            {/* Step 5: Bank Details */}
             <View style={[styles.reviewStepRow, { borderBottomWidth: 0 }]}>
-              <View style={styles.pendingCheckCircle}>
-                <Clock size={13} color="#D97706" />
+              <View style={styles.reviewCheckCircle}>
+                <Check size={13} color="#166534" strokeWidth={3} />
               </View>
               <View style={styles.reviewStepTextCol}>
-                <Text style={styles.reviewStepTitlePending}>
-                  Final Step: Admin Panel Operations Approval
-                </Text>
-                <Text style={styles.reviewStepSubPending}>
-                  Background check & document review in progress
+                <Text style={styles.reviewStepTitle}>Payout Bank Account</Text>
+                <Text style={styles.reviewStepSub}>
+                  {bankName || 'Verified Bank'} (A/C ...{accountNumber.slice(-4) || 'XXXX'}) • IFSC: {ifscCode || 'Verified'}
                 </Text>
               </View>
-              <Text style={styles.pendingTag}>In Progress</Text>
             </View>
           </View>
-
-          {/* What Happens Next Card */}
-          <View style={styles.infoCard}>
-            <View style={styles.infoCardHeader}>
-              <ShieldCheck size={18} color="#1E4E3D" />
-              <Text style={styles.infoCardTitle}>What Happens Next?</Text>
-            </View>
-            <View style={styles.infoItem}>
-              <Text style={styles.infoBullet}>1.</Text>
-              <Text style={styles.infoText}>
-                You will receive an instant SMS and WhatsApp confirmation as soon as Admin Ops verifies your documents.
-              </Text>
-            </View>
-            <View style={styles.infoItem}>
-              <Text style={styles.infoBullet}>2.</Text>
-              <Text style={styles.infoText}>
-                Your free starter kit (uniform apron, cleaning tote, and eco-safe supplies) will be issued at your assigned hub.
-              </Text>
-            </View>
-            <View style={styles.infoItem}>
-              <Text style={styles.infoBullet}>3.</Text>
-              <Text style={styles.infoText}>
-                Once approved, open your Maid Dashboard to toggle Online and accept customer home service requests!
-              </Text>
-            </View>
-          </View>
-
-          {/* SIMULATE ADMIN PANEL ACTION BOX (For testing) */}
-          <View style={styles.adminSimCard}>
-            <View style={styles.adminSimHeader}>
-              <Sliders size={16} color="#1E4E3D" />
-              <Text style={styles.adminSimTitle}>Admin Operations Simulation</Text>
-            </View>
-            <Text style={styles.adminSimDesc}>
-              Test instant approval or rejection to inspect partner transitions in real-time.
-            </Text>
-            <View style={styles.adminBtnRow}>
-              <TouchableOpacity
-                style={styles.approveBtn}
-                onPress={() => {
-                  simulateAdminApproval(true);
-                  Alert.alert('Approved!', 'Partner application approved! Navigating to Maid Dashboard.');
-                  navigateTo('maid_home');
-                }}
-                activeOpacity={0.8}
-              >
-                <Check size={15} color="#FFFFFF" />
-                <Text style={styles.adminBtnText}>Approve (Go to Dashboard)</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.rejectBtn}
-                onPress={() => {
-                  simulateAdminApproval(false, 'Please re-upload a clearer Aadhaar front document.');
-                  Alert.alert('Revision Requested', 'Application marked as revision needed.');
-                  navigateTo('become_maid_info');
-                }}
-                activeOpacity={0.8}
-              >
-                <XCircle size={15} color="#FFFFFF" />
-                <Text style={styles.adminBtnText}>Request Revision</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Action CTAs */}
-          <TouchableOpacity
-            style={styles.primaryActionBtn}
-            onPress={() => navigateTo('become_maid_info')}
-            activeOpacity={0.88}
-          >
-            <Text style={styles.primaryActionBtnText}>Go to Maid Partner Portal</Text>
-            <ChevronRight size={16} color="#FFFFFF" />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.secondaryActionBtn}
-            onPress={() => navigateTo('customer_home')}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.secondaryActionBtnText}>Back to Customer Home</Text>
-          </TouchableOpacity>
         </ScrollView>
       </View>
     );
   }
 
   // ─────────────────────────────────────────────────────────────
-  // 4-STEP FORM RENDERING
+  // 5-STEP REGISTRATION FORM WIZARD
   // ─────────────────────────────────────────────────────────────
   return (
     <View style={styles.container}>
-      {/* Top Header Bar */}
+      {/* Top Header */}
       <View style={styles.topHeader}>
         <TouchableOpacity
           onPress={() => {
-            if (currentStep > 1) {
-              handlePrevStep();
-            } else {
-              navigateTo('become_maid_info');
-            }
+            if (currentStep > 1) handlePrevStep();
+            else navigateTo('become_maid_info');
           }}
           style={styles.headerBackBtn}
           activeOpacity={0.7}
@@ -481,764 +827,602 @@ export const MaidRegistrationFormScreen: React.FC = () => {
         </TouchableOpacity>
         <View style={styles.headerTitleContainer}>
           <Text style={styles.headerTitleText}>Partner Registration</Text>
-          <Text style={styles.headerSubtitleText}>
-            Step {currentStep} of 4 • {
-              currentStep === 1 ? 'Personal Details' :
-              currentStep === 2 ? 'Upload Documents' :
-              currentStep === 3 ? 'Health & Allergies' :
-              'Bank Payout Setup'
-            }
-          </Text>
+          <Text style={styles.headerSubtitleText}>Step {currentStep} of 5</Text>
         </View>
-        <View style={styles.freeBadge}>
-          <ShieldCheck size={12} color="#166534" />
-          <Text style={styles.freeBadgeText}>100% SECURE</Text>
+        <View style={styles.stepBadge}>
+          <Text style={styles.stepBadgeText}>{currentStep} / 5</Text>
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
-        {/* Stepper Indicator Card */}
-        <View style={styles.progressCard}>
-          <View style={styles.stepBadgeRow}>
-            <View style={styles.applicationBadge}>
-              <View style={styles.pulseDot} />
-              <Text style={styles.applicationBadgeText}>Application #GC-9842</Text>
+      {/* Progress Bar Indicator */}
+      <View style={styles.progressBarContainer}>
+        <View style={[styles.progressBarFill, { width: `${(currentStep / 5) * 100}%` }]} />
+      </View>
+
+      <ScrollView contentContainerStyle={styles.formScrollContent} showsVerticalScrollIndicator={false}>
+        {/* ── STEP 1: PERSONAL DETAILS ── */}
+        {currentStep === 1 && (
+          <View style={styles.stepCard}>
+            <View style={styles.stepHeaderRow}>
+              <User size={20} color="#168A68" />
+              <Text style={styles.stepTitle}>Step 1: Personal Details</Text>
             </View>
-            <Text style={styles.stepPercentText}>{currentStep * 25}% Completed</Text>
-          </View>
+            <Text style={styles.stepSubTitle}>Enter your basic contact and identity information.</Text>
 
-          {/* Progress Bar Track */}
-          <View style={styles.progressBarTrack}>
-            <View style={[styles.progressBarFill, { width: `${currentStep * 25}%` }]} />
-          </View>
-
-          {/* 4 Step Pills */}
-          <View style={styles.stepLabelsRow}>
-            {[
-              { num: 1, label: 'Personal' },
-              { num: 2, label: 'Documents' },
-              { num: 3, label: 'Health & Allergies' },
-              { num: 4, label: 'Bank Setup' },
-            ].map(s => {
-              const isDone = currentStep > s.num;
-              const isCurrent = currentStep === s.num;
-              return (
+            {/* Profile Photo Upload */}
+            <View style={styles.photoUploadRow}>
+              <View style={styles.photoPreviewBox}>
+                {profilePhotoUrl ? (
+                  <Image source={{ uri: profilePhotoUrl }} style={styles.photoImg} />
+                ) : (
+                  <User size={36} color="#94A3B8" />
+                )}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.photoUploadTitle}>Partner Profile Photo</Text>
+                <Text style={styles.photoUploadSub}>Clear portrait with good lighting</Text>
                 <TouchableOpacity
-                  key={s.num}
+                  style={styles.photoBtn}
                   onPress={() => {
-                    if (s.num < currentStep) setCurrentStep(s.num);
+                    setProfilePhotoUrl(
+                      'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=400'
+                    );
+                    setIsPhotoUploaded(true);
+                    Alert.alert('Photo Selected', 'Profile photo attached successfully.');
                   }}
-                  disabled={s.num > currentStep}
+                  activeOpacity={0.8}
+                >
+                  <Upload size={14} color="#168A68" />
+                  <Text style={styles.photoBtnText}>
+                    {isPhotoUploaded ? 'Change Photo' : 'Upload Profile Photo'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <Text style={styles.inputLabel}>Full Legal Name *</Text>
+            <TextInput
+              style={styles.textInput}
+              placeholder="e.g. Saroja Devi"
+              placeholderTextColor="#94A3B8"
+              value={fullName}
+              onChangeText={setFullName}
+            />
+
+            <Text style={styles.inputLabel}>Mobile Phone Number *</Text>
+            <TextInput
+              style={styles.textInput}
+              placeholder="e.g. 9876543210"
+              placeholderTextColor="#94A3B8"
+              keyboardType="phone-pad"
+              maxLength={10}
+              value={phone}
+              onChangeText={setPhone}
+            />
+
+            <Text style={styles.inputLabel}>Email Address (Optional)</Text>
+            <TextInput
+              style={styles.textInput}
+              placeholder="e.g. saroja@example.com"
+              placeholderTextColor="#94A3B8"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              value={email}
+              onChangeText={setEmail}
+            />
+
+            <Text style={styles.inputLabel}>Date of Birth *</Text>
+            <TouchableOpacity
+              style={styles.dobSelectorBtn}
+              onPress={() => setShowDobModal(true)}
+              activeOpacity={0.8}
+            >
+              <CalendarIcon size={16} color="#168A68" />
+              <Text style={[styles.dobSelectorText, !dob && { color: '#94A3B8' }]}>
+                {dob ? dob : 'Select Date of Birth (YYYY-MM-DD)'}
+              </Text>
+            </TouchableOpacity>
+
+            <Text style={styles.inputLabel}>Gender *</Text>
+            <View style={styles.genderRow}>
+              {(['Female', 'Male', 'Other'] as const).map(g => (
+                <TouchableOpacity
+                  key={g}
+                  style={[styles.genderChip, gender === g && styles.genderChipSelected]}
+                  onPress={() => setGender(g)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.genderChipText, gender === g && styles.genderChipTextSelected]}>
+                    {g}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={styles.inputLabel}>Emergency Contact Name *</Text>
+            <TextInput
+              style={styles.textInput}
+              placeholder="e.g. Ramesh Kumar (Husband / Brother)"
+              placeholderTextColor="#94A3B8"
+              value={emergencyContactName}
+              onChangeText={setEmergencyContactName}
+            />
+
+            <Text style={styles.inputLabel}>Emergency Contact Phone *</Text>
+            <TextInput
+              style={styles.textInput}
+              placeholder="e.g. 9876501234"
+              placeholderTextColor="#94A3B8"
+              keyboardType="phone-pad"
+              maxLength={10}
+              value={emergencyContactPhone}
+              onChangeText={setEmergencyContactPhone}
+            />
+          </View>
+        )}
+
+        {/* ── STEP 2: ADDRESS DETAILS ── */}
+        {currentStep === 2 && (
+          <View style={styles.stepCard}>
+            <View style={styles.stepHeaderRow}>
+              <MapPin size={20} color="#168A68" />
+              <Text style={styles.stepTitle}>Step 2: Address Details</Text>
+            </View>
+
+            <AddressEntryForm
+              initialValues={{
+                houseFlat,
+                street,
+                locality,
+                city: selectedCity,
+                district: selectedDistrict,
+                state: selectedState,
+                pincode,
+                postOffice: selectedPostOffice,
+              }}
+              cityOptions={PARTNER_SUPPORTED_CITIES}
+              submitButtonText="Continue"
+              onSubmit={handlePartnerAddressSubmit}
+            />
+          </View>
+        )}
+
+        {/* ── STEP 3: SERVICES & AVAILABILITY ── */}
+        {currentStep === 3 && (
+          <View style={styles.stepCard}>
+            <View style={styles.stepHeaderRow}>
+              <Briefcase size={20} color="#168A68" />
+              <Text style={styles.stepTitle}>Step 3: Services & Availability</Text>
+            </View>
+            <Text style={styles.stepSubTitle}>
+              Select active services you provide and configure your operating schedule.
+            </Text>
+
+            {/* DYNAMIC SERVICE SELECTOR (Admin Supabase Service Catalog Source of Truth) */}
+            <Text style={styles.sectionHeaderLabel}>Services You Provide *</Text>
+            <DynamicServiceSelector
+              selectedServiceIds={selectedServiceIds}
+              onChange={(ids, items) => {
+                setSelectedServiceIds(ids);
+                setSelectedServices(items);
+              }}
+            />
+
+            {/* EXPERIENCE (Required) */}
+            <Text style={styles.sectionHeaderLabel}>Experience (Years) *</Text>
+            <View style={styles.experienceRow}>
+              {EXPERIENCE_OPTIONS.map(exp => (
+                <TouchableOpacity
+                  key={exp}
                   style={[
-                    styles.stepPill,
-                    isCurrent && styles.stepPillCurrent,
-                    isDone && styles.stepPillDone,
+                    styles.experienceChip,
+                    experienceYears === exp && styles.experienceChipSelected,
                   ]}
+                  onPress={() => setExperienceYears(exp)}
                   activeOpacity={0.8}
                 >
                   <Text
                     style={[
-                      styles.stepPillText,
-                      isCurrent && styles.stepPillTextCurrent,
-                      isDone && styles.stepPillTextDone,
+                      styles.experienceChipText,
+                      experienceYears === exp && styles.experienceChipTextSelected,
                     ]}
                   >
-                    {isDone ? `✓ ${s.label}` : `${s.num}. ${s.label}`}
+                    {exp} {exp === 1 ? 'Year' : 'Years'}
                   </Text>
                 </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-
-        {/* ────────────────────────────────────────────────
-            STEP 1: PERSONAL DETAILS & OPERATING ZONE
-           ──────────────────────────────────────────────── */}
-        {currentStep === 1 && (
-          <View style={styles.stepFormCard}>
-            <View style={styles.sectionHeader}>
-              <User size={18} color="#1E4E3D" />
-              <Text style={styles.sectionTitle}>Personal Profile & Work Location</Text>
+              ))}
             </View>
 
-            {/* Photo Upload Box */}
-            <View style={styles.photoUploadRow}>
-              <Image
-                source={{
-                  uri:
-                    photoUrl && photoUrl.trim().length > 0
-                      ? photoUrl
-                      : 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=300&q=80',
-                }}
-                style={styles.photoPreview}
-              />
-              <View style={styles.photoActions}>
-                <Text style={styles.photoTitle}>Partner Profile Photo</Text>
-                <Text style={styles.photoSub}>Clear face picture for customer safety badge</Text>
+            {/* LANGUAGES (Multiple selection: Telugu, Hindi, English, Other) */}
+            <Text style={styles.sectionHeaderLabel}>Languages Spoken *</Text>
+            <View style={styles.langChecklist}>
+              {STANDARD_LANGUAGES.map(lang => {
+                const isChecked = selectedLanguages.includes(lang);
+                return (
+                  <TouchableOpacity
+                    key={lang}
+                    style={[styles.langRow, isChecked && styles.langRowSelected]}
+                    onPress={() => toggleStandardLanguage(lang)}
+                    activeOpacity={0.8}
+                  >
+                    <View style={[styles.checkboxSquare, isChecked && styles.checkboxSquareSelected]}>
+                      {isChecked && <Check size={12} color="#FFFFFF" strokeWidth={3} />}
+                    </View>
+                    <Text style={[styles.langLabel, isChecked && styles.langLabelSelected]}>{lang}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* Custom Language input if Other selected */}
+            {selectedLanguages.includes('Other') && (
+              <View style={styles.customLangSection}>
+                <Text style={styles.inputLabel}>Enter Additional Language</Text>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <TextInput
+                    style={[styles.textInput, { flex: 1, marginBottom: 0 }]}
+                    placeholder="e.g. Kannada, Marathi, Tamil..."
+                    placeholderTextColor="#94A3B8"
+                    value={customLanguageInput}
+                    onChangeText={setCustomLanguageInput}
+                  />
+                  <TouchableOpacity
+                    style={styles.addCustomLangBtn}
+                    onPress={handleAddCustomLanguage}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.addCustomLangBtnText}>Add</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {customLanguagesList.length > 0 && (
+                  <View style={styles.chipsWrap}>
+                    {customLanguagesList.map(cl => (
+                      <View key={cl} style={styles.customLangChip}>
+                        <Text style={styles.customLangChipText}>{cl}</Text>
+                        <TouchableOpacity onPress={() => handleRemoveCustomLanguage(cl)}>
+                          <XCircle size={14} color="#64748B" />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+            )}
+
+            {/* AVAILABILITY (Available / Not Available) */}
+            <Text style={styles.sectionHeaderLabel}>Partner Availability *</Text>
+            <View style={styles.availabilityRow}>
+              {(['Available', 'Not Available'] as const).map(opt => (
                 <TouchableOpacity
-                  style={styles.uploadPhotoBtn}
-                  onPress={() => {
-                    setPhotoUrl(
-                      'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=300&q=80'
-                    );
-                    setIsPhotoUploaded(true);
-                    Alert.alert('Photo Updated', 'Profile photo updated successfully.');
-                  }}
+                  key={opt}
+                  style={[
+                    styles.availabilityCard,
+                    availabilityStatus === opt && styles.availabilityCardSelected,
+                  ]}
+                  onPress={() => setAvailabilityStatus(opt)}
                   activeOpacity={0.8}
                 >
-                  <Upload size={14} color="#1E4E3D" />
-                  <Text style={styles.uploadPhotoBtnText}>
-                    {isPhotoUploaded ? 'Change Photo' : 'Upload Photo'}
+                  <View
+                    style={[
+                      styles.radioCircle,
+                      availabilityStatus === opt && styles.radioCircleSelected,
+                    ]}
+                  >
+                    {availabilityStatus === opt && <View style={styles.radioDot} />}
+                  </View>
+                  <View>
+                    <Text
+                      style={[
+                        styles.availabilityTitle,
+                        availabilityStatus === opt && styles.availabilityTitleSelected,
+                      ]}
+                    >
+                      {opt}
+                    </Text>
+                    <Text style={styles.availabilitySub}>
+                      {opt === 'Available'
+                        ? 'Ready to accept jobs once approved'
+                        : 'Temporarily on pause'}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* SERVICE RADIUS (Initial dispatch radius: 5 KM) */}
+            <View style={styles.radiusHeaderRow}>
+              <Text style={styles.sectionHeaderLabel}>Service Radius</Text>
+              <Text style={styles.radiusValueBadge}>{serviceRadiusKm} KM</Text>
+            </View>
+            <View style={styles.radiusRow}>
+              {RADIUS_OPTIONS.map(r => (
+                <TouchableOpacity
+                  key={r}
+                  style={[styles.radiusChip, serviceRadiusKm === r && styles.radiusChipSelected]}
+                  onPress={() => setServiceRadiusKm(r)}
+                  activeOpacity={0.8}
+                >
+                  <Text
+                    style={[
+                      styles.radiusChipText,
+                      serviceRadiusKm === r && styles.radiusChipTextSelected,
+                    ]}
+                  >
+                    {r} KM
                   </Text>
                 </TouchableOpacity>
-              </View>
+              ))}
             </View>
 
-            {/* Inputs */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Full Legal Name *</Text>
-              <TextInput
-                style={styles.textInput}
-                value={fullName}
-                onChangeText={setFullName}
-                placeholder="e.g. Sunita Devi"
-                placeholderTextColor="#94A3B8"
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Mobile Phone Number (WhatsApp Enabled) *</Text>
-              <TextInput
-                style={styles.textInput}
-                value={phone}
-                onChangeText={setPhone}
-                keyboardType="phone-pad"
-                placeholder="+91 Mobile Number"
-                placeholderTextColor="#94A3B8"
-              />
-            </View>
-
-            <View style={styles.twoColRow}>
-              <View style={[styles.inputGroup, { flex: 1 }]}>
-                <Text style={styles.inputLabel}>Date of Birth *</Text>
+            {/* WORKING TIME (Start Time & End Time, validated) */}
+            <Text style={styles.sectionHeaderLabel}>Working Time *</Text>
+            <View style={styles.timeInputsRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.timeSubLabel}>Start Time</Text>
                 <TextInput
                   style={styles.textInput}
-                  value={dob}
-                  onChangeText={setDob}
-                  placeholder="DD/MM/YYYY"
+                  placeholder="08:00"
                   placeholderTextColor="#94A3B8"
+                  value={startTime}
+                  onChangeText={setStartTime}
                 />
               </View>
-
-              <View style={[styles.inputGroup, { flex: 1 }]}>
-                <Text style={styles.inputLabel}>Gender *</Text>
-                <View style={styles.genderOptions}>
-                  {(['Female', 'Male', 'Other'] as const).map(g => (
-                    <TouchableOpacity
-                      key={g}
-                      style={[styles.genderChip, gender === g && styles.genderChipActive]}
-                      onPress={() => setGender(g)}
-                      activeOpacity={0.8}
-                    >
-                      <Text
-                        style={[
-                          styles.genderChipText,
-                          gender === g && styles.genderChipTextActive,
-                        ]}
-                      >
-                        {g}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.timeSubLabel}>End Time</Text>
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="20:00"
+                  placeholderTextColor="#94A3B8"
+                  value={endTime}
+                  onChangeText={setEndTime}
+                />
               </View>
             </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Residential Address *</Text>
-              <TextInput
-                style={[styles.textInput, styles.multilineInput]}
-                value={address}
-                onChangeText={setAddress}
-                multiline
-                numberOfLines={2}
-                placeholder="House/Flat No, Street, Landmark, Pincode"
-                placeholderTextColor="#94A3B8"
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Emergency Contact (Name & Phone) *</Text>
-              <TextInput
-                style={styles.textInput}
-                value={emergencyContact}
-                onChangeText={setEmergencyContact}
-                placeholder="e.g. Ramesh Kumar (+91 98765 43210)"
-                placeholderTextColor="#94A3B8"
-              />
-            </View>
-
-            {/* Operating City & Hub */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Operating City *</Text>
-              <View style={styles.optionGrid}>
-                {['Hyderabad', 'Bangalore', 'Mumbai', 'Delhi-NCR'].map(city => (
-                  <TouchableOpacity
-                    key={city}
-                    style={[styles.optionCard, selectedCity === city && styles.optionCardActive]}
-                    onPress={() => setSelectedCity(city)}
-                    activeOpacity={0.8}
-                  >
-                    <Building size={14} color={selectedCity === city ? '#1E4E3D' : '#64748B'} />
-                    <Text
-                      style={[
-                        styles.optionCardText,
-                        selectedCity === city && styles.optionCardTextActive,
-                      ]}
-                    >
-                      {city}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Preferred Hub Zone *</Text>
-              <View style={styles.optionList}>
-                {[
-                  'Kondapur Zone, Hyderabad',
-                  'Hitec City Zone, Hyderabad',
-                  'Gachibowli Zone, Hyderabad',
-                  'Jubilee Hills Zone, Hyderabad',
-                  'Madhapur Zone, Hyderabad',
-                ].map(hub => (
-                  <TouchableOpacity
-                    key={hub}
-                    style={[styles.listOptionRow, selectedHub === hub && styles.listOptionRowActive]}
-                    onPress={() => setSelectedHub(hub)}
-                    activeOpacity={0.8}
-                  >
-                    <MapPin size={15} color={selectedHub === hub ? '#1E4E3D' : '#64748B'} />
-                    <Text
-                      style={[
-                        styles.listOptionText,
-                        selectedHub === hub && styles.listOptionTextActive,
-                      ]}
-                    >
-                      {hub}
-                    </Text>
-                    {selectedHub === hub && <Check size={16} color="#1E4E3D" strokeWidth={2.5} />}
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Service Radius: {serviceRadiusKm} km from Hub</Text>
-              <View style={styles.radiusPillsRow}>
-                {[3, 5, 8, 10].map(r => (
-                  <TouchableOpacity
-                    key={r}
-                    onPress={() => setServiceRadiusKm(r)}
-                    style={[
-                      styles.radiusPill,
-                      serviceRadiusKm === r && styles.radiusPillActive,
-                    ]}
-                    activeOpacity={0.8}
-                  >
-                    <Text
-                      style={[
-                        styles.radiusPillText,
-                        serviceRadiusKm === r && styles.radiusPillTextActive,
-                      ]}
-                    >
-                      {r} km
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-          </View>
-        )}
-
-        {/* ────────────────────────────────────────────────
-            STEP 2: UPLOAD DOCUMENTS & KYC
-           ──────────────────────────────────────────────── */}
-        {currentStep === 2 && (
-          <View style={styles.stepFormCard}>
-            <View style={styles.sectionHeader}>
-              <FileText size={18} color="#1E4E3D" />
-              <Text style={styles.sectionTitle}>Government Identity Documents</Text>
-            </View>
-
-            <Text style={styles.sectionHint}>
-              Upload clear government ID photos. All documents are encrypted and protected under UIDAI safety guidelines.
+            <Text style={styles.timeHintText}>
+              24-hour format (e.g. 08:00 to 20:00). End time must be later than start time.
             </Text>
 
-            {/* Aadhaar Input & DigiLocker Instant Verify */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Aadhaar Card Number *</Text>
-              <TextInput
-                style={styles.textInput}
-                value={aadhaarNumber}
-                onChangeText={setAadhaarNumber}
-                keyboardType="numeric"
-                maxLength={14}
-                placeholder="XXXX XXXX XXXX"
-                placeholderTextColor="#94A3B8"
-              />
-            </View>
-
-            {/* DigiLocker Button */}
+            {/* EMERGENCY JOBS (Yes / No) */}
+            <Text style={styles.sectionHeaderLabel}>Emergency Jobs</Text>
             <TouchableOpacity
-              style={[
-                styles.digiLockerBtn,
-                isDigiLockerVerified && styles.digiLockerBtnVerified,
-              ]}
-              onPress={handleDigiLockerVerify}
-              disabled={isVerifyingDigiLocker || isDigiLockerVerified}
-              activeOpacity={0.8}
+              style={styles.emergencyToggleRow}
+              onPress={() => setEmergencyJobsAccepted(!emergencyJobsAccepted)}
+              activeOpacity={0.85}
             >
-              {isVerifyingDigiLocker ? (
-                <ActivityIndicator size="small" color="#1E4E3D" />
-              ) : isDigiLockerVerified ? (
-                <CheckCircle size={18} color="#166534" />
-              ) : (
-                <Zap size={18} color="#1E4E3D" />
-              )}
-              <Text
+              <View style={{ flex: 1 }}>
+                <Text style={styles.emergencyToggleTitle}>
+                  Accept Urgent / Emergency Jobs?
+                </Text>
+                <Text style={styles.emergencyToggleSub}>
+                  Provides priority job dispatch with higher emergency fee compensation
+                </Text>
+              </View>
+              <View
                 style={[
-                  styles.digiLockerBtnText,
-                  isDigiLockerVerified && styles.digiLockerBtnTextVerified,
+                  styles.togglePill,
+                  { backgroundColor: emergencyJobsAccepted ? '#168A68' : '#CBD5E1' },
                 ]}
               >
-                {isVerifyingDigiLocker
-                  ? 'Verifying via UIDAI Vault...'
-                  : isDigiLockerVerified
-                  ? 'DigiLocker Identity Verified ✓'
-                  : 'Instant Verify with Govt DigiLocker'}
-              </Text>
+                <Text style={styles.togglePillText}>{emergencyJobsAccepted ? 'YES' : 'NO'}</Text>
+              </View>
             </TouchableOpacity>
-
-            {/* Document 1: Aadhaar Front */}
-            <View style={styles.docUploadCard}>
-              <View style={styles.docIconBox}>
-                <FileText size={20} color="#1E4E3D" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.docCardTitle}>Aadhaar Card (Front Photo) *</Text>
-                <Text style={styles.docCardSub}>
-                  {aadhaarFrontUploaded ? 'aadhaar_front_scan.jpg (Uploaded)' : 'Clear photo of front side'}
-                </Text>
-              </View>
-              <TouchableOpacity
-                style={styles.docActionBtn}
-                onPress={() => {
-                  setAadhaarFrontUploaded(true);
-                  Alert.alert('Uploaded', 'Aadhaar front document stored.');
-                }}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.docActionBtnText}>
-                  {aadhaarFrontUploaded ? 'Replace' : 'Upload'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Document 2: Aadhaar Back */}
-            <View style={styles.docUploadCard}>
-              <View style={styles.docIconBox}>
-                <FileText size={20} color="#1E4E3D" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.docCardTitle}>Aadhaar Card (Back Photo) *</Text>
-                <Text style={styles.docCardSub}>
-                  {aadhaarBackUploaded ? 'aadhaar_back_scan.jpg (Uploaded)' : 'Clear photo of address side'}
-                </Text>
-              </View>
-              <TouchableOpacity
-                style={styles.docActionBtn}
-                onPress={() => {
-                  setAadhaarBackUploaded(true);
-                  Alert.alert('Uploaded', 'Aadhaar back document stored.');
-                }}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.docActionBtnText}>
-                  {aadhaarBackUploaded ? 'Replace' : 'Upload'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Document 3: Police Clearance Certificate */}
-            <View style={styles.docUploadCard}>
-              <View style={styles.docIconBox}>
-                <Shield size={20} color="#1E4E3D" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.docCardTitle}>Police Clearance Certificate</Text>
-                <Text style={styles.docCardSub}>
-                  {policeCertUploaded ? 'police_clearance_cert.pdf (Uploaded)' : 'Optional / Recommended for priority leads'}
-                </Text>
-              </View>
-              <TouchableOpacity
-                style={styles.docActionBtn}
-                onPress={() => {
-                  setPoliceCertUploaded(true);
-                  Alert.alert('Uploaded', 'Police Clearance Certificate stored.');
-                }}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.docActionBtnText}>
-                  {policeCertUploaded ? 'Replace' : 'Upload'}
-                </Text>
-              </TouchableOpacity>
-            </View>
           </View>
         )}
 
-        {/* ────────────────────────────────────────────────
-            STEP 3: HEALTH, ALLERGIES, DISEASES & INFECTIONS
-           ──────────────────────────────────────────────── */}
-        {currentStep === 3 && (
-          <View style={styles.stepFormCard}>
-            <View style={styles.sectionHeader}>
-              <HeartHandshake size={18} color="#1E4E3D" />
-              <Text style={styles.sectionTitle}>Health & Allergies Declarations</Text>
-            </View>
-
-            <Text style={styles.sectionHint}>
-              Please declare any allergies, chronic conditions, or infections for your safety and to ensure suitable job assignments.
-            </Text>
-
-            {/* Known Allergies */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Known Allergies & Chemical Sensitivities *</Text>
-              <View style={styles.chipGrid}>
-                {ALLERGY_OPTIONS.map(opt => {
-                  const isSelected = selectedAllergies.includes(opt);
-                  return (
-                    <TouchableOpacity
-                      key={opt}
-                      onPress={() => toggleAllergy(opt)}
-                      style={[styles.declChip, isSelected && styles.declChipActive]}
-                      activeOpacity={0.8}
-                    >
-                      <View
-                        style={[
-                          styles.chipRadio,
-                          isSelected && styles.chipRadioActive,
-                        ]}
-                      >
-                        {isSelected && <Check size={10} color="#FFFFFF" strokeWidth={3} />}
-                      </View>
-                      <Text
-                        style={[
-                          styles.declChipText,
-                          isSelected && styles.declChipTextActive,
-                        ]}
-                      >
-                        {opt}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-
-            {/* Chronic Medical Conditions */}
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Chronic Medical Conditions *</Text>
-              <View style={styles.chipGrid}>
-                {CHRONIC_OPTIONS.map(opt => {
-                  const isSelected = selectedChronicConditions.includes(opt);
-                  return (
-                    <TouchableOpacity
-                      key={opt}
-                      onPress={() => toggleChronic(opt)}
-                      style={[styles.declChip, isSelected && styles.declChipActive]}
-                      activeOpacity={0.8}
-                    >
-                      <View
-                        style={[
-                          styles.chipRadio,
-                          isSelected && styles.chipRadioActive,
-                        ]}
-                      >
-                        {isSelected && <Check size={10} color="#FFFFFF" strokeWidth={3} />}
-                      </View>
-                      <Text
-                        style={[
-                          styles.declChipText,
-                          isSelected && styles.declChipTextActive,
-                        ]}
-                      >
-                        {opt}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-
-            {/* Health & Safety Checkboxes */}
-            <View style={styles.declarationList}>
-              {/* Infectious Disease Clearance */}
-              <TouchableOpacity
-                style={styles.checkboxCard}
-                onPress={() => setInfectionClearanceDecl(!infectionClearanceDecl)}
-                activeOpacity={0.85}
-              >
-                <View
-                  style={[
-                    styles.checkboxSquare,
-                    infectionClearanceDecl && styles.checkboxSquareActive,
-                  ]}
-                >
-                  {infectionClearanceDecl && <Check size={13} color="#FFFFFF" strokeWidth={3} />}
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.checkboxHeading}>Infectious Disease Clearance</Text>
-                  <Text style={styles.checkboxSubText}>
-                    I confirm that I do not currently have any active communicable diseases, tuberculosis, or contagious skin infections that would pose risks to clients.
-                  </Text>
-                </View>
-              </TouchableOpacity>
-
-              {/* Physical Fitness */}
-              <TouchableOpacity
-                style={styles.checkboxCard}
-                onPress={() => setPhysicalFitnessDecl(!physicalFitnessDecl)}
-                activeOpacity={0.85}
-              >
-                <View
-                  style={[
-                    styles.checkboxSquare,
-                    physicalFitnessDecl && styles.checkboxSquareActive,
-                  ]}
-                >
-                  {physicalFitnessDecl && <Check size={13} color="#FFFFFF" strokeWidth={3} />}
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.checkboxHeading}>Physical Fitness for Cleaning Tasks</Text>
-                  <Text style={styles.checkboxSubText}>
-                    I declare that I am physically capable of performing home mopping, dusting, sweeping, and kitchen deep cleaning without restriction.
-                  </Text>
-                </View>
-              </TouchableOpacity>
-
-              {/* Uniform & Sanitation Kit Protocol */}
-              <TouchableOpacity
-                style={styles.checkboxCard}
-                onPress={() => setUniformSafetyDecl(!uniformSafetyDecl)}
-                activeOpacity={0.85}
-              >
-                <View
-                  style={[
-                    styles.checkboxSquare,
-                    uniformSafetyDecl && styles.checkboxSquareActive,
-                  ]}
-                >
-                  {uniformSafetyDecl && <Check size={13} color="#FFFFFF" strokeWidth={3} />}
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.checkboxHeading}>Official Uniform & Safety Gear Protocol</Text>
-                  <Text style={styles.checkboxSubText}>
-                    I agree to wear the provided GC Home+ apron uniform, sanitized gloves, and use certified non-toxic eco-cleaning supplies.
-                  </Text>
-                </View>
-              </TouchableOpacity>
-
-              {/* Background Check Consent */}
-              <TouchableOpacity
-                style={styles.checkboxCard}
-                onPress={() => setBgCheckConsent(!bgCheckConsent)}
-                activeOpacity={0.85}
-              >
-                <View
-                  style={[
-                    styles.checkboxSquare,
-                    bgCheckConsent && styles.checkboxSquareActive,
-                  ]}
-                >
-                  {bgCheckConsent && <Check size={13} color="#FFFFFF" strokeWidth={3} />}
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.checkboxHeading}>Police & Background Verification Consent</Text>
-                  <Text style={styles.checkboxSubText}>
-                    I authorize GC Home+ Safety Operations to conduct criminal history and identity background verification.
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
-        {/* ────────────────────────────────────────────────
-            STEP 4: BANK DETAILS (PAYOUT SETUP)
-           ──────────────────────────────────────────────── */}
+        {/* ── STEP 4: DOCUMENT VERIFICATION (Aadhaar & PAN) ── */}
         {currentStep === 4 && (
-          <View style={styles.stepFormCard}>
-            <View style={styles.sectionHeader}>
-              <CreditCard size={18} color="#1E4E3D" />
-              <Text style={styles.sectionTitle}>Bank Account & Payout Setup</Text>
+          <View style={styles.stepCard}>
+            <View style={styles.stepHeaderRow}>
+              <ShieldCheck size={20} color="#168A68" />
+              <Text style={styles.stepTitle}>Step 4: Document Verification</Text>
             </View>
-
-            <Text style={styles.sectionHint}>
-              Weekly payments are automatically deposited every Monday at 10:00 AM. Enter your verified personal bank account.
+            <Text style={styles.stepSubTitle}>
+              Upload required identity documents (Aadhaar & PAN). You can upload PDF, image, or take a direct photo.
             </Text>
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Account Holder Legal Name *</Text>
-              <TextInput
-                style={styles.textInput}
-                value={bankAccountHolder}
-                onChangeText={setBankAccountHolder}
-                placeholder="Full name as in bank passbook"
-                placeholderTextColor="#94A3B8"
-              />
+            <PartnerDocumentPicker
+              documents={documents}
+              onDocumentChange={handleDocumentChange}
+            />
+          </View>
+        )}
+
+        {/* ── STEP 5: BANK DETAILS & FINAL SUBMIT ── */}
+        {currentStep === 5 && (
+          <View style={styles.stepCard}>
+            <View style={styles.stepHeaderRow}>
+              <CreditCard size={20} color="#168A68" />
+              <Text style={styles.stepTitle}>Step 5: Bank Details & Payouts</Text>
+            </View>
+            <Text style={styles.stepSubTitle}>
+              Direct weekly earnings and bonuses will be credited to this verified account.
+            </Text>
+
+            <Text style={styles.inputLabel}>Account Holder Name *</Text>
+            <TextInput
+              style={styles.textInput}
+              placeholder="e.g. Saroja Devi"
+              placeholderTextColor="#94A3B8"
+              value={bankAccountHolder}
+              onChangeText={setBankAccountHolder}
+            />
+
+            <Text style={styles.inputLabel}>Account Number *</Text>
+            <TextInput
+              style={styles.textInput}
+              placeholder="Enter 9 to 18 digit account number"
+              placeholderTextColor="#94A3B8"
+              keyboardType="number-pad"
+              secureTextEntry
+              value={accountNumber}
+              onChangeText={setAccountNumber}
+            />
+
+            <Text style={styles.inputLabel}>Bank Name *</Text>
+            <TextInput
+              style={styles.textInput}
+              placeholder="e.g. State Bank of India / HDFC Bank"
+              placeholderTextColor="#94A3B8"
+              value={bankName}
+              onChangeText={setBankName}
+            />
+
+            <Text style={styles.inputLabel}>Confirm Bank Name *</Text>
+            <TextInput
+              style={styles.textInput}
+              placeholder="Re-enter bank name (must match exactly)"
+              placeholderTextColor="#94A3B8"
+              value={confirmBankName}
+              onChangeText={setConfirmBankName}
+            />
+
+            <Text style={styles.inputLabel}>IFSC Code *</Text>
+            <TextInput
+              style={styles.textInput}
+              placeholder="e.g. SBIN0001234"
+              placeholderTextColor="#94A3B8"
+              autoCapitalize="characters"
+              value={ifscCode}
+              onChangeText={txt => setIfscCode(txt.toUpperCase())}
+            />
+
+            <Text style={styles.inputLabel}>UPI Code (Optional)</Text>
+            <TextInput
+              style={styles.textInput}
+              placeholder="e.g. 9876543210@upi or mobile@okaxis"
+              placeholderTextColor="#94A3B8"
+              value={upiId}
+              onChangeText={setUpiId}
+            />
+
+            {/* Declarations */}
+            <View style={styles.declarationsBox}>
+              <TouchableOpacity
+                style={styles.declarationRow}
+                onPress={() => setTermsAccepted(!termsAccepted)}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.checkboxSquare, termsAccepted && styles.checkboxSquareSelected]}>
+                  {termsAccepted && <Check size={12} color="#FFFFFF" strokeWidth={3} />}
+                </View>
+                <Text style={styles.declarationText}>
+                  I accept the GC HOME+ <Text style={{ fontWeight: '800', color: '#168A68' }}>Terms & Conditions</Text> for Maid Partners.
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.declarationRow}
+                onPress={() => setPrivacyAccepted(!privacyAccepted)}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.checkboxSquare, privacyAccepted && styles.checkboxSquareSelected]}>
+                  {privacyAccepted && <Check size={12} color="#FFFFFF" strokeWidth={3} />}
+                </View>
+                <Text style={styles.declarationText}>
+                  I agree to the <Text style={{ fontWeight: '800', color: '#168A68' }}>Privacy Policy</Text> and background verification.
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.declarationRow}
+                onPress={() => setAccuracyConfirmed(!accuracyConfirmed)}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.checkboxSquare, accuracyConfirmed && styles.checkboxSquareSelected]}>
+                  {accuracyConfirmed && <Check size={12} color="#FFFFFF" strokeWidth={3} />}
+                </View>
+                <Text style={styles.declarationText}>
+                  I confirm that all submitted details, documents, and banking information are true and accurate.
+                </Text>
+              </TouchableOpacity>
             </View>
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Bank Name *</Text>
-              <TextInput
-                style={styles.textInput}
-                value={bankName}
-                onChangeText={setBankName}
-                placeholder="e.g. HDFC Bank, State Bank of India, ICICI"
-                placeholderTextColor="#94A3B8"
-              />
-            </View>
+            {/* Complete Registration CTA */}
+            <TouchableOpacity
+              style={[
+                styles.submitBtn,
+                (!termsAccepted || !privacyAccepted || !accuracyConfirmed || isSubmitting) && styles.submitBtnDisabled,
+              ]}
+              onPress={handleFinalSubmission}
+              disabled={!termsAccepted || !privacyAccepted || !accuracyConfirmed || isSubmitting}
+              activeOpacity={0.88}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <>
+                  <Text style={styles.submitBtnText}>Complete Registration</Text>
+                  <ArrowRight size={18} color="#FFFFFF" />
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+      </ScrollView>
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Bank Account Number *</Text>
-              <TextInput
-                style={styles.textInput}
-                value={accountNumber}
-                onChangeText={setAccountNumber}
-                keyboardType="number-pad"
-                placeholder="Enter Account Number"
-                placeholderTextColor="#94A3B8"
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Confirm Bank Account Number *</Text>
-              <TextInput
-                style={styles.textInput}
-                value={confirmAccountNumber}
-                onChangeText={setConfirmAccountNumber}
-                keyboardType="number-pad"
-                placeholder="Re-enter Account Number"
-                placeholderTextColor="#94A3B8"
-              />
-            </View>
-
-            <View style={styles.twoColRow}>
-              <View style={[styles.inputGroup, { flex: 1 }]}>
-                <Text style={styles.inputLabel}>IFSC Code *</Text>
+      {/* DOB Calendar Picker Modal */}
+      <Modal visible={showDobModal} transparent animationType="fade" onRequestClose={() => setShowDobModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.dobModalCard}>
+            <Text style={styles.dobModalTitle}>Select Date of Birth</Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginVertical: 14 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.inputLabel}>Day (DD)</Text>
                 <TextInput
                   style={styles.textInput}
-                  value={ifscCode}
-                  onChangeText={setIfscCode}
-                  autoCapitalize="characters"
-                  placeholder="e.g. HDFC0001234"
-                  placeholderTextColor="#94A3B8"
+                  value={dobDay}
+                  onChangeText={setDobDay}
+                  keyboardType="number-pad"
+                  maxLength={2}
                 />
               </View>
-
-              <View style={[styles.inputGroup, { flex: 1 }]}>
-                <Text style={styles.inputLabel}>Account Type</Text>
-                <View style={styles.genderOptions}>
-                  {(['Savings', 'Current'] as const).map(t => (
-                    <TouchableOpacity
-                      key={t}
-                      style={[styles.genderChip, accountType === t && styles.genderChipActive]}
-                      onPress={() => setAccountType(t)}
-                      activeOpacity={0.8}
-                    >
-                      <Text
-                        style={[
-                          styles.genderChipText,
-                          accountType === t && styles.genderChipTextActive,
-                        ]}
-                      >
-                        {t}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>UPI ID (For Instant 24/7 Settlements - Optional)</Text>
-              <TextInput
-                style={styles.textInput}
-                value={upiId}
-                onChangeText={setUpiId}
-                placeholder="username@okhdfcbank"
-                placeholderTextColor="#94A3B8"
-              />
-            </View>
-
-            {/* Payout Guarantee Notice */}
-            <View style={styles.payoutNoticeBox}>
-              <Sparkles size={15} color="#166534" />
               <View style={{ flex: 1 }}>
-                <Text style={styles.payoutNoticeTitle}>Guaranteed Weekly Monday Deposits</Text>
-                <Text style={styles.payoutNoticeSub}>
-                  Zero fees or commissions deducted. Full earnings deposited directly to your bank account every Monday morning.
-                </Text>
+                <Text style={styles.inputLabel}>Month (MM)</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={dobMonth}
+                  onChangeText={setDobMonth}
+                  keyboardType="number-pad"
+                  maxLength={2}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.inputLabel}>Year (YYYY)</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={dobYear}
+                  onChangeText={setDobYear}
+                  keyboardType="number-pad"
+                  maxLength={4}
+                />
               </View>
             </View>
+            <TouchableOpacity style={styles.dobConfirmBtn} onPress={handleConfirmDob} activeOpacity={0.88}>
+              <Text style={styles.dobConfirmBtnText}>Confirm Birth Date</Text>
+            </TouchableOpacity>
           </View>
-        )}
+        </View>
+      </Modal>
 
-        {/* ────────────────────────────────────────────────
-            BOTTOM NAVIGATION CONTROLS
-           ──────────────────────────────────────────────── */}
-        <View style={styles.actionRow}>
+      {/* Bottom Stepper Bar */}
+      {currentStep < 6 && !isSubmitted && (
+        <View style={styles.bottomNavContainer}>
           {currentStep > 1 && (
-            <TouchableOpacity
-              style={styles.prevBtn}
-              onPress={handlePrevStep}
-              disabled={isSubmitting}
-              activeOpacity={0.8}
-            >
-              <ArrowLeft size={16} color="#475569" />
-              <Text style={styles.prevBtnText}>Previous</Text>
+            <TouchableOpacity style={styles.prevBtn} onPress={handlePrevStep} activeOpacity={0.7}>
+              <ArrowLeft size={16} color="#0F172A" />
+              <Text style={styles.prevBtnText}>Back</Text>
             </TouchableOpacity>
           )}
 
-          <TouchableOpacity
-            style={[
-              styles.nextBtn,
-              currentStep === 4 && styles.submitBtn,
-            ]}
-            onPress={handleNextStep}
-            disabled={isSubmitting}
-            activeOpacity={0.88}
-          >
-            {isSubmitting ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : currentStep === 4 ? (
-              <>
-                <Text style={styles.nextBtnText}>Submit & Request Approval</Text>
-                <CheckCircle size={16} color="#FFFFFF" />
-              </>
-            ) : (
-              <>
-                <Text style={styles.nextBtnText}>Next Step</Text>
-                <ChevronRight size={16} color="#FFFFFF" />
-              </>
-            )}
-          </TouchableOpacity>
+          {currentStep < 5 && currentStep !== 2 ? (
+            <TouchableOpacity style={styles.nextBtn} onPress={handleNextStep} activeOpacity={0.88}>
+              <Text style={styles.nextBtnText}>Next Step</Text>
+              <ChevronRight size={16} color="#FFFFFF" />
+            </TouchableOpacity>
+          ) : null}
         </View>
-
-        <View style={{ height: 40 }} />
-      </ScrollView>
+      )}
     </View>
   );
 };
@@ -1248,17 +1432,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F8FAFC',
   },
-  contentContainer: {
-    padding: 16,
-    gap: 16,
-    paddingBottom: 40,
-  },
   topHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingTop: 48,
+    paddingBottom: 12,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
@@ -1266,36 +1445,582 @@ const styles = StyleSheet.create({
   headerBackBtn: {
     width: 36,
     height: 36,
-    borderRadius: 10,
+    borderRadius: 18,
     backgroundColor: '#F1F5F9',
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
   },
   headerTitleContainer: {
     flex: 1,
     marginLeft: 12,
   },
   headerTitleText: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '800',
     color: '#0F172A',
   },
   headerSubtitleText: {
     fontSize: 11,
     color: '#64748B',
+    marginTop: 1,
   },
-  freeBadge: {
+  stepBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: '#E6F4F1',
+  },
+  stepBadgeText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#168A68',
+  },
+  progressBarContainer: {
+    height: 4,
+    backgroundColor: '#E2E8F0',
+    width: '100%',
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: '#168A68',
+  },
+  formScrollContent: {
+    padding: 16,
+    paddingBottom: 100,
+  },
+  stepCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 20,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+  },
+  stepHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#DCFCE7',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    gap: 8,
   },
-  freeBadgeText: {
-    fontSize: 10,
+  stepTitle: {
+    fontSize: 17,
     fontWeight: '800',
+    color: '#0F172A',
+  },
+  stepSubTitle: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 4,
+    marginBottom: 16,
+  },
+  sectionHeaderLabel: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#1E293B',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  inputLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#334155',
+    marginTop: 12,
+    marginBottom: 6,
+  },
+  textInput: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 13,
+    color: '#0F172A',
+  },
+  photoUploadRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    marginBottom: 8,
+  },
+  photoPreviewBox: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+  },
+  photoImg: {
+    width: '100%',
+    height: '100%',
+  },
+  photoUploadTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  photoUploadSub: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+    marginBottom: 8,
+  },
+  photoBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#168A68',
+    alignSelf: 'flex-start',
+  },
+  photoBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#168A68',
+  },
+  dobSelectorBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  dobSelectorText: {
+    fontSize: 13,
+    color: '#0F172A',
+    fontWeight: '600',
+  },
+  genderRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  genderChip: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+    alignItems: 'center',
+  },
+  genderChipSelected: {
+    borderColor: '#168A68',
+    backgroundColor: '#E6F4F1',
+  },
+  genderChipText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  genderChipTextSelected: {
+    color: '#168A68',
+  },
+  experienceRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  experienceChip: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+  },
+  experienceChipSelected: {
+    borderColor: '#168A68',
+    backgroundColor: '#E6F4F1',
+  },
+  experienceChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  experienceChipTextSelected: {
+    color: '#168A68',
+  },
+  langChecklist: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  langRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+  },
+  langRowSelected: {
+    borderColor: '#168A68',
+    backgroundColor: '#E6F4F1',
+  },
+  checkboxSquare: {
+    width: 18,
+    height: 18,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  checkboxSquareSelected: {
+    borderColor: '#168A68',
+    backgroundColor: '#168A68',
+  },
+  langLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  langLabelSelected: {
+    color: '#168A68',
+    fontWeight: '700',
+  },
+  customLangSection: {
+    marginTop: 12,
+  },
+  addCustomLangBtn: {
+    backgroundColor: '#168A68',
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addCustomLangBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  chipsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 8,
+  },
+  customLangChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#E2E8F0',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 14,
+  },
+  customLangChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  availabilityRow: {
+    gap: 10,
+  },
+  availabilityCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    padding: 12,
+    backgroundColor: '#F8FAFC',
+  },
+  availabilityCardSelected: {
+    borderColor: '#168A68',
+    backgroundColor: '#F0FDF4',
+  },
+  radioCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#94A3B8',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radioCircleSelected: {
+    borderColor: '#168A68',
+  },
+  radioDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#168A68',
+  },
+  availabilityTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  availabilityTitleSelected: {
+    color: '#166534',
+  },
+  availabilitySub: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  radiusHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  radiusValueBadge: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#168A68',
+  },
+  radiusRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  radiusChip: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+    alignItems: 'center',
+  },
+  radiusChipSelected: {
+    borderColor: '#168A68',
+    backgroundColor: '#E6F4F1',
+  },
+  radiusChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  radiusChipTextSelected: {
+    color: '#168A68',
+  },
+  timeInputsRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  timeSubLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+    marginBottom: 4,
+  },
+  timeHintText: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 4,
+  },
+  emergencyToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+  },
+  emergencyToggleTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  emergencyToggleSub: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  togglePill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+  },
+  togglePillText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  declarationsBox: {
+    marginTop: 18,
+    gap: 12,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+  declarationRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  declarationText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#334155',
+    lineHeight: 18,
+  },
+  submitBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#168A68',
+    borderRadius: 14,
+    paddingVertical: 14,
+    marginTop: 20,
+  },
+  submitBtnDisabled: {
+    backgroundColor: '#94A3B8',
+  },
+  submitBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  bottomNavContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  prevBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
+  },
+  prevBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  nextBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: '#168A68',
+    marginLeft: 'auto',
+  },
+  nextBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  dobModalCard: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
+  },
+  dobModalTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  dobConfirmBtn: {
+    backgroundColor: '#168A68',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  dobConfirmBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  contentContainer: {
+    padding: 16,
+  },
+  reviewHeroCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 20,
+    alignItems: 'center',
+    marginBottom: 16,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+  },
+  reviewIconRing: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#FEF3C7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  reviewHeroTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'center',
+  },
+  reviewHeroSub: {
+    fontSize: 13,
+    color: '#475569',
+    textAlign: 'center',
+    marginTop: 6,
+    lineHeight: 20,
+  },
+  estTimeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    marginTop: 14,
+  },
+  estTimeText: {
+    fontSize: 12,
+    fontWeight: '700',
     color: '#166534',
   },
   reviewPill: {
@@ -1305,797 +2030,81 @@ const styles = StyleSheet.create({
     backgroundColor: '#FEF3C7',
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#FDE68A',
+    borderRadius: 10,
   },
   reviewPillText: {
     fontSize: 10,
     fontWeight: '800',
     color: '#B45309',
   },
-
-  /* Stepper Progress Card */
-  progressCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    gap: 10,
-  },
-  stepBadgeRow: {
+  resubmitBtn: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  applicationBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#E6F4EA',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  pulseDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#1E4E3D',
-  },
-  applicationBadgeText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#1E4E3D',
-  },
-  stepPercentText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#166534',
-  },
-  progressBarTrack: {
-    height: 6,
-    backgroundColor: '#F1F5F9',
-    borderRadius: 3,
-    overflow: 'hidden',
-  },
-  progressBarFill: {
-    height: '100%',
-    backgroundColor: '#1E4E3D',
-    borderRadius: 3,
-  },
-  stepLabelsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 6,
-  },
-  stepPill: {
-    flex: 1,
-    paddingVertical: 6,
-    paddingHorizontal: 4,
-    borderRadius: 8,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    alignItems: 'center',
-  },
-  stepPillCurrent: {
-    backgroundColor: '#E6F4EA',
-    borderColor: '#1E4E3D',
-  },
-  stepPillDone: {
-    backgroundColor: '#F0FDF4',
-    borderColor: '#BBF7D0',
-  },
-  stepPillText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#94A3B8',
-    textAlign: 'center',
-  },
-  stepPillTextCurrent: {
-    color: '#1E4E3D',
-    fontWeight: '800',
-  },
-  stepPillTextDone: {
-    color: '#166534',
-    fontWeight: '800',
-  },
-
-  /* Form Card */
-  stepFormCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    gap: 14,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 3,
-    elevation: 1,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 2,
-  },
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  sectionHint: {
-    fontSize: 11,
-    color: '#64748B',
-    lineHeight: 16,
-    marginTop: -6,
-  },
-  photoUploadRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
-    backgroundColor: '#F8FAFC',
-    padding: 12,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  photoPreview: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    borderWidth: 2,
-    borderColor: '#A7F3D0',
-  },
-  photoActions: {
-    flex: 1,
-    gap: 2,
-  },
-  photoTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  photoSub: {
-    fontSize: 10,
-    color: '#64748B',
-  },
-  uploadPhotoBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    alignSelf: 'flex-start',
-    backgroundColor: '#E6F4EA',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    marginTop: 4,
-  },
-  uploadPhotoBtnText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#1E4E3D',
-  },
-  inputGroup: {
-    gap: 6,
-  },
-  inputLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#334155',
-  },
-  textInput: {
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 13,
-    color: '#0F172A',
-  },
-  multilineInput: {
-    minHeight: 56,
-    textAlignVertical: 'top',
-  },
-  twoColRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  genderOptions: {
-    flexDirection: 'row',
-    gap: 4,
-  },
-  genderChip: {
-    flex: 1,
-    paddingVertical: 9,
-    borderRadius: 8,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#D97706',
+    paddingVertical: 14,
+    borderRadius: 14,
+    marginBottom: 16,
   },
-  genderChipActive: {
-    backgroundColor: '#E6F4EA',
-    borderColor: '#1E4E3D',
-  },
-  genderChipText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#64748B',
-  },
-  genderChipTextActive: {
-    color: '#1E4E3D',
+  resubmitBtnText: {
+    fontSize: 14,
     fontWeight: '800',
-  },
-  optionGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  optionCard: {
-    width: '48%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    padding: 10,
-    borderRadius: 10,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  optionCardActive: {
-    backgroundColor: '#E6F4EA',
-    borderColor: '#1E4E3D',
-  },
-  optionCardText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#64748B',
-  },
-  optionCardTextActive: {
-    color: '#1E4E3D',
-    fontWeight: '800',
-  },
-  optionList: {
-    gap: 6,
-  },
-  listOptionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 10,
-    borderRadius: 10,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    gap: 8,
-  },
-  listOptionRowActive: {
-    backgroundColor: '#E6F4EA',
-    borderColor: '#1E4E3D',
-  },
-  listOptionText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#475569',
-    flex: 1,
-  },
-  listOptionTextActive: {
-    color: '#1E4E3D',
-    fontWeight: '800',
-  },
-  radiusPillsRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  radiusPill: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    alignItems: 'center',
-  },
-  radiusPillActive: {
-    backgroundColor: '#1E4E3D',
-    borderColor: '#1E4E3D',
-  },
-  radiusPillText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#64748B',
-  },
-  radiusPillTextActive: {
     color: '#FFFFFF',
-    fontWeight: '800',
   },
-
-  /* Step 2 Documents */
-  digiLockerBtn: {
+  approvedDashboardBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#E6F4EA',
-    borderWidth: 1.5,
-    borderColor: '#1E4E3D',
-    borderRadius: 12,
-    paddingVertical: 12,
-  },
-  digiLockerBtnVerified: {
-    backgroundColor: '#DCFCE7',
-    borderColor: '#166534',
-  },
-  digiLockerBtnText: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#1E4E3D',
-  },
-  digiLockerBtnTextVerified: {
-    color: '#166534',
-  },
-  docUploadCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 12,
-    padding: 12,
-  },
-  docIconBox: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
-    backgroundColor: '#E6F4EA',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  docCardTitle: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  docCardSub: {
-    fontSize: 10,
-    color: '#64748B',
-    marginTop: 2,
-  },
-  docActionBtn: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  docActionBtnText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#1E4E3D',
-  },
-
-  /* Step 3 Allergies & Health */
-  chipGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  declChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 10,
-  },
-  declChipActive: {
-    backgroundColor: '#E6F4EA',
-    borderColor: '#1E4E3D',
-  },
-  chipRadio: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    borderWidth: 1.5,
-    borderColor: '#CBD5E1',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  chipRadioActive: {
-    borderColor: '#1E4E3D',
-    backgroundColor: '#1E4E3D',
-  },
-  declChipText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#475569',
-  },
-  declChipTextActive: {
-    color: '#1E4E3D',
-    fontWeight: '800',
-  },
-  declarationList: {
-    gap: 8,
-    marginTop: 4,
-  },
-  checkboxCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 12,
-    padding: 12,
-  },
-  checkboxSquare: {
-    width: 20,
-    height: 20,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: '#CBD5E1',
-    backgroundColor: '#FFFFFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 2,
-  },
-  checkboxSquareActive: {
-    borderColor: '#1E4E3D',
-    backgroundColor: '#1E4E3D',
-  },
-  checkboxHeading: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  checkboxSubText: {
-    fontSize: 11,
-    color: '#64748B',
-    lineHeight: 15,
-    marginTop: 2,
-  },
-
-  /* Step 4 Bank */
-  payoutNoticeBox: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-    backgroundColor: '#F0FDF4',
-    borderWidth: 1,
-    borderColor: '#DCFCE7',
-    borderRadius: 12,
-    padding: 12,
-    marginTop: 4,
-  },
-  payoutNoticeTitle: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#166534',
-  },
-  payoutNoticeSub: {
-    fontSize: 10.5,
-    color: '#166534',
-    lineHeight: 15,
-    marginTop: 2,
-  },
-
-  /* Form Actions */
-  actionRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 6,
-  },
-  prevBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    paddingHorizontal: 16,
-    paddingVertical: 13,
-    borderRadius: 14,
-  },
-  prevBtnText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#475569',
-  },
-  nextBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: '#1E4E3D',
-    paddingVertical: 13,
-    borderRadius: 14,
-    shadowColor: '#1E4E3D',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  submitBtn: {
     backgroundColor: '#166534',
+    paddingVertical: 14,
+    borderRadius: 14,
+    marginBottom: 16,
   },
-  nextBtnText: {
-    fontSize: 13,
+  approvedDashboardBtnText: {
+    fontSize: 14,
     fontWeight: '800',
     color: '#FFFFFF',
   },
-
-  /* ────────────────────────────────────────────────────────
-     STEP 5: REVIEWING / WAITING FOR APPROVAL STYLES
-     ──────────────────────────────────────────────────────── */
-  reviewHeroCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 20,
-    alignItems: 'center',
-    textAlign: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    gap: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 5,
-    elevation: 2,
-  },
-  reviewIconRing: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    backgroundColor: '#FEF3C7',
-    borderWidth: 4,
-    borderColor: '#FDE68A',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  reviewHeroTitle: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: '#0F172A',
-    textAlign: 'center',
-  },
-  reviewHeroSub: {
-    fontSize: 12,
-    color: '#475569',
-    lineHeight: 18,
-    textAlign: 'center',
-  },
-  estTimeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#F0FDF4',
-    borderWidth: 1,
-    borderColor: '#DCFCE7',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 10,
-    marginTop: 4,
-  },
-  estTimeText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#166534',
-  },
-
   reviewStepsBox: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 18,
+    borderRadius: 20,
     padding: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    gap: 12,
   },
   reviewStepsBoxTitle: {
     fontSize: 14,
     fontWeight: '800',
     color: '#0F172A',
-    marginBottom: 2,
+    marginBottom: 12,
   },
   reviewStepRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingBottom: 10,
+    gap: 12,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
   },
   reviewCheckCircle: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     backgroundColor: '#DCFCE7',
-    justifyContent: 'center',
     alignItems: 'center',
-  },
-  pendingCheckCircle: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: '#FEF3C7',
     justifyContent: 'center',
-    alignItems: 'center',
   },
   reviewStepTextCol: {
     flex: 1,
-    gap: 2,
   },
   reviewStepTitle: {
-    fontSize: 12,
-    fontWeight: '800',
+    fontSize: 13,
+    fontWeight: '700',
     color: '#0F172A',
   },
   reviewStepSub: {
-    fontSize: 10.5,
+    fontSize: 11,
     color: '#64748B',
-  },
-  reviewStepTitlePending: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#B45309',
-  },
-  reviewStepSubPending: {
-    fontSize: 10.5,
-    color: '#92400E',
-  },
-  verifiedTag: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#166534',
-    backgroundColor: '#DCFCE7',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  pendingTag: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#B45309',
-    backgroundColor: '#FEF3C7',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-
-  infoCard: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    gap: 10,
-  },
-  infoCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  infoCardTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  infoItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-  },
-  infoBullet: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#1E4E3D',
-    width: 14,
-  },
-  infoText: {
-    fontSize: 11,
-    color: '#475569',
-    lineHeight: 16,
-    flex: 1,
-  },
-
-  adminSimCard: {
-    backgroundColor: '#F0FDF4',
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#BBF7D0',
-    gap: 8,
-  },
-  adminSimHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  adminSimTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#1E4E3D',
-  },
-  adminSimDesc: {
-    fontSize: 11,
-    color: '#166534',
-    lineHeight: 15,
-  },
-  adminBtnRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 4,
-  },
-  approveBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: '#1E4E3D',
-    paddingVertical: 10,
-    borderRadius: 10,
-  },
-  rejectBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: '#DC2626',
-    paddingVertical: 10,
-    borderRadius: 10,
-  },
-  adminBtnText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-
-  primaryActionBtn: {
-    backgroundColor: '#1E4E3D',
-    paddingVertical: 14,
-    borderRadius: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    shadowColor: '#1E4E3D',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  primaryActionBtnText: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  secondaryActionBtn: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    paddingVertical: 12,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  secondaryActionBtnText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#475569',
+    marginTop: 2,
   },
 });

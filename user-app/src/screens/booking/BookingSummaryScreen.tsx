@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,9 +10,12 @@ import {
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useCart } from '../../context/CartContext';
+import { supabase } from '../../config/supabase';
 import { AppLogo } from '../../components/ui/AppLogo';
 import { resolveImageSource } from '../../utils/imageUtils';
 import { ASSETS } from '../../assets/index';
+import { OffersModal } from '../../components/home/OffersModal';
+import { checkPincodeServiceability } from '../../services/pincodeService';
 import {
   ArrowLeft,
   Calendar,
@@ -24,27 +27,43 @@ import {
   ArrowRight,
   Sparkles,
   Info,
-  X,
+  AlertCircle,
+  Plus,
 } from 'lucide-react-native';
 
 export const BookingSummaryScreen: React.FC = () => {
-  const { navigateTo } = useAuth();
+  const { navigateTo, savedAddresses } = useAuth();
   const { cart, applyCouponCode, removeCouponCode } = useCart();
 
-  const [couponInput, setCouponInput] = useState<string>('GCHOME20');
+  const [couponInput, setCouponInput] = useState<string>('');
   const [couponMessage, setCouponMessage] = useState<{ text: string; isError?: boolean } | null>(null);
+  const [showOffersModal, setShowOffersModal] = useState(false);
 
-  const basePrice = cart?.homeSize.price || 699;
-  const addOnsTotal = cart?.addOns.reduce((acc, curr) => acc + curr.price, 0) || 0;
-  const discountAmount = cart?.discountAmount || (cart?.promoCode ? Math.round((basePrice + addOnsTotal) * 0.2) : 0);
-  const platformFee = 29;
-  const taxableAmount = Math.max(0, basePrice + addOnsTotal - discountAmount);
-  const taxes = Math.round(taxableAmount * 0.18);
-  const finalTotal = taxableAmount + platformFee + taxes;
+  // Address logic: use cart.address or fallback to savedAddresses[0]
+  const currentAddress = cart?.address || (savedAddresses && savedAddresses.length > 0 ? savedAddresses[0] : null);
 
-  const handleApplyCoupon = () => {
+  const hasItems = (cart?.items || []).length > 0;
+  const subtotal = cart?.subtotal || 0;
+  const addOnsTotal = cart?.addOnsTotal || 0;
+  const discountAmount = cart?.discountAmount || 0;
+  
+  // Platform fee logic: if subtotal is 0, platform fee is 0 to avoid contradiction
+  const platformFee = hasItems ? (cart?.platformFee ?? 29) : 0;
+  const taxes = hasItems ? (cart?.taxes || 0) : 0;
+  const finalTotal = hasItems ? (cart?.totalAmount || 0) : 0;
+
+  const handleApplyCoupon = async () => {
     if (!couponInput.trim()) return;
-    const res = applyCouponCode(couponInput);
+    const res = await applyCouponCode(couponInput);
+    setCouponMessage({
+      text: res.message,
+      isError: !res.success,
+    });
+  };
+
+  const handleSelectCouponFromModal = async (code: string) => {
+    setCouponInput(code);
+    const res = await applyCouponCode(code);
     setCouponMessage({
       text: res.message,
       isError: !res.success,
@@ -57,14 +76,77 @@ export const BookingSummaryScreen: React.FC = () => {
     setCouponInput('');
   };
 
+  const [isServiceable, setIsServiceable] = useState<boolean>(true);
+
+  const validateCurrentArea = useCallback(async () => {
+    if (!currentAddress || !currentAddress.pincode) {
+      setIsServiceable(false);
+      return;
+    }
+    const res = await checkPincodeServiceability(currentAddress.pincode);
+    setIsServiceable(res.isServiceable);
+  }, [currentAddress?.pincode]);
+
+  useEffect(() => {
+    validateCurrentArea();
+
+    const channel = supabase
+      .channel('service_areas_booking_summary_sync')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'service_areas' },
+        () => {
+          validateCurrentArea();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [validateCurrentArea]);
+
+  // Determine CTA Button State & Text
+  const getCtaState = () => {
+    if (!hasItems) {
+      return {
+        text: 'Add Services →',
+        action: () => navigateTo('services-listing'),
+        disabled: false,
+      };
+    }
+    if (!currentAddress) {
+      return {
+        text: 'Add Location →',
+        action: () => navigateTo('address-confirmation'),
+        disabled: false,
+      };
+    }
+    if (!isServiceable) {
+      return {
+        text: 'Area Not Serviceable → Change Address',
+        action: () => navigateTo('address-confirmation'),
+        disabled: true,
+      };
+    }
+    return {
+      text: `Pay ₹${finalTotal} →`,
+      action: () => navigateTo('payment'),
+      disabled: false,
+    };
+  };
+
+  const ctaState = getCtaState();
+
   return (
     <View style={styles.safeContainer}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backBtn}
-          onPress={() => navigateTo('address-confirmation')}
+          onPress={() => navigateTo('services-listing')}
           activeOpacity={0.7}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
           <ArrowLeft size={20} color="#10243A" />
         </TouchableOpacity>
@@ -79,89 +161,164 @@ export const BookingSummaryScreen: React.FC = () => {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Title */}
+        {/* Title Section */}
         <View style={styles.titleSection}>
           <Text style={styles.screenTitle}>Review Your Booking</Text>
           <Text style={styles.screenSubtitle}>Check all details before proceeding to payment</Text>
         </View>
 
-        {/* Service & Configuration Card */}
+        {/* 1. Services Section */}
         <View style={styles.card}>
-          <View style={styles.serviceRow}>
-            <Image
-              source={resolveImageSource(cart?.service.imageUrl || ASSETS.heroLivingRoom)}
-              style={styles.serviceThumbnail}
-            />
-            <View style={styles.serviceMeta}>
-              <Text style={styles.serviceName}>{cart?.service.name || 'Home Cleaning'}</Text>
-              <Text style={styles.homeSizeText}>Size: {cart?.homeSize.label || '1 BHK'}</Text>
-              <View style={styles.proBadge}>
-                <ShieldCheck size={12} color="#168A68" />
-                <Text style={styles.proBadgeText}>Verified Professional</Text>
-              </View>
-            </View>
+          <View style={styles.cardHeaderRow}>
+            <Text style={styles.cardHeaderTitle}>Selected Services ({cart?.items?.length || 0})</Text>
+            {hasItems && (
+              <TouchableOpacity onPress={() => navigateTo('services-listing')} activeOpacity={0.7}>
+                <Text style={styles.editBtnText}>Edit</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
+          {!hasItems ? (
+            /* Empty Booking State */
+            <View style={styles.emptyStateBox}>
+              <Text style={styles.emptyStateIcon}>🧹</Text>
+              <Text style={styles.emptyStateTitle}>No services selected</Text>
+              <Text style={styles.emptyStateSubtext}>
+                Choose a cleaning service to continue with your booking.
+              </Text>
+              <TouchableOpacity
+                style={styles.browseServicesBtn}
+                onPress={() => navigateTo('services-listing')}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.browseServicesText}>Browse Services →</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            /* Selected Services List */
+            (cart?.items || []).map((item, idx) => (
+              <View key={item.service.serviceId || idx} style={styles.serviceRow}>
+                <Image
+                  source={resolveImageSource(item.service.imageUrl || ASSETS.heroLivingRoom)}
+                  style={styles.serviceThumbnail}
+                />
+                <View style={styles.serviceMeta}>
+                  <Text style={styles.serviceName}>{item.service.name}</Text>
+                  <Text style={styles.homeSizeText}>
+                    {item.quantity} × ₹{item.service.startingPrice || 0}
+                  </Text>
+                  <View style={styles.proBadge}>
+                    <ShieldCheck size={12} color="#168A68" />
+                    <Text style={styles.proBadgeText}>Verified Professional</Text>
+                  </View>
+                </View>
+                <Text style={styles.servicePriceText}>
+                  ₹{item.itemTotal}
+                </Text>
+              </View>
+            ))
+          )}
+
           {/* Add-ons List if any */}
-          {cart?.addOns && cart.addOns.length > 0 && (
+          {hasItems && cart?.addOns && cart.addOns.length > 0 && (
             <View style={styles.addonsBox}>
               <Text style={styles.addonsBoxTitle}>Included Add-ons:</Text>
               {cart.addOns.map(a => (
                 <View key={a.id} style={styles.addonItemRow}>
-                  <Text style={styles.addonItemName}>• {a.title}</Text>
+                  <Check size={14} color="#168A68" />
+                  <Text style={styles.addonItemName}>{a.title}</Text>
                   <Text style={styles.addonItemPrice}>+ ₹ {a.price}</Text>
                 </View>
               ))}
             </View>
           )}
-
-          {/* Schedule Info Box */}
-          <View style={styles.infoRow}>
-            <Calendar size={16} color="#168A68" />
-            <Text style={styles.infoText}>
-              Date: <Text style={styles.infoBold}>{cart?.selectedDateLabel || 'Today, 26 Apr'}</Text>
-            </Text>
-          </View>
-
-          <View style={styles.infoRow}>
-            <Clock size={16} color="#168A68" />
-            <Text style={styles.infoText}>
-              Time Slot: <Text style={styles.infoBold}>{cart?.selectedSlot || '4:00 PM – 6:00 PM'}</Text>
-            </Text>
-          </View>
-
-          <View style={[styles.infoRow, { alignItems: 'flex-start' }]}>
-            <MapPin size={16} color="#168A68" style={{ marginTop: 2 }} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.infoText}>
-                Address: <Text style={styles.infoBold}>{cart?.address?.street || '123, 4th Cross, HSR Layout'}</Text>
-              </Text>
-              <Text style={styles.subAddress}>
-                {cart?.address?.locality || 'Sector 2, HSR Layout'}, {cart?.address?.city || 'Bengaluru'} - {cart?.address?.pincode || '560102'}
-              </Text>
-            </View>
-          </View>
         </View>
 
-        {/* Coupon Code Card */}
+        {/* 2. Schedule & Location Card */}
         <View style={styles.card}>
-          <View style={styles.couponHeader}>
-            <Tag size={16} color="#168A68" />
-            <Text style={styles.cardHeaderTitle}>Apply Coupon</Text>
+          <View style={styles.cardHeaderRow}>
+            <Text style={styles.cardHeaderTitle}>Schedule & Location</Text>
+            <TouchableOpacity onPress={() => navigateTo('services-listing')} activeOpacity={0.7}>
+              <Text style={styles.editBtnText}>Edit</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.scheduleBox}>
+            <View style={styles.scheduleItem}>
+              <Calendar size={16} color="#168A68" />
+              <View>
+                <Text style={styles.scheduleLabel}>DATE</Text>
+                <Text style={styles.scheduleValue}>{cart?.selectedDateLabel || 'Today'}</Text>
+              </View>
+            </View>
+
+            <View style={styles.scheduleDivider} />
+
+            <View style={styles.scheduleItem}>
+              <Clock size={16} color="#168A68" />
+              <View>
+                <Text style={styles.scheduleLabel}>TIME SLOT</Text>
+                <Text style={styles.scheduleValue}>{cart?.selectedSlot || '4:00 PM – 6:00 PM'}</Text>
+              </View>
+            </View>
+          </View>
+
+          {currentAddress ? (
+            <View style={styles.addressBox}>
+              <View style={styles.addressHeaderRow}>
+                <MapPin size={16} color="#168A68" />
+                <Text style={styles.addressLabel}>{currentAddress.label || 'Home'} Location</Text>
+              </View>
+              <Text style={styles.addressText}>
+                {currentAddress.houseFlat ? `${currentAddress.houseFlat}, ` : ''}
+                {currentAddress.street}, {currentAddress.locality}, {currentAddress.city} - {currentAddress.pincode}
+              </Text>
+              {!isServiceable && (
+                <View style={{ marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FEF2F2', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#FEE2E2' }}>
+                  <AlertCircle size={15} color="#EF4444" />
+                  <Text style={{ fontSize: 12, fontWeight: '700', color: '#EF4444' }}>
+                    Sorry, GC HOME+ is currently not available in your area.
+                  </Text>
+                </View>
+              )}
+            </View>
+          ) : (
+            <View style={styles.noAddressBox}>
+              <View style={styles.addressHeaderRow}>
+                <MapPin size={16} color="#68788C" />
+                <Text style={styles.noAddressTitle}>Location not selected</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.addLocationBtn}
+                onPress={() => navigateTo('address-confirmation')}
+                activeOpacity={0.8}
+              >
+                <Plus size={14} color="#168A68" />
+                <Text style={styles.addLocationText}>Add Location →</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
+        {/* 3. Coupons & Offers Section */}
+        <View style={styles.card}>
+          <View style={styles.couponHeaderRow}>
+            <Tag size={18} color="#168A68" />
+            <Text style={styles.cardHeaderTitle}>Coupons & Offers</Text>
           </View>
 
           <View style={styles.couponInputRow}>
             <TextInput
               style={styles.couponTextInput}
-              placeholder="Enter coupon code (e.g. GCHOME20)"
-              placeholderTextColor="#94A3B8"
+              placeholder="Enter Promo Code (e.g. GCHOME20)"
+              placeholderTextColor="#68788C"
               value={couponInput}
               onChangeText={setCouponInput}
               autoCapitalize="characters"
             />
             {cart?.promoCode ? (
               <TouchableOpacity style={styles.removeCouponBtn} onPress={handleRemoveCoupon}>
-                <X size={16} color="#EF4444" />
+                <Text style={styles.removeCouponText}>Remove</Text>
               </TouchableOpacity>
             ) : (
               <TouchableOpacity style={styles.applyCouponBtn} onPress={handleApplyCoupon}>
@@ -170,13 +327,13 @@ export const BookingSummaryScreen: React.FC = () => {
             )}
           </View>
 
+          <TouchableOpacity style={styles.viewOffersLink} onPress={() => setShowOffersModal(true)}>
+            <Sparkles size={14} color="#168A68" />
+            <Text style={styles.viewOffersText}>View Available Offers & Coupons</Text>
+          </TouchableOpacity>
+
           {couponMessage && (
-            <Text
-              style={[
-                styles.couponMsgText,
-                couponMessage.isError && styles.couponMsgError,
-              ]}
-            >
+            <Text style={[styles.couponMsgText, couponMessage.isError && styles.couponMsgError]}>
               {couponMessage.text}
             </Text>
           )}
@@ -185,21 +342,19 @@ export const BookingSummaryScreen: React.FC = () => {
             <View style={styles.savingsBanner}>
               <Sparkles size={14} color="#0E5B47" />
               <Text style={styles.savingsText}>
-                Yay! You are saving <Text style={styles.savingsAmount}>₹ {discountAmount}</Text> on this booking.
+                Yay! You are saving <Text style={styles.savingsAmount}>₹ {discountAmount}</Text> on this booking. 🎉
               </Text>
             </View>
           )}
         </View>
 
-        {/* Itemized Price Breakdown Card */}
+        {/* 4. Bill Details Card */}
         <View style={styles.card}>
           <Text style={styles.cardHeaderTitle}>Bill Details</Text>
 
           <View style={styles.billRow}>
-            <Text style={styles.billLabel}>
-              Base Cleaning ({cart?.homeSize.label || '1 BHK'})
-            </Text>
-            <Text style={styles.billValue}>₹ {basePrice}</Text>
+            <Text style={styles.billLabel}>Items Subtotal</Text>
+            <Text style={styles.billValue}>₹ {subtotal}</Text>
           </View>
 
           {addOnsTotal > 0 && (
@@ -236,7 +391,7 @@ export const BookingSummaryScreen: React.FC = () => {
           </View>
         </View>
 
-        {/* Cancellation Policy Banner */}
+        {/* 5. Cancellation Policy Banner */}
         <View style={styles.policyCard}>
           <Info size={16} color="#68788C" />
           <Text style={styles.policyText}>
@@ -245,22 +400,31 @@ export const BookingSummaryScreen: React.FC = () => {
         </View>
       </ScrollView>
 
-      {/* Sticky Bottom Proceed to Payment Bar */}
+      {/* 6. Sticky Bottom Proceed / Pay Bar */}
       <View style={styles.bottomBar}>
         <View style={styles.bottomPriceInfo}>
-          <Text style={styles.bottomTotalLabel}>Total Amount</Text>
+          <Text style={styles.bottomTotalLabel}>Total Payable</Text>
           <Text style={styles.bottomTotalAmount}>₹ {finalTotal}</Text>
         </View>
 
         <TouchableOpacity
-          style={styles.payBtn}
-          onPress={() => navigateTo('payment')}
+          style={[styles.payBtn, ctaState.disabled && styles.payBtnDisabled]}
+          onPress={ctaState.action}
+          disabled={ctaState.disabled}
           activeOpacity={0.88}
         >
-          <Text style={styles.payBtnText}>Proceed to Payment</Text>
-          <ArrowRight size={18} color="#FFFFFF" strokeWidth={2.4} />
+          <Text style={styles.payBtnText}>{ctaState.text}</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Modal for Selecting Offers */}
+      <OffersModal
+        visible={showOffersModal}
+        onClose={() => setShowOffersModal(false)}
+        onApplyOffer={handleSelectCouponFromModal}
+        subtotal={subtotal + addOnsTotal}
+        appliedCode={cart?.promoCode}
+      />
     </View>
   );
 };
@@ -294,7 +458,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 14,
-    paddingBottom: 100,
+    paddingBottom: 110,
   },
   titleSection: {
     marginBottom: 14,
@@ -322,6 +486,65 @@ const styles = StyleSheet.create({
     shadowRadius: 5,
     elevation: 2,
   },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  cardHeaderTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#10243A',
+  },
+  editBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#168A68',
+  },
+
+  /* Empty State Styles */
+  emptyStateBox: {
+    paddingVertical: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderStyle: 'dashed',
+    marginTop: 4,
+  },
+  emptyStateIcon: {
+    fontSize: 28,
+    marginBottom: 6,
+  },
+  emptyStateTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#10243A',
+  },
+  emptyStateSubtext: {
+    fontSize: 12,
+    color: '#68788C',
+    textAlign: 'center',
+    marginTop: 2,
+    marginBottom: 12,
+    paddingHorizontal: 20,
+  },
+  browseServicesBtn: {
+    backgroundColor: '#0E5B47',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  browseServicesText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+
+  /* Service Item Row */
   serviceRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -329,8 +552,8 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   serviceThumbnail: {
-    width: 60,
-    height: 60,
+    width: 54,
+    height: 54,
     borderRadius: 12,
     backgroundColor: '#E2E8F0',
   },
@@ -338,7 +561,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   serviceName: {
-    fontSize: 15,
+    fontSize: 14.5,
     fontWeight: '900',
     color: '#10243A',
   },
@@ -363,11 +586,16 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#0E5B47',
   },
+  servicePriceText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
   addonsBox: {
     backgroundColor: '#F5FCF8',
     borderRadius: 10,
     padding: 8,
-    marginBottom: 10,
+    marginTop: 4,
     borderWidth: 1,
     borderColor: '#E1E8E5',
   },
@@ -391,36 +619,101 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#0E5B47',
   },
-  infoRow: {
+
+  /* Schedule & Location Box */
+  scheduleBox: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  scheduleItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingVertical: 5,
+    flex: 1,
   },
-  infoText: {
-    fontSize: 12,
-    color: '#68788C',
-  },
-  infoBold: {
+  scheduleLabel: {
+    fontSize: 9.5,
     fontWeight: '800',
-    color: '#10243A',
+    color: '#64748B',
+    letterSpacing: 0.5,
   },
-  subAddress: {
-    fontSize: 11,
-    color: '#94A3B8',
+  scheduleValue: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
     marginTop: 1,
   },
-  couponHeader: {
+  scheduleDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: '#E2E8F0',
+    marginHorizontal: 12,
+  },
+  addressBox: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  noAddressBox: {
+    backgroundColor: '#FFFBEB',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  noAddressTitle: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#B45309',
+  },
+  addLocationBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E1E8E5',
+  },
+  addLocationText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#168A68',
+  },
+  addressHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginBottom: 10,
+    marginBottom: 4,
   },
-  cardHeaderTitle: {
-    fontSize: 14,
-    fontWeight: '900',
-    color: '#10243A',
-    marginBottom: 8,
+  addressLabel: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  addressText: {
+    fontSize: 12,
+    color: '#475569',
+    lineHeight: 17,
+  },
+
+  /* Coupons & Offers */
+  couponHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
   },
   couponInputRow: {
     flexDirection: 'row',
@@ -435,7 +728,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderWidth: 1,
     borderColor: '#E1E8E5',
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '700',
     color: '#10243A',
   },
@@ -451,12 +744,29 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   removeCouponBtn: {
-    padding: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     backgroundColor: '#FEF2F2',
     borderRadius: 12,
   },
+  removeCouponText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#EF4444',
+  },
+  viewOffersLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 10,
+  },
+  viewOffersText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#168A68',
+  },
   couponMsgText: {
-    fontSize: 11,
+    fontSize: 11.5,
     color: '#168A68',
     fontWeight: '700',
     marginTop: 6,
@@ -474,13 +784,15 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   savingsText: {
-    fontSize: 11,
+    fontSize: 11.5,
     color: '#0E5B47',
     fontWeight: '600',
   },
   savingsAmount: {
     fontWeight: '900',
   },
+
+  /* Bill Details */
   billRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -531,6 +843,8 @@ const styles = StyleSheet.create({
     color: '#68788C',
     lineHeight: 15,
   },
+
+  /* Bottom Payment Bar */
   bottomBar: {
     position: 'absolute',
     bottom: 0,
@@ -544,6 +858,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    shadowColor: '#10243A',
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 6,
   },
   bottomPriceInfo: {
     flex: 1,
@@ -561,20 +880,26 @@ const styles = StyleSheet.create({
   payBtn: {
     backgroundColor: '#0E5B47',
     borderRadius: 24,
-    paddingHorizontal: 18,
+    paddingHorizontal: 20,
     paddingVertical: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    justifyContent: 'center',
     shadowColor: '#0E5B47',
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.25,
     shadowRadius: 4,
     elevation: 3,
   },
+  payBtnDisabled: {
+    backgroundColor: '#94A3B8',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
   payBtnText: {
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: '800',
     color: '#FFFFFF',
   },
 });
+

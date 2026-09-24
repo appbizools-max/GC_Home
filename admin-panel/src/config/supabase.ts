@@ -6,10 +6,33 @@ const DEFAULT_SUPABASE_ANON_KEY =
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON_KEY;
-const supabaseServiceRoleKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
+const rawServiceRoleKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
+
+// Verify service role key is valid JWT and not a placeholder
+const isValidServiceRoleKey =
+  rawServiceRoleKey &&
+  typeof rawServiceRoleKey === 'string' &&
+  rawServiceRoleKey.startsWith('ey') &&
+  !rawServiceRoleKey.includes('placeholder');
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-export const supabaseAdmin = supabaseServiceRoleKey
-  ? createClient(supabaseUrl, supabaseServiceRoleKey)
+export const supabaseAdmin = isValidServiceRoleKey
+  ? createClient(supabaseUrl, rawServiceRoleKey)
   : supabase;
+
+// Safe connection diagnostics (never prints secret keys)
+if (import.meta.env.DEV) {
+  try {
+    const parsedUrl = new URL(supabaseUrl);
+    console.log('[Supabase Diagnostic]', {
+      urlConfigured: Boolean(supabaseUrl),
+      publicKeyConfigured: Boolean(supabaseAnonKey),
+      projectHost: parsedUrl.host,
+      keyLength: supabaseAnonKey ? supabaseAnonKey.length : 0,
+      usingDedicatedAdminClient: isValidServiceRoleKey,
+    });
+  } catch {
+    console.log('[Supabase Diagnostic] Invalid URL format');
+  }
+}

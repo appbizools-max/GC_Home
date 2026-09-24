@@ -65,38 +65,18 @@ export const HeroBannerCarousel: React.FC<HeroBannerCarouselProps> = ({
         onMomentumScrollEnd={handleScroll}
         contentContainerStyle={styles.scrollList}
       >
-        {banners.map((banner, index) => (
+        {banners.map((banner) => (
           <TouchableOpacity
             key={banner.id}
             style={styles.card}
             onPress={() => onPressBanner(banner)}
             activeOpacity={0.92}
           >
-            {/* Left Content Column */}
-            <View style={styles.contentCol}>
-              <View style={styles.titleGroup}>
-                <Text style={styles.titlePart1}>A Cleaner Home</Text>
-                <Text style={styles.titlePart2}>A Happier You</Text>
-              </View>
-
-              <Text style={styles.subtitleText}>{banner.subtitle}</Text>
-
-              {/* Primary Book Now CTA */}
-              <View style={styles.ctaButton}>
-                <Text style={styles.ctaButtonText}>{banner.ctaText}</Text>
-              </View>
-            </View>
-
-            {/* Right Image with Aesthetic Overlay */}
-            <View style={styles.imageCol}>
-              <Image source={resolveImageSource(banner.imageUrl)} style={styles.bannerImage} resizeMode="cover" />
-
-              {/* Tagline Badge */}
-              <View style={styles.taglineBadge}>
-                <Text style={styles.taglineText}>Clean Spaces</Text>
-                <Text style={styles.taglineSub}>Brighter Lives 💚</Text>
-              </View>
-            </View>
+            <Image
+              source={resolveImageSource(banner.imageUrl)}
+              style={styles.bannerImage}
+              resizeMode="cover"
+            />
           </TouchableOpacity>
         ))}
       </ScrollView>
@@ -127,107 +107,26 @@ const styles = StyleSheet.create({
   },
   card: {
     width: CARD_WIDTH,
-    height: 175,
+    height: 165,
     backgroundColor: '#EAF8F1',
     borderRadius: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: '#C6EEDB',
     shadowColor: '#168A68',
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.1,
     shadowRadius: 6,
-    elevation: 2,
-  },
-  contentCol: {
-    flex: 1,
-    paddingRight: 8,
-    justifyContent: 'space-between',
-    height: '100%',
-  },
-  titleGroup: {
-    gap: 1,
-  },
-  titlePart1: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: '#0E5B47',
-    lineHeight: 22,
-  },
-  titlePart2: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: '#168A68',
-    lineHeight: 22,
-  },
-  subtitleText: {
-    fontSize: 11,
-    color: '#0E5B47',
-    lineHeight: 15,
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  ctaButton: {
-    backgroundColor: '#0E5B47',
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 18,
-    alignSelf: 'flex-start',
-    shadowColor: '#0E5B47',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  ctaButtonText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  imageCol: {
-    width: 125,
-    height: '100%',
-    borderRadius: 14,
-    overflow: 'hidden',
-    position: 'relative',
-    borderWidth: 1,
-    borderColor: '#C6EEDB',
+    elevation: 3,
   },
   bannerImage: {
     width: '100%',
     height: '100%',
   },
-  taglineBadge: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.92)',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 6,
-    alignItems: 'center',
-    borderWidth: 0.5,
-    borderColor: '#C6EEDB',
-  },
-  taglineText: {
-    fontSize: 7.5,
-    fontWeight: '800',
-    color: '#0E5B47',
-  },
-  taglineSub: {
-    fontSize: 7,
-    fontWeight: '700',
-    color: '#168A68',
-  },
   paginationRow: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingRight: 24,
     marginTop: 8,
     gap: 4,
   },

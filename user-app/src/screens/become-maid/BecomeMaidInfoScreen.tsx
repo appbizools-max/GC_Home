@@ -49,8 +49,22 @@ const FAQ_ITEMS = [
 ];
 
 export const BecomeMaidInfoScreen: React.FC = () => {
-  const { navigateTo, user, maidProfile, simulateAdminApproval } = useAuth();
+  const { navigateTo, goBack, canGoBack, user, maidProfile, simulateAdminApproval } = useAuth();
   const status = user?.maidApplicationStatus || 'none';
+
+  const handleHeaderBack = () => {
+    if (canGoBack) {
+      goBack();
+      return;
+    }
+    if (user?.role === 'maid' || user?.role === 'partner') {
+      navigateTo(maidProfile?.status === 'approved' ? 'maid_home' : 'login');
+    } else if (user) {
+      navigateTo('customer_home');
+    } else {
+      navigateTo('login');
+    }
+  };
 
   // Calculator State
   const [selectedHours, setSelectedHours] = useState<'4' | '6' | '8'>('6');
@@ -103,7 +117,7 @@ export const BecomeMaidInfoScreen: React.FC = () => {
       {/* ── Top Header Bar ── */}
       <View style={styles.topHeader}>
         <TouchableOpacity
-          onPress={() => navigateTo('customer_home')}
+          onPress={handleHeaderBack}
           style={styles.headerBackBtn}
           activeOpacity={0.7}
         >

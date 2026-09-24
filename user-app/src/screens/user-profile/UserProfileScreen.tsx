@@ -37,7 +37,16 @@ import {
   ToggleRight,
   ToggleLeft,
   Check,
+  Edit2,
+  Trash2,
+  Star as StarIcon,
 } from 'lucide-react-native';
+import { AddressFormModal } from '../../components/ui/AddressFormModal';
+import { Address } from '../../types';
+import { SettingsRow } from './components/SettingsRow';
+import { LogoutModal } from './components/LogoutModal';
+import appJson from '../../../app.json';
+
 export const UserProfileScreen: React.FC = () => {
   const {
     user,
@@ -47,23 +56,38 @@ export const UserProfileScreen: React.FC = () => {
     navigateTo,
     savedAddresses,
     updateUserProfile,
+    addSavedAddress,
+    updateSavedAddress,
+    deleteSavedAddress,
+    setDefaultSavedAddress,
   } = useAuth();
   const userName = user?.name && user.name !== 'User' ? user.name : 'Pavani M';
-  const userEmail = user?.email || 'pavani@gmail.com';
-  const userPhone = user?.phone || '+91 98765 43210';
+  const userEmail = user?.email || 'madathala.pavani.5@gmail.com';
+  const userPhone = user?.phone || '+91 9390420247';
   const userLocation = 'Kondapur, Hyderabad';
+  const appVersion = appJson?.expo?.version || '2.0.0';
+
   // Address Modal State
   const [isAddressModalVisible, setIsAddressModalVisible] = useState(false);
   const [selectedAddressId, setSelectedAddressId] = useState('addr_1');
+  const [isFormModalVisible, setIsFormModalVisible] = useState(false);
+  const [editingAddress, setEditingAddress] = useState<Address | null>(null);
+
   // Payment Modal State
   const [isPaymentModalVisible, setIsPaymentModalVisible] = useState(false);
+
   // Settings Modal State
   const [isSettingsModalVisible, setIsSettingsModalVisible] = useState(false);
+
   // Notifications Modal State
   const [isNotificationModalVisible, setIsNotificationModalVisible] = useState(false);
   const [notifPush, setNotifPush] = useState(true);
   const [notifWhatsapp, setNotifWhatsapp] = useState(true);
   const [notifOffers, setNotifOffers] = useState(false);
+
+  // Logout Modal State
+  const [isLogoutModalVisible, setIsLogoutModalVisible] = useState(false);
+
   const handleEditProfile = () => {
     Alert.prompt
       ? Alert.prompt(
@@ -86,6 +110,7 @@ export const UserProfileScreen: React.FC = () => {
       )
       : Alert.alert('Edit Profile', 'Profile Details:\n\n• Name: ' + userName + '\n• Phone: ' + userPhone + '\n• Email: ' + userEmail);
   };
+
   const handleAvatarChange = () => {
     Alert.alert('Change Profile Photo', 'Choose photo source:', [
       {
@@ -111,28 +136,30 @@ export const UserProfileScreen: React.FC = () => {
       { text: 'Cancel', style: 'cancel' },
     ]);
   };
+
   const handleHelpAndSupport = () => {
     navigateTo('help');
   };
+
   const handlePrivacySecurity = () => {
     Alert.alert(
       'Privacy & Security',
       'GC HOME+ protects your privacy.\n\n• 256-bit SSL Data Encryption\n• Verified Professional Cleaners\n• Strict Background Checks\n• 100% Secure Payment Gateways'
     );
   };
-  const handleLogout = () => {
-    Alert.alert('Logout', 'Are you sure you want to sign out from your account?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Logout',
-        style: 'destructive',
-        onPress: () => logout(),
-      },
-    ]);
+
+  const handleLogoutClick = () => {
+    setIsLogoutModalVisible(true);
   };
+
+  const handleConfirmLogout = () => {
+    setIsLogoutModalVisible(false);
+    logout();
+  };
+
   return (
     <View style={styles.screenWrapper}>
-      {/* Top Header: My Profile */}
+      {/* Top Header: My Profile (Tightened padding so card appears higher) */}
       <View style={styles.headerRow}>
         <View style={styles.headerTitleCol}>
           <Text style={styles.headerTitle}>My Profile</Text>
@@ -141,6 +168,7 @@ export const UserProfileScreen: React.FC = () => {
           </Text>
         </View>
       </View>
+
       <ScrollView
         style={styles.scrollContainer}
         contentContainerStyle={styles.scrollContent}
@@ -161,35 +189,51 @@ export const UserProfileScreen: React.FC = () => {
               style={styles.cameraBadge}
               onPress={handleAvatarChange}
               activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Change profile photo"
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Camera size={12} color="#FFFFFF" strokeWidth={2.4} />
+              <Camera size={13} color="#FFFFFF" strokeWidth={2.4} />
             </TouchableOpacity>
           </View>
+
           <View style={styles.profileInfoCol}>
-            <Text style={styles.profileName}>{userName}</Text>
-            <Text style={styles.profileMeta}>{userEmail}</Text>
-            <Text style={styles.profileMeta}>{userPhone}</Text>
+            <Text style={styles.profileName} numberOfLines={1}>
+              {userName}
+            </Text>
+            <Text style={styles.profileMeta} numberOfLines={1} ellipsizeMode="tail">
+              {userEmail}
+            </Text>
+            <Text style={styles.profileMeta}>
+              {userPhone}
+            </Text>
             <View style={styles.locationRow}>
-              <MapPin size={12} color="#0D8846" />
-              <Text style={styles.locationText}>{userLocation}</Text>
+              <MapPin size={13} color="#0D8846" />
+              <Text style={styles.locationText} numberOfLines={1}>
+                {userLocation}
+              </Text>
             </View>
-          </View>
-          {/* Member Badge */}
-          <View style={styles.memberBadge}>
-            <Star size={14} color="#0D8846" fill="#0D8846" />
-            <View>
-              <Text style={styles.memberBadgeSub}>Member Since</Text>
-              <Text style={styles.memberBadgeDate}>Sep 2026</Text>
-            </View>
+
+            <TouchableOpacity
+              style={styles.editProfileLink}
+              onPress={handleEditProfile}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Edit Profile"
+            >
+              <Text style={styles.editProfileLinkText}>Edit Profile</Text>
+              <ChevronRight size={14} color="#0D8846" strokeWidth={2.5} />
+            </TouchableOpacity>
           </View>
         </View>
+
         {/* Approved Maid Partner Toggle Card */}
         {maidProfile?.status === 'approved' ? (
           <TouchableOpacity
             onPress={toggleMaidOnline}
             style={[
               styles.partnerBannerCard,
-              { backgroundColor: maidProfile.isOnline ? '#043927' : '#0F172A', marginTop: 12 }
+              { backgroundColor: maidProfile.isOnline ? '#123D2A' : '#171A18' }
             ]}
             activeOpacity={0.88}
           >
@@ -217,167 +261,129 @@ export const UserProfileScreen: React.FC = () => {
               onPress={() => navigateTo('become_maid_info')}
               style={styles.partnerBannerCard}
               activeOpacity={0.88}
+              accessibilityRole="button"
+              accessibilityLabel="GC Maid Partner Program. Flexible hours, insurance and weekly payouts. Earn up to 35k per month."
             >
               <View style={styles.partnerIconBox}>
                 <Leaf size={18} color="#FFFFFF" />
               </View>
               <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <View style={styles.partnerHeaderRow}>
                   <Text style={styles.partnerCardTitle}>GC Maid Partner Program</Text>
-                  <View style={styles.partnerPill}>
-                    <Text style={styles.partnerPillText}>Earn ₹35k/mo</Text>
+                  <View style={styles.partnerTag}>
+                    <Text style={styles.partnerTagText}>For Partners</Text>
                   </View>
                 </View>
                 <Text style={styles.partnerCardSub}>
                   Flexible hours, insurance & weekly payouts
                 </Text>
+                <View style={styles.partnerBadgeRow}>
+                  <View style={styles.partnerPill}>
+                    <Text style={styles.partnerPillText}>Earn ₹35k/mo</Text>
+                  </View>
+                </View>
               </View>
               <ChevronRight size={18} color="#0D8846" />
             </TouchableOpacity>
           )
         )}
-        {/* Menu Items List */}
-        <View style={styles.menuContainer}>
-          {/* 1. Personal Information */}
-          <TouchableOpacity
-            style={styles.menuItem}
-            onPress={handleEditProfile}
-            activeOpacity={0.7}
-          >
-            <View style={styles.menuIconBox}>
-              <User size={18} color="#0D8846" strokeWidth={2.2} />
-            </View>
-            <View style={styles.menuTextCol}>
-              <Text style={styles.menuTitle}>Personal Information</Text>
-              <Text style={styles.menuSubtitle}>
-                Name, phone number, email, address
-              </Text>
-            </View>
-            <ChevronRight size={18} color="#94A3B8" />
-          </TouchableOpacity>
-          <View style={styles.menuDivider} />
-          {/* 2. Addresses */}
-          <TouchableOpacity
-            style={styles.menuItem}
-            onPress={() => setIsAddressModalVisible(true)}
-            activeOpacity={0.7}
-          >
-            <View style={styles.menuIconBox}>
-              <Home size={18} color="#0D8846" strokeWidth={2.2} />
-            </View>
-            <View style={styles.menuTextCol}>
-              <Text style={styles.menuTitle}>Addresses</Text>
-              <Text style={styles.menuSubtitle}>Manage your saved addresses</Text>
-            </View>
-            <ChevronRight size={18} color="#94A3B8" />
-          </TouchableOpacity>
-          <View style={styles.menuDivider} />
-          {/* 3. Payment Methods */}
-          <TouchableOpacity
-            style={styles.menuItem}
-            onPress={() => setIsPaymentModalVisible(true)}
-            activeOpacity={0.7}
-          >
-            <View style={styles.menuIconBox}>
-              <CreditCard size={18} color="#0D8846" strokeWidth={2.2} />
-            </View>
-            <View style={styles.menuTextCol}>
-              <Text style={styles.menuTitle}>Payment Methods</Text>
-              <Text style={styles.menuSubtitle}>
-                Manage your cards, UPI and wallets
-              </Text>
-            </View>
-            <ChevronRight size={18} color="#94A3B8" />
-          </TouchableOpacity>
-          <View style={styles.menuDivider} />
-          {/* 4. Notifications */}
-          <TouchableOpacity
-            style={styles.menuItem}
-            onPress={() => setIsNotificationModalVisible(true)}
-            activeOpacity={0.7}
-          >
-            <View style={styles.menuIconBox}>
-              <Bell size={18} color="#0D8846" strokeWidth={2.2} />
-            </View>
-            <View style={styles.menuTextCol}>
-              <Text style={styles.menuTitle}>Notifications</Text>
-              <Text style={styles.menuSubtitle}>
-                Booking updates, offers and more
-              </Text>
-            </View>
-            <ChevronRight size={18} color="#94A3B8" />
-          </TouchableOpacity>
-          <View style={styles.menuDivider} />
-          {/* 5. App Settings */}
-          <TouchableOpacity
-            style={styles.menuItem}
-            onPress={() => setIsSettingsModalVisible(true)}
-            activeOpacity={0.7}
-          >
-            <View style={styles.menuIconBox}>
-              <SlidersHorizontal size={18} color="#0D8846" strokeWidth={2.2} />
-            </View>
-            <View style={styles.menuTextCol}>
-              <Text style={styles.menuTitle}>App Settings</Text>
-              <Text style={styles.menuSubtitle}>
-                Language, theme, preferences
-              </Text>
-            </View>
-            <ChevronRight size={18} color="#94A3B8" />
-          </TouchableOpacity>
-          <View style={styles.menuDivider} />
-          {/* 6. Help & Support */}
-          <TouchableOpacity
-            style={styles.menuItem}
-            onPress={handleHelpAndSupport}
-            activeOpacity={0.7}
-          >
-            <View style={styles.menuIconBox}>
-              <HelpCircle size={18} color="#0D8846" strokeWidth={2.2} />
-            </View>
-            <View style={styles.menuTextCol}>
-              <Text style={styles.menuTitle}>Help & Support</Text>
-              <Text style={styles.menuSubtitle}>FAQs, contact us</Text>
-            </View>
-            <ChevronRight size={18} color="#94A3B8" />
-          </TouchableOpacity>
-          <View style={styles.menuDivider} />
-          {/* 7. Privacy & Security */}
-          <TouchableOpacity
-            style={styles.menuItem}
-            onPress={handlePrivacySecurity}
-            activeOpacity={0.7}
-          >
-            <View style={styles.menuIconBox}>
-              <ShieldCheck size={18} color="#0D8846" strokeWidth={2.2} />
-            </View>
-            <View style={styles.menuTextCol}>
-              <Text style={styles.menuTitle}>Privacy & Security</Text>
-              <Text style={styles.menuSubtitle}>
-                Data, security and privacy settings
-              </Text>
-            </View>
-            <ChevronRight size={18} color="#94A3B8" />
-          </TouchableOpacity>
 
-          <View style={styles.menuDivider} />
-          {/* 9. Logout */}
-          <TouchableOpacity
-            style={styles.menuItem}
-            onPress={handleLogout}
-            activeOpacity={0.7}
-          >
-            <View style={[styles.menuIconBox, { backgroundColor: '#FEF2F2' }]}>
-              <LogOut size={18} color="#DC2626" strokeWidth={2.2} />
-            </View>
-            <View style={styles.menuTextCol}>
-              <Text style={[styles.menuTitle, { color: '#DC2626' }]}>Logout</Text>
-              <Text style={styles.menuSubtitle}>Sign out from your account</Text>
-            </View>
-            <ChevronRight size={18} color="#94A3B8" />
-          </TouchableOpacity>
+        {/* ── 1. ACCOUNT SECTION ── */}
+        <View style={styles.sectionHeaderBox}>
+          <Text style={styles.sectionHeaderText}>ACCOUNT</Text>
+        </View>
+        <View style={styles.menuContainer}>
+          <SettingsRow
+            icon={User}
+            title="Personal Information"
+            description="Name, phone number, email, address"
+            onPress={handleEditProfile}
+          />
+          <SettingsRow
+            icon={Home}
+            title="Addresses"
+            description="Manage your saved addresses"
+            onPress={() => setIsAddressModalVisible(true)}
+          />
+          <SettingsRow
+            icon={CreditCard}
+            title="Payment Methods"
+            description="Manage your cards, UPI and wallets"
+            trailingBadge="UPI added"
+            onPress={() => setIsPaymentModalVisible(true)}
+            isLast
+          />
+        </View>
+
+        {/* ── 2. PREFERENCES SECTION ── */}
+        <View style={styles.sectionHeaderBox}>
+          <Text style={styles.sectionHeaderText}>PREFERENCES</Text>
+        </View>
+        <View style={styles.menuContainer}>
+          <SettingsRow
+            icon={Bell}
+            title="Notifications"
+            description="Booking updates, offers and more"
+            onPress={() => setIsNotificationModalVisible(true)}
+          />
+          <SettingsRow
+            icon={SlidersHorizontal}
+            title="App Settings"
+            description="Language, theme, preferences"
+            onPress={() => setIsSettingsModalVisible(true)}
+            isLast
+          />
+        </View>
+
+        {/* ── 3. SUPPORT & SECURITY SECTION ── */}
+        <View style={styles.sectionHeaderBox}>
+          <Text style={styles.sectionHeaderText}>SUPPORT & SECURITY</Text>
+        </View>
+        <View style={styles.menuContainer}>
+          <SettingsRow
+            icon={HelpCircle}
+            title="Help & Support"
+            description="FAQs, contact us"
+            onPress={handleHelpAndSupport}
+          />
+          <SettingsRow
+            icon={ShieldCheck}
+            title="Privacy & Security"
+            description="Data, security and privacy settings"
+            onPress={handlePrivacySecurity}
+            isLast
+          />
+        </View>
+
+        {/* ── 4. ACCOUNT ACTION SECTION ── */}
+        <View style={styles.sectionHeaderBox}>
+          <Text style={styles.sectionHeaderText}>ACCOUNT ACTION</Text>
+        </View>
+        <View style={styles.menuContainer}>
+          <SettingsRow
+            icon={LogOut}
+            title="Logout"
+            description="Sign out from your account"
+            isDestructive
+            onPress={handleLogoutClick}
+            isLast
+          />
+        </View>
+
+        {/* Version Footer */}
+        <View style={styles.versionFooter}>
+          <Text style={styles.versionAppName}>GC Home Plus</Text>
+          <Text style={styles.versionNumber}>Version {appVersion}</Text>
         </View>
       </ScrollView>
+
+      {/* Logout Confirmation Dialog */}
+      <LogoutModal
+        visible={isLogoutModalVisible}
+        onCancel={() => setIsLogoutModalVisible(false)}
+        onConfirm={handleConfirmLogout}
+      />
+
       {/* ─────────────────────────────────────────────────────────────
           1. SAVED ADDRESSES MODAL SHEET
          ───────────────────────────────────────────────────────────── */}
@@ -406,40 +412,93 @@ export const UserProfileScreen: React.FC = () => {
                 <X size={18} color="#64748B" />
               </TouchableOpacity>
             </View>
-            <View style={{ gap: 10 }}>
-              {(savedAddresses || []).map(addr => {
-                const isSelected = selectedAddressId === addr.id;
-                return (
-                  <TouchableOpacity
-                    key={addr.id}
-                    onPress={() => setSelectedAddressId(addr.id)}
-                    style={[styles.addressItemCard, isSelected && styles.addressItemCardActive]}
-                    activeOpacity={0.8}
-                  >
-                    <View style={styles.addressLeft}>
-                      <View style={[styles.addrTag, isSelected && styles.addrTagActive]}>
-                        <Text style={[styles.addrTagText, isSelected && styles.addrTagTextActive]}>
-                          {addr.label.toUpperCase()}
-                        </Text>
+            <ScrollView style={{ maxHeight: 360 }} showsVerticalScrollIndicator={false}>
+              <View style={{ gap: 12 }}>
+                {(savedAddresses || []).length === 0 ? (
+                  <View style={{ padding: 20, alignItems: 'center' }}>
+                    <Text style={{ color: '#64748B', fontSize: 13 }}>No saved addresses found. Add a new address below.</Text>
+                  </View>
+                ) : (
+                  (savedAddresses || []).map(addr => {
+                    const isSelected = selectedAddressId === addr.id || addr.isDefault;
+                    return (
+                      <View
+                        key={addr.id}
+                        style={[styles.addressItemCard, isSelected && styles.addressItemCardActive, { flexDirection: 'column', alignItems: 'stretch' }]}
+                      >
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <View style={{ flex: 1 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                              <View style={[styles.addrTag, isSelected && styles.addrTagActive]}>
+                                <Text style={[styles.addrTagText, isSelected && styles.addrTagTextActive]}>
+                                  {addr.label.toUpperCase()}
+                                </Text>
+                              </View>
+                              {addr.isDefault && (
+                                <View style={{ backgroundColor: '#FEF3C7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
+                                  <Text style={{ fontSize: 10, fontWeight: '700', color: '#B45309' }}>DEFAULT</Text>
+                                </View>
+                              )}
+                            </View>
+                            {Boolean(addr.houseFlat) && (
+                              <Text style={{ fontSize: 13, fontWeight: '700', color: '#1E293B' }}>{addr.houseFlat}</Text>
+                            )}
+                            <Text style={styles.addrLine1}>{addr.street}</Text>
+                            <Text style={styles.addrLine2}>
+                              {addr.locality}, {addr.city} {addr.state ? `, ${addr.state}` : ''} - {addr.pincode}
+                            </Text>
+                            {Boolean(addr.landmark) && (
+                              <Text style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>Landmark: {addr.landmark}</Text>
+                            )}
+                          </View>
+                        </View>
+
+                        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginTop: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#F1F5F9' }}>
+                          {!addr.isDefault && (
+                            <TouchableOpacity
+                              onPress={() => setDefaultSavedAddress(addr.id)}
+                              style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#CBD5E1' }}
+                            >
+                              <Text style={{ fontSize: 11, fontWeight: '700', color: '#475569' }}>Set Default</Text>
+                            </TouchableOpacity>
+                          )}
+                          <TouchableOpacity
+                            onPress={() => {
+                              setEditingAddress(addr);
+                              setIsFormModalVisible(true);
+                            }}
+                            style={{ padding: 6, backgroundColor: '#F1F5F9', borderRadius: 6 }}
+                          >
+                            <Edit2 size={14} color="#0D8846" />
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => {
+                              Alert.alert('Delete Address', `Are you sure you want to delete "${addr.label}" address?`, [
+                                { text: 'Cancel', style: 'cancel' },
+                                {
+                                  text: 'Delete',
+                                  style: 'destructive',
+                                  onPress: () => deleteSavedAddress(addr.id),
+                                },
+                              ]);
+                            }}
+                            style={{ padding: 6, backgroundColor: '#FEF2F2', borderRadius: 6 }}
+                          >
+                            <Trash2 size={14} color="#991B1B" />
+                          </TouchableOpacity>
+                        </View>
                       </View>
-                      <Text style={styles.addrLine1}>{addr.street}</Text>
-                      <Text style={styles.addrLine2}>
-                        {addr.locality}, {addr.city} - {addr.pincode}
-                      </Text>
-                    </View>
-                    <View style={[styles.radioCircle, isSelected && styles.radioCircleActive]}>
-                      {isSelected && <Check size={12} color="#FFFFFF" strokeWidth={3} />}
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+                    );
+                  })
+                )}
+              </View>
+            </ScrollView>
 
             <TouchableOpacity
               style={styles.modalActionBtn}
               onPress={() => {
-                Alert.alert('Add Address', 'Enter new address in your next booking or checkout.');
-                setIsAddressModalVisible(false);
+                setEditingAddress(null);
+                setIsFormModalVisible(true);
               }}
               activeOpacity={0.88}
             >
@@ -449,6 +508,22 @@ export const UserProfileScreen: React.FC = () => {
           </View>
         </View>
       </Modal>
+
+      <AddressFormModal
+        visible={isFormModalVisible}
+        initialAddress={editingAddress}
+        onSave={async addressData => {
+          if (editingAddress) {
+            await updateSavedAddress(editingAddress.id, addressData);
+          } else {
+            await addSavedAddress(addressData);
+          }
+        }}
+        onClose={() => {
+          setIsFormModalVisible(false);
+          setEditingAddress(null);
+        }}
+      />
 
       {/* ─────────────────────────────────────────────────────────────
           2. PAYMENT METHODS MODAL SHEET
@@ -687,8 +762,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'ios' ? 14 : 12,
-    paddingBottom: 12,
+    paddingTop: Platform.OS === 'ios' ? 10 : 8,
+    paddingBottom: 8,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
@@ -704,36 +779,20 @@ const styles = StyleSheet.create({
   headerSubtitle: {
     fontSize: 12,
     color: '#64748B',
-    marginTop: 2,
-  },
-  editProfilePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#F4FBF7',
-    borderWidth: 1,
-    borderColor: '#D1F2DF',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 20,
-  },
-  editProfilePillText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#0D8846',
+    marginTop: 1,
   },
   scrollContainer: {
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 40,
+    paddingBottom: 48,
   },
   profileCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 16,
     marginHorizontal: 16,
-    marginTop: 14,
+    marginTop: 10,
     borderWidth: 1,
     borderColor: '#EBF5F0',
     flexDirection: 'row',
@@ -755,29 +814,30 @@ const styles = StyleSheet.create({
   },
   cameraBadge: {
     position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    bottom: -1,
+    right: -1,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     backgroundColor: '#0D8846',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
     borderColor: '#FFFFFF',
+    elevation: 3,
   },
   profileInfoCol: {
     flex: 1,
     marginLeft: 14,
   },
   profileName: {
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '800',
     color: '#0F2E23',
   },
   profileMeta: {
-    fontSize: 12,
-    color: '#64748B',
+    fontSize: 12.5,
+    color: '#475569',
     marginTop: 1,
   },
   locationRow: {
@@ -787,68 +847,27 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   locationText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
-    color: '#334155',
+    color: '#1E293B',
   },
-  memberBadge: {
-    backgroundColor: '#E8F8EE',
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-  },
-  memberBadgeSub: {
-    fontSize: 9,
-    color: '#475569',
-    textAlign: 'center',
-  },
-  memberBadgeDate: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#0D8846',
-    textAlign: 'center',
-  },
-  statsCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    paddingVertical: 14,
-    paddingHorizontal: 10,
-    marginHorizontal: 16,
-    marginTop: 12,
-    borderWidth: 1,
-    borderColor: '#EBF5F0',
+  editProfileLink: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-around',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 4,
-    elevation: 1,
+    gap: 2,
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    backgroundColor: '#E6F4EA',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#C6EAD4',
   },
-  statItem: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  statNumber: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#0F2E23',
-    marginTop: 4,
-  },
-  statLabel: {
-    fontSize: 10,
-    color: '#64748B',
-    marginTop: 2,
-    textAlign: 'center',
-  },
-  statDivider: {
-    width: 1,
-    height: 32,
-    backgroundColor: '#F1F5F9',
+  editProfileLinkText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0D8846',
   },
   partnerBannerCard: {
     flexDirection: 'row',
@@ -857,118 +876,101 @@ const styles = StyleSheet.create({
     backgroundColor: '#E8F8EE',
     marginHorizontal: 16,
     marginTop: 12,
-    padding: 12,
-    borderRadius: 14,
+    padding: 14,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: '#D1F2DF',
   },
   partnerIconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
+    width: 40,
+    height: 40,
+    borderRadius: 12,
     backgroundColor: '#0D8846',
     alignItems: 'center',
     justifyContent: 'center',
   },
+  partnerHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   partnerCardTitle: {
-    fontSize: 13,
+    fontSize: 13.5,
     fontWeight: '800',
     color: '#0F2E23',
   },
+  partnerTag: {
+    backgroundColor: 'rgba(13,136,70,0.12)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  partnerTagText: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    color: '#0D8846',
+  },
+  partnerBadgeRow: {
+    marginTop: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   partnerPill: {
     backgroundColor: '#0D8846',
-    paddingHorizontal: 6,
-    paddingVertical: 1.5,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
     borderRadius: 6,
   },
   partnerPillText: {
-    fontSize: 8.5,
+    fontSize: 9,
     fontWeight: '800',
     color: '#FFFFFF',
   },
   partnerCardSub: {
-    fontSize: 10.5,
+    fontSize: 11,
     color: '#475569',
-    marginTop: 1,
+    marginTop: 2,
+  },
+  sectionHeaderBox: {
+    marginTop: 16,
+    marginBottom: 6,
+    paddingHorizontal: 20,
+  },
+  sectionHeaderText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#64748B',
+    letterSpacing: 0.8,
   },
   menuContainer: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
     marginHorizontal: 16,
-    marginTop: 14,
+    marginTop: 0,
     borderWidth: 1,
     borderColor: '#EBF5F0',
-    paddingVertical: 4,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.03,
     shadowRadius: 5,
     elevation: 2,
+    overflow: 'hidden',
   },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-  },
-  menuIconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: '#E8F8EE',
+  versionFooter: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
+    marginTop: 24,
+    marginBottom: 16,
   },
-  menuTextCol: {
-    flex: 1,
-  },
-  menuTitle: {
-    fontSize: 13,
+  versionAppName: {
+    fontSize: 12,
     fontWeight: '700',
-    color: '#0F2E23',
-  },
-  menuSubtitle: {
-    fontSize: 11,
     color: '#64748B',
-    marginTop: 1,
   },
-  menuDivider: {
-    height: 1,
-    backgroundColor: '#F8FAFC',
-    marginHorizontal: 14,
-  },
-  bottomCommunityBanner: {
-    backgroundColor: '#F4FBF7',
-    borderRadius: 16,
-    padding: 14,
-    marginHorizontal: 16,
-    marginTop: 16,
-    borderWidth: 1,
-    borderColor: '#E2F4EB',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  communityGraphicLeft: {
-    marginRight: 10,
-  },
-  communityTextCol: {
-    flex: 1,
-  },
-  communityTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#0D8846',
-  },
-  communitySub: {
+  versionNumber: {
     fontSize: 11,
-    color: '#475569',
+    color: '#94A3B8',
     marginTop: 2,
-  },
-  leavesRight: {
-    marginLeft: 8,
-    opacity: 0.8,
   },
 
   /* Modals */

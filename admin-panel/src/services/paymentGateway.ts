@@ -1,4 +1,4 @@
-/**
+﻿/**
  * GC HOME+ Payment Gateway Service (Razorpay / Cashfree)
  * Handles client-side checkout invocation, payment signature verification request,
  * and commission split calculation.
@@ -99,7 +99,7 @@ export class PaymentGatewayService {
           contact: params.customerPhone,
         },
         theme: {
-          color: '#043927',
+          color: '#123D2A',
         },
         modal: {
           ondismiss: function () {
@@ -113,3 +113,4 @@ export class PaymentGatewayService {
     });
   }
 }
+

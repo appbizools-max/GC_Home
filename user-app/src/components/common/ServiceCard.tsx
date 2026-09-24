@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { Service } from '../../types';
 import { resolveImageSource } from '../../utils/imageUtils';
-import { Star, Clock, Plus, Heart } from 'lucide-react-native';
+import { Star, Clock, Plus, Heart, Check, Minus, Trash2 } from 'lucide-react-native';
 
 const { width } = Dimensions.get('window');
 export const SERVICE_CARD_WIDTH = Math.floor((width - 44) / 2);
@@ -25,18 +25,26 @@ interface ServiceCardProps {
   service: ExtendedService;
   onSelect: (service: Service) => void;
   onQuickAdd?: (service: Service) => void;
+  onIncrement?: (service: Service) => void;
+  onDecrement?: (service: Service) => void;
   isFavorite?: boolean;
   onToggleFavorite?: (serviceId: string) => void;
   cardWidth?: number;
+  isInCart?: boolean;
+  cartQuantity?: number;
 }
 
 export const ServiceCard: React.FC<ServiceCardProps> = ({
   service,
   onSelect,
   onQuickAdd,
+  onIncrement,
+  onDecrement,
   isFavorite: controlledFavorite,
   onToggleFavorite,
   cardWidth = SERVICE_CARD_WIDTH,
+  isInCart = false,
+  cartQuantity = 0,
 }) => {
   const [internalFavorite, setInternalFavorite] = useState(false);
   const isFav = controlledFavorite !== undefined ? controlledFavorite : internalFavorite;
@@ -59,9 +67,27 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
     }
   };
 
+  const handleIncrement = (e: any) => {
+    e.stopPropagation();
+    if (onIncrement) {
+      onIncrement(service);
+    } else if (onQuickAdd) {
+      onQuickAdd(service);
+    }
+  };
+
+  const handleDecrement = (e: any) => {
+    e.stopPropagation();
+    if (onDecrement) {
+      onDecrement(service);
+    } else if (onQuickAdd) {
+      onQuickAdd(service);
+    }
+  };
+
   return (
     <TouchableOpacity
-      style={[styles.card, { width: cardWidth }]}
+      style={[styles.card, { width: cardWidth }, isInCart && styles.cardInCart]}
       onPress={() => onSelect(service)}
       activeOpacity={0.9}
     >
@@ -73,10 +99,10 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
           resizeMode="cover"
         />
 
-        {/* Bestseller Badge */}
+        {/* Top Rated Badge */}
         {service.isBestseller && (
           <View style={styles.bestsellerTag}>
-            <Text style={styles.bestsellerText}>Bestseller</Text>
+            <Text style={styles.bestsellerText}>Top Rated</Text>
           </View>
         )}
 
@@ -120,21 +146,49 @@ export const ServiceCard: React.FC<ServiceCardProps> = ({
           </View>
         </View>
 
-        {/* Price & Green + Button Row */}
+        {/* Price & Green Stepper / Plus Button Row */}
         <View style={styles.priceRow}>
           <View style={styles.priceCol}>
             <Text style={styles.startsAtText}>Starts at</Text>
             <Text style={styles.priceValue}>₹ {service.startingPrice}</Text>
           </View>
 
-          <TouchableOpacity
-            style={styles.plusBtn}
-            onPress={handleAdd}
-            activeOpacity={0.85}
-            accessibilityLabel={`Add ${service.name}`}
-          >
-            <Plus size={15} color="#FFFFFF" strokeWidth={2.8} />
-          </TouchableOpacity>
+          {isInCart ? (
+            <View style={styles.stepperContainer}>
+              <TouchableOpacity
+                style={styles.stepperBtn}
+                onPress={handleDecrement}
+                activeOpacity={0.7}
+                accessibilityLabel={`Remove one ${service.name}`}
+              >
+                {cartQuantity <= 1 ? (
+                  <Trash2 size={11} color="#FFFFFF" strokeWidth={2.5} />
+                ) : (
+                  <Minus size={11} color="#FFFFFF" strokeWidth={2.5} />
+                )}
+              </TouchableOpacity>
+
+              <Text style={styles.stepperCountText}>{cartQuantity || 1}</Text>
+
+              <TouchableOpacity
+                style={styles.stepperBtn}
+                onPress={handleIncrement}
+                activeOpacity={0.7}
+                accessibilityLabel={`Add one more ${service.name}`}
+              >
+                <Plus size={11} color="#FFFFFF" strokeWidth={2.5} />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={styles.plusBtn}
+              onPress={handleAdd}
+              activeOpacity={0.85}
+              accessibilityLabel={`Add ${service.name}`}
+            >
+              <Plus size={15} color="#FFFFFF" strokeWidth={2.8} />
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     </TouchableOpacity>
@@ -263,5 +317,42 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 3,
     elevation: 2,
+  },
+  cardInCart: {
+    borderColor: '#168A68',
+    borderWidth: 1.5,
+  },
+  addedBtn: {
+    backgroundColor: '#0E5B47',
+    shadowColor: '#0E5B47',
+  },
+  stepperContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0E5B47',
+    borderRadius: 14,
+    paddingHorizontal: 4,
+    paddingVertical: 3,
+    gap: 5,
+    shadowColor: '#0E5B47',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  stepperBtn: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.22)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  stepperCountText: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    minWidth: 10,
+    textAlign: 'center',
   },
 });

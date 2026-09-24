@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+﻿import React, { useState, useMemo } from 'react';
 import { useAdmin } from '../../context/AdminContext';
+import { MaidProfile } from '../../types';
 import {
   ChevronRight,
   ArrowLeft,
@@ -8,528 +9,818 @@ import {
   MapPin,
   Calendar,
   Clock,
-  CreditCard,
-  FileText,
   Search,
   Star,
   CheckCircle2,
-  MoreVertical,
-  Plus,
-  Minus,
-  Navigation,
+  XCircle,
+  AlertCircle,
+  Send,
+  RotateCcw,
+  UserCheck,
+  UserX,
+  ShieldCheck,
+  Sparkles,
 } from 'lucide-react';
-import { MaidProfile } from '../../types';
+
+// Resilient Partner Avatar with initials fallback
+const PartnerAvatar: React.FC<{ photoUrl?: string; name: string; size?: string }> = ({
+  photoUrl,
+  name,
+  size = 'w-9 h-9',
+}) => {
+  const [imageError, setImageError] = useState(false);
+  const initials = (name || 'Partner')
+    .split(' ')
+    .filter(Boolean)
+    .map(n => n[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase() || 'P';
+
+  if (!photoUrl || imageError) {
+    return (
+      <div
+        className={`${size} rounded-full bg-emerald-100 text-[#123D2A] font-black flex items-center justify-center shrink-0 border border-emerald-200 text-xs select-none shadow-2xs`}
+        title={name}
+      >
+        {initials}
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={photoUrl}
+      alt={name}
+      onError={() => setImageError(true)}
+      className={`${size} rounded-full object-cover border border-slate-200 shrink-0`}
+    />
+  );
+};
+
+// Customer Avatar
+const CustomerAvatar: React.FC<{ avatarUrl?: string; name: string; size?: string }> = ({
+  avatarUrl,
+  name,
+  size = 'w-10 h-10',
+}) => {
+  const [imageError, setImageError] = useState(false);
+  const initials = (name || 'Customer')
+    .split(' ')
+    .filter(Boolean)
+    .map(n => n[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase() || 'C';
+
+  if (!avatarUrl || imageError) {
+    return (
+      <div
+        className={`${size} rounded-full bg-slate-100 text-slate-700 font-bold flex items-center justify-center shrink-0 border border-slate-200 text-xs select-none shadow-2xs`}
+        title={name}
+      >
+        {initials}
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={avatarUrl}
+      alt={name}
+      onError={() => setImageError(true)}
+      className={`${size} rounded-full object-cover border border-slate-200 shrink-0`}
+    />
+  );
+};
 
 export const AssignMaidPage: React.FC = () => {
-  const { selectedBooking, maids, setCurrentTab, confirmMaidAssignment } = useAdmin();
+  const {
+    selectedBooking,
+    maids,
+    setCurrentTab,
+    openBookingDetails,
+    sendPartnerAssignmentRequest,
+    cancelPartnerAssignmentRequest,
+    acceptPartnerAssignment,
+    declinePartnerAssignment,
+  } = useAdmin();
 
-  const [selectedMaid, setSelectedMaid] = useState<MaidProfile | null>(maids[1] || maids[0]);
   const [searchTerm, setSearchTerm] = useState('');
   const [distanceFilter, setDistanceFilter] = useState('10');
-  const [serviceFilter, setServiceFilter] = useState('all');
+  const [serviceFilter, setServiceFilter] = useState<'matching' | 'all'>('matching');
+  const [selectedPartnerId, setSelectedPartnerId] = useState<string | null>(null);
+
+  // Local Assignment Request Lifecycle States
+  const [requestStatus, setRequestStatus] = useState<
+    'idle' | 'pending_acceptance' | 'accepted' | 'declined'
+  >('idle');
+  const [requestSentAt, setRequestSentAt] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!selectedBooking) {
     return (
-      <div className="p-8 text-center text-slate-500 font-sans">
-        <p className="text-sm font-bold">No booking selected for maid assignment.</p>
+      <div className="p-12 text-center text-slate-500 font-sans max-w-md mx-auto">
+        <AlertCircle className="w-10 h-10 text-amber-500 mx-auto mb-3" />
+        <h3 className="text-base font-extrabold text-slate-800">No Booking Selected</h3>
+        <p className="text-xs text-slate-500 mt-1">Please select a pending booking from the bookings list to assign an eligible partner.</p>
         <button
-          onClick={() => setCurrentTab('pending-bookings')}
-          className="mt-4 bg-[#043927] text-white px-4 py-2 rounded-xl text-xs font-bold cursor-pointer"
+          onClick={() => setCurrentTab('all-bookings')}
+          className="mt-4 bg-[#123D2A] hover:bg-[#184a34] text-white px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-sm"
         >
-          Return to Pending Bookings
+          Return to Bookings
         </button>
       </div>
     );
   }
 
-  const filteredMaids = maids.filter(m => {
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      return m.fullName.toLowerCase().includes(term) || m.serviceArea.toLowerCase().includes(term);
-    }
-    return true;
-  });
+  // Service Eligibility Matching Helper
+  const isPartnerEligibleForService = (partner: MaidProfile, requiredService: string) => {
+    if (!requiredService) return true;
+    const reqLower = requiredService.toLowerCase().trim();
 
-  const handleConfirmAssignment = async () => {
-    if (!selectedMaid) {
-      alert('Please select a maid to confirm assignment.');
+    // 1. Must be an approved partner
+    if (partner.status !== 'approved') return false;
+
+    // 2. Check skills array
+    if (Array.isArray(partner.skills) && partner.skills.length > 0) {
+      const hasSkill = partner.skills.some(skill => {
+        const sLower = String(skill).toLowerCase().trim();
+        return sLower.includes(reqLower) || reqLower.includes(sLower) || (reqLower.includes('clean') && sLower.includes('clean'));
+      });
+      if (hasSkill) return true;
+    }
+
+    // 3. Check servicesProvided array
+    if (Array.isArray(partner.servicesProvided) && partner.servicesProvided.length > 0) {
+      const hasService = partner.servicesProvided.some((s: any) => {
+        const sName = (s?.serviceName || s?.name || '').toLowerCase().trim();
+        return sName.includes(reqLower) || reqLower.includes(sName);
+      });
+      if (hasService) return true;
+    }
+
+    return false;
+  };
+
+  // Filter partners: Approved & matching requested service by default
+  const eligiblePartners = useMemo(() => {
+    return maids.filter(m => {
+      // 1. Must be approved
+      if (m.status !== 'approved') return false;
+
+      // 2. Service matching
+      if (serviceFilter === 'matching') {
+        if (!isPartnerEligibleForService(m, selectedBooking.serviceName)) return false;
+      }
+
+      // 3. Distance filter
+      const distance = m.distanceKm || 1.8;
+      if (distanceFilter === '5' && distance > 5) return false;
+      if (distanceFilter === '10' && distance > 10) return false;
+
+      // 4. Search filter
+      if (searchTerm.trim()) {
+        const term = searchTerm.toLowerCase().trim();
+        const nameMatch = m.fullName.toLowerCase().includes(term);
+        const areaMatch = (m.serviceArea || '').toLowerCase().includes(term);
+        const skillMatch = (m.skills || []).some(s => String(s).toLowerCase().includes(term));
+        if (!nameMatch && !areaMatch && !skillMatch) return false;
+      }
+
+      return true;
+    });
+  }, [maids, serviceFilter, distanceFilter, searchTerm, selectedBooking.serviceName]);
+
+  // Find currently selected partner object
+  const selectedPartner = useMemo(() => {
+    if (selectedPartnerId) {
+      return maids.find(m => m.uid === selectedPartnerId) || null;
+    }
+    // Default to first available eligible partner if none selected
+    const firstAvailable = eligiblePartners.find(m => m.isOnline && m.currentStatus !== 'busy');
+    return firstAvailable || null;
+  }, [selectedPartnerId, maids, eligiblePartners]);
+
+  // Helper: Mask phone number
+  const maskPhone = (phone?: string): string => {
+    if (!phone) return '';
+    const cleaned = phone.trim();
+    if (cleaned.length < 8) return cleaned;
+    const start = cleaned.slice(0, 5);
+    const end = cleaned.slice(-2);
+    return `${start} ••••• ${end}`;
+  };
+
+  // 1. Send Assignment Request to Selected Partner
+  const handleSendAssignmentRequest = async () => {
+    if (!selectedPartner) {
+      alert('Please select an eligible partner first.');
       return;
     }
-    await confirmMaidAssignment(selectedBooking.bookingId, selectedMaid.uid);
+
+    if (!selectedPartner.isOnline || selectedPartner.currentStatus === 'busy') {
+      alert('This partner is currently busy or unavailable. Please choose an available partner.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    const success = await sendPartnerAssignmentRequest(
+      selectedBooking.bookingId,
+      selectedPartner.uid,
+      selectedPartner.distanceKm || 1.2,
+      selectedPartner.etaMins || 8
+    );
+    setIsSubmitting(false);
+
+    if (success) {
+      setRequestStatus('pending_acceptance');
+      setRequestSentAt(
+        new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      );
+    } else {
+      alert('Unable to send assignment request. Please check connection and try again.');
+    }
+  };
+
+  // 2. Cancel Request
+  const handleCancelRequest = async () => {
+    if (!selectedPartner) return;
+    if (window.confirm('Are you sure you want to cancel this assignment request?')) {
+      setIsSubmitting(true);
+      await cancelPartnerAssignmentRequest(selectedBooking.bookingId, selectedPartner.uid);
+      setIsSubmitting(false);
+      setRequestStatus('idle');
+      setRequestSentAt(null);
+    }
+  };
+
+  // 3. Partner Accepts Request (Real-time or simulated)
+  const handlePartnerAccept = async () => {
+    if (!selectedPartner) return;
+    setIsSubmitting(true);
+    const success = await acceptPartnerAssignment(selectedBooking.bookingId, selectedPartner.uid);
+    setIsSubmitting(false);
+    if (success) {
+      setRequestStatus('accepted');
+    }
+  };
+
+  // 4. Partner Declines Request (Real-time or simulated)
+  const handlePartnerDecline = async () => {
+    if (!selectedPartner) return;
+    setIsSubmitting(true);
+    await declinePartnerAssignment(selectedBooking.bookingId, selectedPartner.uid, 'Partner schedule conflict');
+    setIsSubmitting(false);
+    setRequestStatus('declined');
   };
 
   return (
-    <div className="flex flex-col gap-6 font-sans text-slate-800 select-none pb-8">
-      {/* Breadcrumbs & Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
+    <div className="flex flex-col gap-5 font-sans text-slate-800 select-none pb-8">
+      {/* 1. Breadcrumbs & Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 text-xs font-semibold text-slate-400 mb-1">
             <span>Dashboard</span>
             <ChevronRight className="w-3 h-3" />
             <span>Bookings</span>
             <ChevronRight className="w-3 h-3" />
-            <span>New / Pending</span>
-            <ChevronRight className="w-3 h-3" />
-            <span className="text-[#043927] font-bold">Assign Maid</span>
+            <span className="text-[#123D2A] font-bold">Assign Partner</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-black text-[#0A192F] tracking-tight">
-            Assign Maid
+            Assign Partner
           </h1>
           <p className="text-xs text-slate-500 font-medium mt-0.5">
-            Find and assign the best maid for this booking.
+            Find an eligible partner and send an assignment request.
           </p>
         </div>
 
         <button
-          onClick={() => setCurrentTab('pending-bookings')}
-          className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold px-4 py-2.5 rounded-xl text-xs flex items-center gap-2 shadow-sm cursor-pointer transition-all"
+          onClick={() => setCurrentTab('all-bookings')}
+          className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold px-4 py-2.5 rounded-xl text-xs flex items-center gap-2 shadow-xs cursor-pointer transition-all self-start md:self-auto"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Back to Pending Bookings</span>
+          <span>Back to Bookings</span>
         </button>
       </div>
 
-      {/* Main Grid: Left 4 Cols (Booking Details) / Right 8 Cols (Available Maids + Map + Confirmation) */}
+      {/* 2. Main Grid: Left Column (Compact Booking Details) + Right Column (Available Partners & Request Workflow) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left Column: Booking Details Card */}
-        <div className="lg:col-span-4 bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm flex flex-col gap-5">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+        {/* Left 4 Cols: Compact Booking Details Card */}
+        <div className="lg:col-span-4 bg-white rounded-3xl p-5 border border-slate-200 shadow-sm flex flex-col gap-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3.5">
             <div>
-              <h3 className="text-base font-extrabold text-[#0A192F]">Booking Details</h3>
-              <span className="text-xs font-bold text-[#043927]">{selectedBooking.bookingId}</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Booking ID</span>
+              <h3 className="text-base font-black text-[#123D2A]">{selectedBooking.bookingId}</h3>
             </div>
-            <span className="bg-amber-50 text-amber-700 font-extrabold px-3 py-1 rounded-full text-[10px]">
-              Pending Assignment
+            <span className="bg-amber-50 text-amber-800 border border-amber-200 font-extrabold px-2.5 py-0.5 rounded-full text-[10px]">
+              {selectedBooking.status === 'maid_assigned' ? 'Assigned' : 'Pending Assignment'}
             </span>
           </div>
 
           {/* Customer Info */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              {selectedBooking.customerAvatar ? (
-                <img
-                  src={selectedBooking.customerAvatar}
-                  alt={selectedBooking.customerName}
-                  className="w-12 h-12 rounded-full object-cover shadow-sm"
-                />
-              ) : (
-                <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-700 font-extrabold flex items-center justify-center text-sm">
-                  {selectedBooking.customerName[0]}
-                </div>
-              )}
+              <CustomerAvatar avatarUrl={selectedBooking.customerAvatar} name={selectedBooking.customerName} size="w-10 h-10" />
               <div>
-                <h4 className="text-sm font-extrabold text-slate-900">
-                  {selectedBooking.customerName}
-                </h4>
-                <div className="text-xs text-slate-500 font-medium">
-                  {selectedBooking.customerPhone}
-                </div>
+                <h4 className="text-xs font-black text-slate-900">{selectedBooking.customerName}</h4>
+                <p className="text-[11px] text-slate-500 font-medium">{maskPhone(selectedBooking.customerPhone)}</p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <button className="w-8 h-8 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center hover:bg-slate-200">
-                <Phone className="w-4 h-4" />
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => alert(`Calling ${selectedBooking.customerName}...`)}
+                title="Call Customer"
+                className="w-8 h-8 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 flex items-center justify-center border border-slate-200 cursor-pointer transition-all"
+              >
+                <Phone className="w-3.5 h-3.5" />
               </button>
-              <button className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center hover:bg-emerald-100">
-                <MessageSquare className="w-4 h-4" />
+              <button
+                onClick={() => alert(`WhatsApp ${selectedBooking.customerName}...`)}
+                title="WhatsApp"
+                className="w-8 h-8 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-[#123D2A] flex items-center justify-center border border-emerald-200 cursor-pointer transition-all"
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
 
           {/* Service Info */}
-          <div className="border-t border-slate-100 pt-4 flex items-start gap-3">
-            <div className="w-9 h-9 rounded-xl bg-emerald-50 text-[#043927] flex items-center justify-center flex-shrink-0">
-              <Clock className="w-5 h-5" />
+          <div className="border-t border-slate-100 pt-3 flex items-start gap-3">
+            <div className="w-8 h-8 rounded-xl bg-emerald-50 text-[#123D2A] flex items-center justify-center shrink-0 border border-emerald-100">
+              <Clock className="w-4 h-4" />
             </div>
             <div>
-              <div className="text-xs font-extrabold text-slate-900">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Service</span>
+              <div className="text-xs font-black text-slate-900 leading-snug">
                 {selectedBooking.serviceName}
               </div>
-              <div className="text-xs text-slate-500 font-medium">
-                {selectedBooking.serviceDuration || '3 Hours'}
-              </div>
+              {(selectedBooking.selectedAddOns || []).length > 0 && (
+                <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200/60 inline-block mt-0.5">
+                  + {(selectedBooking.selectedAddOns || []).length} add-on
+                </span>
+              )}
             </div>
           </div>
 
-          {/* Address Info */}
-          <div className="border-t border-slate-100 pt-4 flex items-start gap-3">
-            <div className="w-9 h-9 rounded-xl bg-sky-50 text-sky-700 flex items-center justify-center flex-shrink-0">
-              <MapPin className="w-5 h-5" />
+          {/* Schedule & Duration */}
+          <div className="border-t border-slate-100 pt-3 flex items-start gap-3">
+            <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center shrink-0 border border-purple-100">
+              <Calendar className="w-4 h-4" />
             </div>
             <div>
-              <div className="text-xs font-bold text-slate-900 leading-snug">
-                {selectedBooking.address.street}, {selectedBooking.address.locality}
-              </div>
-              <div className="text-xs text-slate-500 font-medium">
-                {selectedBooking.address.city} - {selectedBooking.address.pincode}
-              </div>
-              <button className="text-[11px] font-bold text-[#043927] hover:underline flex items-center gap-1 mt-1 cursor-pointer">
-                <span>View on Map</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Schedule Info */}
-          <div className="border-t border-slate-100 pt-4 flex items-start gap-3">
-            <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center flex-shrink-0">
-              <Calendar className="w-5 h-5" />
-            </div>
-            <div>
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Schedule</span>
               <div className="text-xs font-bold text-slate-900">
-                {selectedBooking.date}, {selectedBooking.timeSlot}
+                {selectedBooking.date}
               </div>
-              <div className="text-xs text-slate-500 font-medium">(Today)</div>
+              <div className="text-[11px] text-slate-500 font-medium">
+                {selectedBooking.timeSlot} · {selectedBooking.serviceDuration || '3 hours'}
+              </div>
             </div>
           </div>
 
-          {/* Estimated Duration */}
-          <div className="border-t border-slate-100 pt-4 flex items-start gap-3">
-            <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center flex-shrink-0">
-              <Clock className="w-5 h-5" />
+          {/* Location / Area */}
+          <div className="border-t border-slate-100 pt-3 flex items-start gap-3">
+            <div className="w-8 h-8 rounded-xl bg-sky-50 text-sky-700 flex items-center justify-center shrink-0 border border-sky-100">
+              <MapPin className="w-4 h-4" />
             </div>
             <div>
-              <div className="text-xs font-extrabold text-slate-900">Estimated Duration</div>
-              <div className="text-xs text-slate-500 font-medium">
-                {selectedBooking.serviceDuration || '3 Hours'}
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Location</span>
+              <div className="text-xs font-bold text-slate-900 leading-snug">
+                {selectedBooking.address?.locality || selectedBooking.address?.city || 'Hyderabad'}
+              </div>
+              <div className="text-[11px] text-slate-500 font-medium">
+                {selectedBooking.address?.city || 'Hyderabad'}
               </div>
             </div>
           </div>
 
-          {/* Payment Status */}
-          <div className="border-t border-slate-100 pt-4 flex items-center justify-between">
-            <div className="text-xs font-bold text-slate-700">Payment Status</div>
-            <div className="flex items-center gap-2">
-              <span className="bg-emerald-50 text-emerald-700 font-bold px-2.5 py-1 rounded-full text-xs">
+          {/* Payment Status & Amount */}
+          <div className="border-t border-slate-100 pt-3 flex items-center justify-between">
+            <div>
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Payment</span>
+              <span className="bg-emerald-50 text-emerald-700 font-bold px-2 py-0.5 rounded-full text-[10px] border border-emerald-200/60 inline-block mt-0.5">
                 Paid
               </span>
-              <span className="text-sm font-extrabold text-slate-900">
-                ₹{selectedBooking.totalAmount}
-              </span>
+            </div>
+            <div className="text-right">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Amount</span>
+              <span className="text-sm font-black text-slate-900">₹{selectedBooking.totalAmount}</span>
             </div>
           </div>
 
-          {/* Customer Notes */}
-          <div className="border-t border-slate-100 pt-4">
-            <div className="text-xs font-bold text-slate-700 mb-1.5">Customer Notes</div>
-            <div className="bg-slate-50 border border-slate-200/60 rounded-xl p-3 text-xs text-slate-600 font-medium leading-relaxed">
-              {selectedBooking.specialInstructions ||
-                'Please focus on kitchen and living room. Bring your own cleaning supplies.'}
+          {/* Customer Note */}
+          {selectedBooking.specialInstructions && (
+            <div className="border-t border-slate-100 pt-3">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                Customer Note
+              </span>
+              <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-2.5 text-xs text-slate-600 font-medium leading-relaxed">
+                {selectedBooking.specialInstructions}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
-        {/* Right Column (Available Maids + Map + Confirmation Card) */}
-        <div className="lg:col-span-8 flex flex-col gap-6">
-          {/* Available Maids Table Card */}
-          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm flex flex-col gap-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
+        {/* Right 8 Cols: Available Partners Table + Assignment Request Workflow */}
+        <div className="lg:col-span-8 flex flex-col gap-5">
+          {/* Top Card: Available Partners Table */}
+          <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm flex flex-col gap-4">
+            {/* Filter Toolbar */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <h3 className="text-base font-extrabold text-[#0A192F]">
-                  Available Maids ({filteredMaids.length})
+                <h3 className="text-base font-black text-[#0A192F]">
+                  Available Partners ({eligiblePartners.length})
                 </h3>
                 <p className="text-xs text-slate-500 font-medium">
-                  Verified and eligible maids near the customer location
+                  Partners eligible for this booking.
                 </p>
               </div>
 
-              {/* Filters */}
-              <div className="flex flex-wrap items-center gap-2.5 text-xs font-semibold">
+              <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
+                {/* Service Match Filter */}
+                <select
+                  value={serviceFilter}
+                  onChange={e => setServiceFilter(e.target.value as any)}
+                  className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-slate-700 font-bold outline-none cursor-pointer"
+                >
+                  <option value="matching">Matching Service</option>
+                  <option value="all">All Eligible Partners</option>
+                </select>
+
+                {/* Distance Filter */}
                 <select
                   value={distanceFilter}
                   onChange={e => setDistanceFilter(e.target.value)}
-                  className="bg-slate-50 border border-slate-200/80 rounded-xl px-3 py-1.5 text-slate-700 font-bold"
+                  className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-slate-700 font-bold outline-none cursor-pointer"
                 >
                   <option value="10">Nearby (10 km)</option>
                   <option value="5">Nearby (5 km)</option>
+                  <option value="all">All Distances</option>
                 </select>
 
-                <select className="bg-slate-50 border border-slate-200/80 rounded-xl px-3 py-1.5 text-slate-700 font-bold">
-                  <option value="all">All Services</option>
-                  <option value="home">Home Cleaning</option>
-                </select>
-
-                <select className="bg-slate-50 border border-slate-200/80 rounded-xl px-3 py-1.5 text-slate-700 font-bold">
-                  <option value="online">Online Only</option>
-                </select>
-
-                <select className="bg-slate-50 border border-slate-200/80 rounded-xl px-3 py-1.5 text-slate-700 font-bold">
-                  <option value="distance">Sort by Distance</option>
-                  <option value="rating">Sort by Rating</option>
-                </select>
-
+                {/* Search Box */}
                 <div className="relative">
-                  <Search className="absolute left-3 top-2 w-3.5 h-3.5 text-slate-400" />
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
+                    placeholder="Search partners..."
                     value={searchTerm}
                     onChange={e => setSearchTerm(e.target.value)}
-                    placeholder="Search maids..."
-                    className="bg-slate-50 border border-slate-200/80 rounded-xl pl-8 pr-3 py-1 text-xs text-slate-800 placeholder-slate-400 focus:outline-none"
+                    className="pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder-slate-400 outline-none w-40 sm:w-48"
                   />
                 </div>
               </div>
             </div>
 
-            {/* Maid Roster Table */}
-            <div className="overflow-x-auto">
+            {/* Partners Table (No Map, Clean Table) */}
+            <div className="overflow-x-auto no-scrollbar">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200/80 text-slate-500 font-extrabold uppercase tracking-wider">
-                    <th className="py-2.5 px-3 w-8 text-center">#</th>
-                    <th className="py-2.5 px-3">Maid Name</th>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-black text-slate-500 uppercase tracking-wider">
+                    <th className="py-2.5 px-3">Partner</th>
                     <th className="py-2.5 px-3">Distance</th>
                     <th className="py-2.5 px-3">Rating</th>
                     <th className="py-2.5 px-3">Jobs</th>
-                    <th className="py-2.5 px-3">Skills</th>
+                    <th className="py-2.5 px-3">Services</th>
                     <th className="py-2.5 px-3">Availability</th>
                     <th className="py-2.5 px-3">ETA</th>
                     <th className="py-2.5 px-3 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                  {filteredMaids.map((m, idx) => {
-                    const isSelected = selectedMaid?.uid === m.uid;
-                    const isBusy = !m.isOnline;
+                  {eligiblePartners.map(partner => {
+                    const isSelected = selectedPartner?.uid === partner.uid;
+                    const isAvailable = partner.isOnline && partner.currentStatus !== 'busy';
+                    const distance = partner.distanceKm || 1.2;
+                    const eta = partner.etaMins || 8;
 
                     return (
                       <tr
-                        key={m.uid}
-                        onClick={() => setSelectedMaid(m)}
-                        className={`transition-colors cursor-pointer ${
-                          isSelected ? 'bg-emerald-50/70 border-l-4 border-[#043927]' : 'hover:bg-slate-50/80'
+                        key={partner.uid}
+                        onClick={() => {
+                          if (isAvailable && requestStatus === 'idle') {
+                            setSelectedPartnerId(partner.uid);
+                          }
+                        }}
+                        className={`transition-colors ${
+                          isAvailable && requestStatus === 'idle' ? 'cursor-pointer' : ''
+                        } ${
+                          isSelected
+                            ? 'bg-emerald-50/80 border-l-4 border-[#123D2A]'
+                            : 'hover:bg-slate-50/70'
                         }`}
                       >
-                        <td className="py-3 px-3 text-center font-bold text-slate-400">{idx + 1}</td>
+                        {/* 1. Partner Profile */}
                         <td className="py-3 px-3">
                           <div className="flex items-center gap-2.5">
-                            <div className="relative">
-                              <img
-                                src={m.photoUrl}
-                                alt={m.fullName}
-                                className="w-8 h-8 rounded-full object-cover shadow-sm"
-                              />
-                              <span
-                                className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-white ${
-                                  m.isOnline ? 'bg-emerald-500' : 'bg-amber-500'
-                                }`}
-                              ></span>
-                            </div>
+                            <PartnerAvatar photoUrl={partner.photoUrl} name={partner.fullName} size="w-8 h-8" />
                             <div>
-                              <div className="font-extrabold text-slate-900">{m.fullName}</div>
-                              <div className="text-[10px] text-emerald-700 font-semibold">
-                                {m.isOnline ? '● Online' : '● Busy'}
-                              </div>
+                              <span className="font-bold text-slate-900 block text-xs">{partner.fullName}</span>
+                              <span className="text-[10px] text-slate-400 font-medium">{partner.serviceArea || 'Hyderabad'}</span>
                             </div>
                           </div>
                         </td>
-                        <td className="py-3 px-3 font-bold text-slate-800">
-                          {m.distanceKm || (1.2 + idx * 0.6).toFixed(1)} km
+
+                        {/* 2. Distance */}
+                        <td className="py-3 px-3 font-bold text-slate-800 whitespace-nowrap">
+                          {distance} km
                         </td>
-                        <td className="py-3 px-3">
-                          <div className="flex items-center gap-1 font-bold text-amber-600">
+
+                        {/* 3. Rating */}
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          <div className="flex items-center gap-1 font-bold text-slate-900">
                             <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                            <span>{m.rating || 4.8}</span>
-                            <span className="text-slate-400 font-medium text-[10px]">
-                              ({m.totalRatingsCount || 125})
-                            </span>
+                            <span>{partner.rating || 5.0}</span>
                           </div>
                         </td>
-                        <td className="py-3 px-3 font-bold text-slate-800">
-                          {m.completedJobsCount || 210}
+
+                        {/* 4. Jobs */}
+                        <td className="py-3 px-3 font-bold text-slate-800 whitespace-nowrap">
+                          {partner.completedJobsCount || 210}
                         </td>
+
+                        {/* 5. Services */}
                         <td className="py-3 px-3">
-                          <div className="flex flex-wrap gap-1">
-                            {(m.skills || ['Home', 'Kitchen']).map(s => (
-                              <span
-                                key={s}
-                                className="bg-sky-50 text-sky-800 font-semibold px-2 py-0.5 rounded-md text-[10px]"
-                              >
-                                {s}
-                              </span>
-                            ))}
-                          </div>
+                          <span className="text-[11px] font-semibold text-slate-700 bg-slate-50 px-2 py-0.5 rounded border border-slate-100 inline-block max-w-[150px] truncate">
+                            {(partner.skills || ['General Cleaning']).slice(0, 2).join(' · ')}
+                          </span>
                         </td>
-                        <td className="py-3 px-3">
-                          {m.isOnline ? (
-                            <span className="bg-emerald-50 text-emerald-700 font-bold px-2.5 py-1 rounded-full text-[10px]">
+
+                        {/* 6. Availability */}
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          {isAvailable ? (
+                            <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold px-2 py-0.5 rounded-full text-[10px]">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
                               Available
                             </span>
                           ) : (
-                            <span className="bg-amber-50 text-amber-700 font-bold px-2.5 py-1 rounded-full text-[10px]">
-                              On Job
+                            <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-800 border border-amber-200 font-bold px-2 py-0.5 rounded-full text-[10px]">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                              Busy / On Job
                             </span>
                           )}
                         </td>
-                        <td className="py-3 px-3 font-bold text-slate-800">
-                          {m.etaMins || 8 + idx * 2} mins
+
+                        {/* 7. ETA */}
+                        <td className="py-3 px-3 font-bold text-slate-800 whitespace-nowrap">
+                          {eta} min
                         </td>
-                        <td className="py-3 px-3 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            {isBusy ? (
-                              <button
-                                disabled
-                                className="bg-slate-200 text-slate-500 px-3.5 py-1.5 rounded-lg text-xs font-bold opacity-60 cursor-not-allowed"
-                              >
-                                Unavailable
-                              </button>
-                            ) : (
-                              <button
-                                onClick={e => {
-                                  e.stopPropagation();
-                                  setSelectedMaid(m);
-                                }}
-                                className={`px-4 py-1.5 rounded-lg text-xs font-extrabold cursor-pointer transition-all ${
-                                  isSelected
-                                    ? 'bg-[#043927] text-white shadow-sm'
-                                    : 'bg-emerald-50 text-[#043927] hover:bg-emerald-100 border border-emerald-200'
-                                }`}
-                              >
-                                {isSelected ? 'Selected' : 'Assign'}
-                              </button>
-                            )}
-                            <button className="text-slate-400 hover:text-slate-600 p-1 rounded-md">
-                              <MoreVertical className="w-4 h-4" />
+
+                        {/* 8. Action */}
+                        <td className="py-3 px-3 text-right whitespace-nowrap">
+                          {isAvailable ? (
+                            <button
+                              disabled={requestStatus !== 'idle'}
+                              onClick={e => {
+                                e.stopPropagation();
+                                setSelectedPartnerId(partner.uid);
+                              }}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer shadow-2xs ${
+                                isSelected
+                                  ? 'bg-[#123D2A] text-white'
+                                  : 'bg-emerald-50 text-[#123D2A] hover:bg-emerald-100 border border-emerald-200'
+                              } disabled:opacity-50`}
+                            >
+                              {isSelected ? 'Selected' : 'Select'}
                             </button>
-                          </div>
+                          ) : (
+                            <button
+                              disabled
+                              title="Partner is currently busy and cannot be assigned"
+                              className="bg-slate-100 text-slate-400 border border-slate-200 px-3 py-1.5 rounded-lg text-xs font-bold opacity-60 cursor-not-allowed"
+                            >
+                              Unavailable
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );
                   })}
+
+                  {eligiblePartners.length === 0 && (
+                    <tr>
+                      <td colSpan={8} className="py-10 text-center text-slate-400">
+                        <UserX className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+                        <p className="text-sm font-bold text-slate-700">No eligible partners found</p>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          Try switching to "All Eligible Partners" or adjusting the radius.
+                        </p>
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
           </div>
 
-          {/* Bottom Grid: Visual Map & Assignment Confirmation Card */}
-          <div className="grid grid-cols-1 sm:grid-cols-12 gap-6 items-stretch">
-            {/* Visual Interactive Map (7 Cols) */}
-            <div className="sm:col-span-7 bg-white rounded-3xl p-5 border border-slate-200/80 shadow-sm flex flex-col justify-between relative overflow-hidden min-h-[300px]">
+          {/* Bottom Card: Assignment Request Workflow (Replaces Confirmation Card & Map) */}
+          <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm flex flex-col gap-4">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
-                <h4 className="text-sm font-extrabold text-[#0A192F]">Maid Locations</h4>
+                <h4 className="text-sm font-black text-[#0A192F]">
+                  {requestStatus === 'pending_acceptance'
+                    ? 'Assignment Request Sent'
+                    : requestStatus === 'accepted'
+                    ? 'Partner Assigned'
+                    : requestStatus === 'declined'
+                    ? 'Partner Declined'
+                    : 'Assignment Request'}
+                </h4>
                 <p className="text-[11px] text-slate-500 font-medium">
-                  View nearby maids and customer location
+                  {requestStatus === 'pending_acceptance'
+                    ? 'Waiting for partner to accept the assignment request.'
+                    : requestStatus === 'accepted'
+                    ? 'Partner has accepted the job. Booking is officially assigned.'
+                    : requestStatus === 'declined'
+                    ? 'Partner declined this request. Please select another partner.'
+                    : 'Review selected partner and send assignment request.'}
                 </p>
               </div>
 
-              {/* Map Canvas Mock with Pins */}
-              <div
-                className="my-3 rounded-2xl border border-slate-200/80 bg-cover bg-center h-48 relative flex items-center justify-center p-4 overflow-hidden"
-                style={{
-                  backgroundImage: `url('https://images.unsplash.com/photo-1524661135-423995f22d0b?auto=format&fit=crop&q=80&w=800')`,
-                }}
-              >
-                <div className="absolute inset-0 bg-slate-900/10 backdrop-blur-[1px]"></div>
+              {requestStatus === 'pending_acceptance' && (
+                <span className="flex items-center gap-1.5 bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold px-3 py-1 rounded-full animate-pulse">
+                  <Clock className="w-3.5 h-3.5" /> Waiting for Acceptance
+                </span>
+              )}
 
-                {/* Customer Pin */}
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-blue-600 text-white font-extrabold px-3 py-1.5 rounded-xl shadow-xl flex items-center gap-1.5 text-xs z-10 animate-bounce">
-                  <MapPin className="w-4 h-4" />
-                  <span>Customer (Kondapur)</span>
-                </div>
-
-                {/* Maid Pins */}
-                <div className="absolute top-1/4 left-1/4 bg-white/95 text-slate-800 font-bold px-2.5 py-1 rounded-lg shadow-lg text-[10px] flex items-center gap-1.5 border border-slate-200">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                  <span>Sravani K. • 1.8km</span>
-                </div>
-
-                <div className="absolute bottom-1/4 right-1/4 bg-white/95 text-slate-800 font-bold px-2.5 py-1 rounded-lg shadow-lg text-[10px] flex items-center gap-1.5 border border-slate-200">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                  <span>Laxmi T. • 1.2km</span>
-                </div>
-
-                {/* Map Zoom Controls */}
-                <div className="absolute bottom-2 left-2 flex flex-col gap-1 bg-white/90 rounded-lg p-1 border border-slate-200 shadow-sm z-20">
-                  <button className="w-6 h-6 flex items-center justify-center text-slate-700 hover:bg-slate-100 rounded">
-                    <Plus className="w-3.5 h-3.5" />
-                  </button>
-                  <button className="w-6 h-6 flex items-center justify-center text-slate-700 hover:bg-slate-100 rounded">
-                    <Minus className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-                <div className="absolute bottom-2 right-2 text-[10px] font-black text-slate-800 bg-white/90 px-2 py-0.5 rounded border border-slate-200">
-                  Hyderabad
-                </div>
-              </div>
+              {requestStatus === 'accepted' && (
+                <span className="flex items-center gap-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold px-3 py-1 rounded-full">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Assigned
+                </span>
+              )}
             </div>
 
-            {/* Assignment Confirmation Card (5 Cols) */}
-            <div className="sm:col-span-5 bg-white rounded-3xl p-5 border border-slate-200/80 shadow-sm flex flex-col justify-between">
-              <div>
-                <h4 className="text-sm font-extrabold text-[#0A192F] mb-3">
-                  Assignment Confirmation
-                </h4>
-
-                {selectedMaid ? (
-                  <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 flex flex-col gap-3">
-                    <div className="flex items-center gap-3">
-                      <img
-                        src={selectedMaid.photoUrl}
-                        alt={selectedMaid.fullName}
-                        className="w-12 h-12 rounded-full object-cover shadow-sm"
-                      />
-                      <div>
-                        <div className="text-sm font-extrabold text-slate-900">
-                          {selectedMaid.fullName}
-                        </div>
-                        <div className="flex items-center gap-2 text-xs text-slate-500 font-semibold mt-0.5">
-                          <span className="text-amber-600 font-bold flex items-center gap-0.5">
-                            ★ {selectedMaid.rating || 4.8}
-                          </span>
-                          <span>•</span>
-                          <span>{selectedMaid.distanceKm || 1.8} km</span>
-                          <span>•</span>
-                          <span>{selectedMaid.etaMins || 10} mins ETA</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="border-t border-slate-200/60 pt-3 text-xs space-y-1.5 font-medium text-slate-600">
-                      <div className="flex justify-between">
-                        <span>Booking ID:</span>
-                        <span className="font-extrabold text-slate-900">{selectedBooking.bookingId}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Customer:</span>
-                        <span className="font-bold text-slate-900">{selectedBooking.customerName}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Service:</span>
-                        <span className="font-bold text-slate-900">{selectedBooking.serviceName}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Date & Time:</span>
-                        <span className="font-bold text-slate-900">{selectedBooking.date}, {selectedBooking.timeSlot}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Estimated Arrival:</span>
-                        <span className="font-extrabold text-[#043927]">{selectedMaid.etaMins || 10} mins</span>
+            {/* Content Based on Request Status */}
+            {selectedPartner ? (
+              <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 flex flex-col gap-3">
+                {/* Partner Details Summary */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <PartnerAvatar
+                      photoUrl={selectedPartner.photoUrl}
+                      name={selectedPartner.fullName}
+                      size="w-11 h-11"
+                    />
+                    <div>
+                      <h5 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                        {selectedPartner.fullName}
+                        <span className="text-[10px] bg-emerald-100 text-emerald-800 font-extrabold px-2 py-0.5 rounded-full">
+                          {selectedPartner.maidId || selectedPartner.uid}
+                        </span>
+                      </h5>
+                      <div className="flex items-center gap-2 text-xs text-slate-500 font-medium mt-0.5">
+                        <span className="text-amber-600 font-bold flex items-center gap-0.5">
+                          <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                          {selectedPartner.rating || 5.0}
+                        </span>
+                        <span>·</span>
+                        <span>{selectedPartner.distanceKm || 1.2} km away</span>
+                        <span>·</span>
+                        <span className="text-[#123D2A] font-bold">{selectedPartner.etaMins || 8} min ETA</span>
                       </div>
                     </div>
                   </div>
-                ) : (
-                  <div className="p-4 bg-slate-50 rounded-xl text-center text-xs text-slate-400 font-medium">
-                    Select a maid from the list to preview assignment
+
+                  {requestStatus === 'idle' && (
+                    <button
+                      onClick={() => setSelectedPartnerId(null)}
+                      className="text-xs font-bold text-slate-600 hover:text-slate-800 bg-white border border-slate-200 px-3 py-1.5 rounded-xl cursor-pointer shadow-2xs self-start sm:self-auto"
+                    >
+                      Change Partner
+                    </button>
+                  )}
+                </div>
+
+                {/* Status-Specific Details */}
+                {requestStatus === 'pending_acceptance' && (
+                  <div className="border-t border-slate-200 pt-3 flex flex-col gap-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-500 font-medium">Request Status:</span>
+                      <strong className="text-amber-700 font-black">Waiting for partner acceptance</strong>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-500 font-medium">Offer Sent At:</span>
+                      <strong className="text-slate-800 font-bold">{requestSentAt || 'Just now'}</strong>
+                    </div>
+                    <p className="text-[11px] text-slate-500 bg-white p-2.5 rounded-xl border border-slate-200 mt-1">
+                      ℹ️ The booking status remains <strong>Pending Assignment</strong>. Once {selectedPartner.fullName} clicks "Accept Job" in the Partner App, the booking will be officially assigned.
+                    </p>
+
+                    {/* Simulation Buttons for Testing/Demo */}
+                    <div className="bg-emerald-50/60 border border-emerald-200 rounded-xl p-3 mt-1 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="text-xs text-emerald-900 font-semibold">
+                        <span>Partner App Simulation:</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={handlePartnerAccept}
+                          disabled={isSubmitting}
+                          className="bg-[#123D2A] hover:bg-[#184a34] text-white px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition-all shadow-2xs"
+                        >
+                          Simulate Partner Accept
+                        </button>
+                        <button
+                          onClick={handlePartnerDecline}
+                          disabled={isSubmitting}
+                          className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition-all"
+                        >
+                          Simulate Partner Decline
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {requestStatus === 'accepted' && (
+                  <div className="border-t border-slate-200 pt-3 flex flex-col gap-2">
+                    <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-xs text-emerald-900 flex items-center justify-between">
+                      <div>
+                        <strong className="block font-black text-emerald-950">Partner Confirmed & Assigned</strong>
+                        <span className="text-[11px] text-emerald-700">
+                          {selectedPartner.fullName} accepted the request. Booking status updated to Assigned.
+                        </span>
+                      </div>
+                      <CheckCircle2 className="w-5 h-5 text-emerald-700 shrink-0" />
+                    </div>
+                  </div>
+                )}
+
+                {requestStatus === 'declined' && (
+                  <div className="border-t border-slate-200 pt-3 flex flex-col gap-2">
+                    <div className="p-3 bg-rose-50 rounded-xl border border-rose-200 text-xs text-rose-900 flex items-center justify-between">
+                      <div>
+                        <strong className="block font-black text-rose-950">Request Declined</strong>
+                        <span className="text-[11px] text-rose-700">
+                          {selectedPartner.fullName} declined booking {selectedBooking.bookingId}. Please choose another partner.
+                        </span>
+                      </div>
+                      <XCircle className="w-5 h-5 text-rose-700 shrink-0" />
+                    </div>
                   </div>
                 )}
               </div>
+            ) : (
+              <div className="p-6 bg-slate-50 rounded-2xl border border-slate-200 text-center text-xs text-slate-400 font-medium">
+                Select an available partner from the list above to prepare assignment request.
+              </div>
+            )}
 
-              <div className="flex items-center gap-3 mt-4">
-                <button
-                  onClick={() => setCurrentTab('pending-bookings')}
-                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 px-3 rounded-xl text-xs transition-all cursor-pointer text-center"
-                >
-                  Cancel
-                </button>
+            {/* Bottom Actions Bar */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+              <button
+                onClick={() => setCurrentTab('all-bookings')}
+                className="w-full sm:w-auto px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer text-center"
+              >
+                Back to Bookings
+              </button>
 
-                <button
-                  onClick={handleConfirmAssignment}
-                  className="flex-1 bg-[#043927] hover:bg-[#064e3b] text-white font-extrabold py-3 px-3 rounded-xl text-xs transition-all cursor-pointer shadow-md flex items-center justify-center gap-1.5"
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>Confirm Assignment</span>
-                </button>
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                {requestStatus === 'idle' && (
+                  <button
+                    disabled={!selectedPartner || isSubmitting || !selectedPartner.isOnline || selectedPartner.currentStatus === 'busy'}
+                    onClick={handleSendAssignmentRequest}
+                    className="w-full sm:w-auto px-5 py-2.5 bg-[#123D2A] hover:bg-[#184a34] text-white rounded-xl text-xs font-extrabold transition-all cursor-pointer shadow-md disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Send Assignment Request</span>
+                  </button>
+                )}
+
+                {requestStatus === 'pending_acceptance' && (
+                  <button
+                    onClick={handleCancelRequest}
+                    disabled={isSubmitting}
+                    className="w-full sm:w-auto px-4 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-all cursor-pointer text-center"
+                  >
+                    Cancel Request
+                  </button>
+                )}
+
+                {requestStatus === 'accepted' && (
+                  <button
+                    onClick={() => openBookingDetails(selectedBooking.bookingId)}
+                    className="w-full sm:w-auto px-5 py-2.5 bg-[#123D2A] hover:bg-[#184a34] text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-md flex items-center justify-center gap-2"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>View Booking Details</span>
+                  </button>
+                )}
+
+                {requestStatus === 'declined' && (
+                  <button
+                    onClick={() => {
+                      setRequestStatus('idle');
+                      setSelectedPartnerId(null);
+                    }}
+                    className="w-full sm:w-auto px-5 py-2.5 bg-[#123D2A] hover:bg-[#184a34] text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-md flex items-center justify-center gap-2"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Find Another Partner</span>
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -538,3 +829,4 @@ export const AssignMaidPage: React.FC = () => {
     </div>
   );
 };
+

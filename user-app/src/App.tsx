@@ -1,5 +1,7 @@
 import React from 'react';
 import { View, StyleSheet, StatusBar } from 'react-native';
+import { applyGlobalTypography } from './theme/typography';
+import { useAppFonts } from './theme/useAppFonts';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CartProvider } from './context/CartContext';
 import { BookingProvider } from './context/BookingContext';
@@ -10,6 +12,7 @@ import { ProfileSetupScreen } from './screens/profile-setup/ProfileSetupScreen';
 import { CustomerHomeScreen } from './screens/customer-home/CustomerHomeScreen';
 import { CleaningServicesScreen } from './screens/services-listing/CleaningServicesScreen';
 import { ServiceDetailsScreen } from './screens/service-details/ServiceDetailsScreen';
+import { RelatedAddOnsScreen } from './screens/booking/RelatedAddOnsScreen';
 import { AddressConfirmationScreen } from './screens/booking/AddressConfirmationScreen';
 import { BookingSummaryScreen } from './screens/booking/BookingSummaryScreen';
 import { PaymentScreen } from './screens/booking/PaymentScreen';
@@ -32,9 +35,94 @@ import { MaidProfileScreen } from './screens/maid-profile/MaidProfileScreen';
 import { BottomTabs } from './components/BottomTabs';
 
 const RouterView: React.FC = () => {
-  const { currentScreen } = useAuth();
+  const { currentScreen, user, maidProfile } = useAuth();
+
+  const isPartnerUser = user?.role === 'maid' || user?.role === 'partner' || (maidProfile?.status === 'approved' && user?.maidApplicationStatus === 'approved');
+  const isPartnerApproved = isPartnerUser && (maidProfile?.status === 'approved' || user?.maidApplicationStatus === 'approved');
 
   const renderScreen = () => {
+    // ── 1. Unauthenticated Visitor Routing ──
+    if (!user) {
+      switch (currentScreen) {
+        case 'splash':
+          return <SplashScreen />;
+        case 'login':
+          return <LoginScreen />;
+        case 'otp':
+        case 'otp_verification':
+          return <OtpVerificationScreen />;
+        case 'profile_setup':
+        case 'profile-setup':
+        case 'complete_profile':
+        case 'complete-profile':
+        case 'register':
+        case 'registration':
+        case 'customer_registration':
+          return <ProfileSetupScreen />;
+        case 'become_maid_info':
+        case 'become_maid':
+        case 'become-maid':
+          return <BecomeMaidInfoScreen />;
+        case 'maid_registration_form':
+        case 'become_maid_form':
+          return <MaidRegistrationFormScreen />;
+        case 'help':
+          return <HelpSupportScreen />;
+        default:
+          return <LoginScreen />;
+      }
+    }
+
+    // ── 2. Partner / Maid Dedicated Routing (Zero Customer Page Leakage) ──
+    if (isPartnerUser) {
+      if (isPartnerApproved) {
+        switch (currentScreen) {
+          case 'splash':
+            return <SplashScreen />;
+          case 'login':
+            return <LoginScreen />;
+          case 'maid_home':
+            return <MaidHomeScreen />;
+          case 'active_job':
+            return <ActiveJobScreen />;
+          case 'my_jobs':
+            return <MyJobsScreen />;
+          case 'earnings':
+            return <EarningsScreen />;
+          case 'maid_profile':
+            return <MaidProfileScreen />;
+          case 'help':
+            return <HelpSupportScreen />;
+          case 'notifications':
+            return <NotificationsScreen />;
+          default:
+            // Guard: All other routes default strictly to Partner Home
+            return <MaidHomeScreen />;
+        }
+      } else {
+        // Pending or Review Partner: show only partner status screen
+        switch (currentScreen) {
+          case 'splash':
+            return <SplashScreen />;
+          case 'login':
+            return <LoginScreen />;
+          case 'maid_status':
+          case 'become_maid_info':
+          case 'become_maid':
+          case 'become-maid':
+            return <BecomeMaidInfoScreen />;
+          case 'maid_registration_form':
+          case 'become_maid_form':
+            return <MaidRegistrationFormScreen />;
+          case 'help':
+            return <HelpSupportScreen />;
+          default:
+            return <BecomeMaidInfoScreen />;
+        }
+      }
+    }
+
+    // ── 3. Customer Dedicated Routing (No Partner Operational Pages) ──
     switch (currentScreen) {
       case 'splash':
         return <SplashScreen />;
@@ -45,6 +133,11 @@ const RouterView: React.FC = () => {
         return <OtpVerificationScreen />;
       case 'profile_setup':
       case 'profile-setup':
+      case 'complete_profile':
+      case 'complete-profile':
+      case 'register':
+      case 'registration':
+      case 'customer_registration':
         return <ProfileSetupScreen />;
       case 'home':
       case 'customer_home':
@@ -54,7 +147,14 @@ const RouterView: React.FC = () => {
         return <CleaningServicesScreen />;
       case 'service_details':
       case 'service-details':
+      case 'cart_summary':
+      case 'cart-summary':
         return <ServiceDetailsScreen />;
+      case 'related_addons':
+      case 'related-addons':
+        return <RelatedAddOnsScreen />;
+      case 'checkout_schedule':
+      case 'checkout-schedule':
       case 'address_confirmation':
       case 'address-confirmation':
         return <AddressConfirmationScreen />;
@@ -96,18 +196,8 @@ const RouterView: React.FC = () => {
         return <MaidRegistrationFormScreen />;
       case 'maid_status':
         return <BecomeMaidInfoScreen />;
-      case 'maid_home':
-        return <MaidHomeScreen />;
-      case 'active_job':
-        return <ActiveJobScreen />;
-      case 'my_jobs':
-        return <MyJobsScreen />;
-      case 'earnings':
-        return <EarningsScreen />;
-      case 'maid_profile':
-        return <MaidProfileScreen />;
       default:
-        return <SplashScreen />;
+        return <CustomerHomeScreen />;
     }
   };
 
@@ -126,7 +216,16 @@ const RouterView: React.FC = () => {
   );
 };
 
+// Apply global typography patch once on startup
+applyGlobalTypography();
+
 export function App() {
+  const [fontsLoaded] = useAppFonts();
+
+  if (!fontsLoaded) {
+    return null;
+  }
+
   return (
     <AuthProvider>
       <CartProvider>

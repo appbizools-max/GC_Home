@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import { supabase } from '../../config/supabase';
 import { MaidProfile, KycDocument } from '../../types';
@@ -29,10 +29,10 @@ import {
 export const PendingKYCTab: React.FC = () => {
   const { maids, approveMaid, rejectMaid, requestMaidCorrection, updateMaidKycDocStatus } = useAdmin();
 
-  // Find target maid for approval review (default to MD023 Saroja P or first pending)
+  // Find target maid for approval review
   const pendingMaidList = maids.filter(m => m.status === 'pending' || m.kycStatus === 'under_review');
   const [selectedMaidIndex, setSelectedMaidIndex] = useState<number>(0);
-  const targetMaid: MaidProfile = pendingMaidList[selectedMaidIndex] || maids.find(m => m.maidId === 'MD023') || maids[0];
+  const targetMaid: MaidProfile | undefined = pendingMaidList[selectedMaidIndex];
 
   // Active Document Tab
   const [activeDocType, setActiveDocType] = useState<string>('aadhaar');
@@ -88,17 +88,65 @@ export const PendingKYCTab: React.FC = () => {
     loadLiveDocs();
   }, [targetMaid?.uid]);
 
-  const fallbackDocs: KycDocument[] = [
-    { id: 'doc_1', type: 'aadhaar', title: 'Aadhaar Card', fileName: 'aadhaar_saroja.pdf', fileUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=800', fileSize: '245 KB', status: 'verified', uploadedAt: '14 Sep 2026, 10:24 AM', verifiedAt: '14 Sep 2026, 11:30 AM', verifiedBy: 'Admin' },
-    { id: 'doc_2', type: 'pan', title: 'PAN Card', fileName: 'pan_saroja.pdf', fileUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=800', fileSize: '190 KB', status: 'verified', uploadedAt: '14 Sep 2026, 10:25 AM', verifiedAt: '14 Sep 2026, 11:30 AM', verifiedBy: 'Admin' },
-    { id: 'doc_3', type: 'address_proof', title: 'Address Proof', fileName: 'address_saroja.pdf', fileUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=800', fileSize: '320 KB', status: 'under_review', uploadedAt: '14 Sep 2026, 10:26 AM' },
-    { id: 'doc_4', type: 'police_verification', title: 'Police Verification Certificate', fileName: 'police_saroja.pdf', fileUrl: '', fileSize: '0 KB', status: 'not_submitted', uploadedAt: '-' },
-    { id: 'doc_5', type: 'bank_passbook', title: 'Bank Passbook', fileName: 'bank_saroja.pdf', fileUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=800', fileSize: '410 KB', status: 'verified', uploadedAt: '14 Sep 2026, 10:28 AM', verifiedAt: '14 Sep 2026, 11:30 AM', verifiedBy: 'Admin' }
-  ];
+    const profileDocs: KycDocument[] = [];
+    if (targetMaid.aadhaarDocUrl || targetMaid.idProofUrl) {
+      profileDocs.push({
+        id: 'doc_aadhaar',
+        type: 'aadhaar',
+        title: 'Aadhaar Card',
+        fileName: 'aadhaar_card.jpg',
+        fileUrl: targetMaid.aadhaarDocUrl || targetMaid.idProofUrl,
+        fileSize: '240 KB',
+        status: 'under_review',
+        uploadedAt: targetMaid.appliedAt || 'Recent',
+      });
+    }
+    if (targetMaid.panDocUrl) {
+      profileDocs.push({
+        id: 'doc_pan',
+        type: 'pan',
+        title: 'PAN Card',
+        fileName: 'pan_card.jpg',
+        fileUrl: targetMaid.panDocUrl,
+        fileSize: '180 KB',
+        status: 'under_review',
+        uploadedAt: targetMaid.appliedAt || 'Recent',
+      });
+    }
+    if (targetMaid.addressProofUrl) {
+      profileDocs.push({
+        id: 'doc_address',
+        type: 'address_proof',
+        title: 'Address Proof',
+        fileName: 'address_proof.jpg',
+        fileUrl: targetMaid.addressProofUrl,
+        fileSize: '310 KB',
+        status: 'under_review',
+        uploadedAt: targetMaid.appliedAt || 'Recent',
+      });
+    }
+    if (targetMaid.otherDocsUrls && targetMaid.otherDocsUrls.length > 0) {
+      profileDocs.push({
+        id: 'doc_other',
+        type: 'other',
+        title: 'Supporting Documents',
+        fileName: 'supporting_docs.pdf',
+        fileUrl: targetMaid.otherDocsUrls[0],
+        fileSize: '450 KB',
+        status: 'under_review',
+        uploadedAt: targetMaid.appliedAt || 'Recent',
+      });
+    }
 
-  const kycDocs: KycDocument[] = dbKycDocs.length > 0 
-    ? dbKycDocs 
-    : (targetMaid.kycDocuments && targetMaid.kycDocuments.length > 0 ? targetMaid.kycDocuments : fallbackDocs);
+    const fallbackDocs: KycDocument[] = [
+      { id: 'doc_1', type: 'aadhaar', title: 'Aadhaar Card', fileName: 'aadhaar_saroja.pdf', fileUrl: targetMaid.aadhaarDocUrl || targetMaid.idProofUrl || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=800', fileSize: '245 KB', status: 'under_review', uploadedAt: targetMaid.appliedAt || 'Recent' },
+      { id: 'doc_2', type: 'pan', title: 'PAN Card', fileName: 'pan_saroja.pdf', fileUrl: targetMaid.panDocUrl || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=800', fileSize: '190 KB', status: 'under_review', uploadedAt: targetMaid.appliedAt || 'Recent' },
+      { id: 'doc_3', type: 'address_proof', title: 'Address Proof', fileName: 'address_saroja.pdf', fileUrl: targetMaid.addressProofUrl || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=800', fileSize: '320 KB', status: 'under_review', uploadedAt: targetMaid.appliedAt || 'Recent' },
+    ];
+
+    const kycDocs: KycDocument[] = dbKycDocs.length > 0
+      ? dbKycDocs
+      : (profileDocs.length > 0 ? profileDocs : fallbackDocs);
 
   const currentActiveDoc = kycDocs.find(d => d.type === activeDocType) || kycDocs[0];
 
@@ -453,7 +501,7 @@ export const PendingKYCTab: React.FC = () => {
             <div className="mt-6 pt-5 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
               <button
                 onClick={() => approveMaid(targetMaid.uid)}
-                className="w-full sm:w-auto px-6 py-3 bg-[#043927] hover:bg-[#064e3b] text-white rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg"
+                className="w-full sm:w-auto px-6 py-3 bg-[#123D2A] hover:bg-[#184a34] text-white rounded-xl text-xs font-extrabold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-lg"
               >
                 <UserCheck className="w-4 h-4" /> Approve Maid
               </button>
@@ -481,3 +529,4 @@ export const PendingKYCTab: React.FC = () => {
     </div>
   );
 };
+

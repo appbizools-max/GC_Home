@@ -7,10 +7,15 @@ export const MyJobsScreen: React.FC = () => {
   const { bookings, maidProfile, navigateTo } = useAuth();
   const [activeTab, setActiveTab] = useState<'assigned' | 'completed'>('assigned');
 
-  const maidJobs = bookings.filter(b => b.assignedMaidId === maidProfile?.uid || b.status === 'pending_assignment');
+  const maidId = maidProfile?.uid;
+  const maidJobs = bookings.filter(
+    b => maidId && b.assignedMaidId === maidId
+  );
 
   const filtered = maidJobs.filter(j => {
-    if (activeTab === 'assigned') return ['pending_assignment', 'maid_assigned', 'maid_accepted', 'in_progress'].includes(j.status);
+    if (activeTab === 'assigned') {
+      return ['maid_assigned', 'maid_accepted', 'partner_accepted', 'partner_en_route', 'partner_arrived', 'in_progress', 'cleaning_started'].includes(j.status);
+    }
     return j.status === 'completed';
   });
 

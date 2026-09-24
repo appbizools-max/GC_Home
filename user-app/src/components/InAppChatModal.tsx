@@ -251,14 +251,14 @@ export const InAppChatModal: React.FC<InAppChatModalProps> = ({
           onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
         >
           <View style={styles.noticeCard}>
-            <ShieldCheck size={16} color="#043927" />
+            <ShieldCheck size={16} color="#123D2A" />
             <Text style={styles.noticeText}>
               For your safety, direct phone sharing is prohibited. Coordinate arrival, gate entry, and cleaning instructions securely here.
             </Text>
           </View>
 
           {loading ? (
-            <ActivityIndicator size="small" color="#043927" style={{ marginVertical: 20 }} />
+            <ActivityIndicator size="small" color="#123D2A" style={{ marginVertical: 20 }} />
           ) : messages.length === 0 ? (
             <View style={styles.emptyState}>
               <MessageSquare size={32} color="#CBD5E1" />
@@ -371,7 +371,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#043927',
+    backgroundColor: '#123D2A',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -482,7 +482,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   bubbleMe: {
-    backgroundColor: '#043927',
+    backgroundColor: '#123D2A',
     borderBottomRightRadius: 2,
   },
   bubbleOther: {
@@ -580,7 +580,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#043927',
+    backgroundColor: '#123D2A',
     alignItems: 'center',
     justifyContent: 'center',
   },

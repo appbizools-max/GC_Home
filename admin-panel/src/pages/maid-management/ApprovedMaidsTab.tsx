@@ -1,6 +1,9 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import { MaidProfile } from '../../types';
+import { StatusBadge } from '../../components/StatusBadge';
+import { PaginationControls } from '../../components/PaginationControls';
+import { exportMaidsToCSV as triggerExportMaids } from '../../utils/exportUtils';
 import {
   CheckCircle2,
   Star,
@@ -38,10 +41,13 @@ export const ApprovedMaidsTab: React.FC = () => {
   // Active Tab inside Maid Profile View
   const [profileTab, setProfileTab] = useState<string>('overview');
 
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const pageSize = 10;
+
   const approvedMaids = maids.filter(m => m.status === 'approved');
 
   const filtered = approvedMaids.filter(m => {
-    if (selectedLocation !== 'All' && !m.serviceArea.toLowerCase().includes(selectedLocation.toLowerCase())) return false;
+    if (selectedLocation !== 'All' && !(m.serviceArea || '').toLowerCase().includes(selectedLocation.toLowerCase())) return false;
     if (selectedLanguage !== 'All' && !(m.languages || []).some(l => l.toLowerCase() === selectedLanguage.toLowerCase())) return false;
     if (selectedExperience !== 'All') {
       if (selectedExperience === '1-2 Years' && !m.experience?.includes('1') && !m.experience?.includes('2')) return false;
@@ -49,10 +55,12 @@ export const ApprovedMaidsTab: React.FC = () => {
     }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      if (!m.fullName.toLowerCase().includes(q) && !m.phone.includes(q) && !(m.maidId || m.uid).toLowerCase().includes(q)) return false;
+      if (!(m.fullName || '').toLowerCase().includes(q) && !(m.phone || '').includes(q) && !((m.maidId || m.uid) || '').toLowerCase().includes(q)) return false;
     }
     return true;
   });
+
+  const paginatedMaids = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   // KPI Calculations
   const totalApproved = approvedMaids.length;
@@ -185,7 +193,7 @@ export const ApprovedMaidsTab: React.FC = () => {
 
         <button
           onClick={exportMaidsToCSV}
-          className="px-4 py-2 bg-emerald-50 hover:bg-emerald-100 text-[#043927] border border-emerald-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+          className="px-4 py-2 bg-emerald-50 hover:bg-emerald-100 text-[#123D2A] border border-emerald-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
         >
           <Download className="w-4 h-4 text-emerald-700" /> Export CSV
         </button>
@@ -213,9 +221,9 @@ export const ApprovedMaidsTab: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
-              {filtered.map((m, idx) => (
+              {paginatedMaids.map((m, idx) => (
                 <tr key={m.uid} className="hover:bg-slate-50/80 transition-colors">
-                  <td className="py-3.5 px-4 text-center text-slate-400 font-bold">{idx + 1}</td>
+                  <td className="py-3.5 px-4 text-center text-slate-400 font-bold">{(currentPage - 1) * pageSize + idx + 1}</td>
                   <td className="py-3.5 px-4 font-extrabold text-slate-900">{m.maidId || m.uid}</td>
                   <td className="py-3.5 px-4">
                     <div className="flex items-center gap-2.5">
@@ -235,7 +243,7 @@ export const ApprovedMaidsTab: React.FC = () => {
                     </div>
                   </td>
                   <td className="py-3.5 px-4 font-black text-slate-900">
-                    ₹{(m.totalEarnings || m.earningsThisMonth || 25600).toLocaleString()}
+                    ₹{(m.totalEarnings || m.earningsThisMonth || 0).toLocaleString()}
                   </td>
                   <td className="py-3.5 px-4 text-slate-500">{m.appliedAt}</td>
                   <td className="py-3.5 px-4">
@@ -248,15 +256,34 @@ export const ApprovedMaidsTab: React.FC = () => {
                   <td className="py-3.5 px-4 text-right">
                     <button
                       onClick={() => setSelectedProfileMaid(m)}
-                      className="px-3.5 py-1.5 bg-[#043927] hover:bg-[#064e3b] text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-sm"
+                      className="px-3.5 py-1.5 bg-[#123D2A] hover:bg-[#184a34] text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-sm"
                     >
                       View Profile
                     </button>
                   </td>
                 </tr>
               ))}
+
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={11} className="py-12 text-center text-slate-400">
+                    <UserCheck className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+                    <p className="text-sm font-semibold">No approved maid partners found.</p>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
+        </div>
+
+        {/* Pagination Controls */}
+        <div className="p-4 bg-slate-50 border-t border-slate-200/80">
+          <PaginationControls
+            currentPage={currentPage}
+            totalItems={filtered.length}
+            pageSize={pageSize}
+            onPageChange={setCurrentPage}
+          />
         </div>
       </div>
 
@@ -302,7 +329,7 @@ export const ApprovedMaidsTab: React.FC = () => {
                 <button className="px-3.5 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer">
                   <Edit className="w-3.5 h-3.5" /> Edit Profile
                 </button>
-                <button className="px-4 py-2 bg-[#043927] hover:bg-[#064e3b] text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm">
+                <button className="px-4 py-2 bg-[#123D2A] hover:bg-[#184a34] text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm">
                   <MessageSquare className="w-3.5 h-3.5" /> Contact
                 </button>
                 <button
@@ -356,11 +383,11 @@ export const ApprovedMaidsTab: React.FC = () => {
                       </div>
                       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
                         <span className="text-[11px] font-semibold text-slate-400 block">Active Customers</span>
-                        <span className="text-xl font-black text-slate-900 mt-1 block">{selectedProfileMaid.uniqueCustomersServed || 56}</span>
+                        <span className="text-xl font-black text-slate-900 mt-1 block">{selectedProfileMaid.uniqueCustomersServed || 0}</span>
                       </div>
                       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
                         <span className="text-[11px] font-semibold text-slate-400 block">Total Earnings</span>
-                        <span className="text-xl font-black text-emerald-800 mt-1 block">₹{(selectedProfileMaid.totalEarnings || 52600).toLocaleString()}</span>
+                        <span className="text-xl font-black text-emerald-800 mt-1 block">₹{(selectedProfileMaid.totalEarnings || 0).toLocaleString()}</span>
                       </div>
                       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
                         <span className="text-[11px] font-semibold text-slate-400 block">On-Time Rate</span>
@@ -456,7 +483,7 @@ export const ApprovedMaidsTab: React.FC = () => {
                       <div className="space-y-2">
                         <button
                           onClick={() => toggleMaidActiveStatus(selectedProfileMaid.uid, 'rejected')}
-                          className="w-full py-2.5 bg-[#043927] hover:bg-[#064e3b] text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-sm"
+                          className="w-full py-2.5 bg-[#123D2A] hover:bg-[#184a34] text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-sm"
                         >
                           Deactivate
                         </button>
@@ -500,3 +527,4 @@ export const ApprovedMaidsTab: React.FC = () => {
     </div>
   );
 };
+

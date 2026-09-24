@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import { MaidProfile } from '../../types';
 import {
@@ -15,25 +15,29 @@ import {
   CheckCircle2,
   Send,
   UserX,
-  Edit2
+  UserCheck,
+  Edit2,
+  Briefcase,
+  Globe,
+  PhoneCall,
 } from 'lucide-react';
 
 export const PendingMaidDetailsTab: React.FC = () => {
-  const { maids, rejectMaid, requestMaidCorrection } = useAdmin();
+  const { maids, approveMaid, rejectMaid, requestMaidCorrection } = useAdmin();
 
   const [selectedLocation, setSelectedLocation] = useState<string>('All');
   const [selectedLanguage, setSelectedLanguage] = useState<string>('All');
-  const [selectedStatus, setSelectedStatus] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
-
   const [activeDrawerMaid, setActiveDrawerMaid] = useState<MaidProfile | null>(null);
+  const [correctionNote, setCorrectionNote] = useState<string>('');
+  const [showCorrectionPrompt, setShowCorrectionPrompt] = useState<boolean>(false);
 
-  // Filter only pending maids
-  const pendingMaids = maids.filter(m => m.status === 'pending');
+  // Filter pending maids and maids with correction requested
+  const pendingMaids = maids.filter(m => m.status === 'pending' || m.status === 'correction_requested');
 
   const filtered = pendingMaids.filter(m => {
     if (selectedLocation !== 'All' && !m.serviceArea.toLowerCase().includes(selectedLocation.toLowerCase())) return false;
-    if (selectedLanguage !== 'All' && !(m.languages || []).some(l => l.toLowerCase() === selectedLanguage.toLowerCase())) return false;
+    if (selectedLanguage !== 'All' && !(m.languagesSpoken || m.languages || []).some(l => l.toLowerCase() === selectedLanguage.toLowerCase())) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       if (!m.fullName.toLowerCase().includes(q) && !m.phone.includes(q) && !(m.maidId || m.uid).toLowerCase().includes(q)) return false;
@@ -41,33 +45,21 @@ export const PendingMaidDetailsTab: React.FC = () => {
     return true;
   });
 
-  // KPI calculations
   const totalPending = pendingMaids.length;
-  const personalPending = pendingMaids.filter(m => (m.missingSections || []).includes('Personal')).length;
-  const hubPending = pendingMaids.filter(m => (m.missingSections || []).includes('Hub')).length;
-  const bankPending = pendingMaids.filter(m => (m.missingSections || []).includes('Bank')).length;
-  const safetyPending = pendingMaids.filter(m => (m.missingSections || []).includes('Safety')).length;
-
-  const resetFilters = () => {
-    setSelectedLocation('All');
-    setSelectedLanguage('All');
-    setSelectedStatus('All');
-    setSearchQuery('');
-  };
 
   return (
     <div className="flex flex-col gap-5">
-      {/* KPI Section matching Screenshot 1 */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+      {/* KPI Section */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-emerald-50/60 p-4.5 rounded-2xl border border-emerald-200/80 flex items-center gap-3.5">
           <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold">
             <Clock className="w-5 h-5" />
           </div>
           <div>
-            <span className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider block">Total Pending</span>
+            <span className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider block">Total Applications</span>
             <div className="flex items-baseline gap-1.5">
               <span className="text-2xl font-black text-emerald-950">{totalPending}</span>
-              <span className="text-[10px] font-semibold text-emerald-700">Need completion</span>
+              <span className="text-[10px] font-semibold text-emerald-700">Need Ops Review</span>
             </div>
           </div>
         </div>
@@ -77,38 +69,28 @@ export const PendingMaidDetailsTab: React.FC = () => {
             <User className="w-5 h-5" />
           </div>
           <div>
-            <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider block">Personal Details</span>
-            <span className="text-2xl font-black text-amber-950">{personalPending}</span>
+            <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider block">Pending Verification</span>
+            <span className="text-2xl font-black text-amber-950">{pendingMaids.filter(m => m.status === 'pending').length}</span>
           </div>
         </div>
 
         <div className="bg-amber-50/50 p-4.5 rounded-2xl border border-amber-200/80 flex items-center gap-3.5">
           <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
-            <MapPin className="w-5 h-5" />
+            <AlertCircle className="w-5 h-5" />
           </div>
           <div>
-            <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider block">Hub Details</span>
-            <span className="text-2xl font-black text-amber-950">{hubPending}</span>
+            <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider block">Correction Requested</span>
+            <span className="text-2xl font-black text-amber-950">{pendingMaids.filter(m => m.status === 'correction_requested').length}</span>
           </div>
         </div>
 
-        <div className="bg-amber-50/50 p-4.5 rounded-2xl border border-amber-200/80 flex items-center gap-3.5">
-          <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
-            <CreditCard className="w-5 h-5" />
-          </div>
-          <div>
-            <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider block">Bank Details</span>
-            <span className="text-2xl font-black text-amber-950">{bankPending}</span>
-          </div>
-        </div>
-
-        <div className="bg-amber-50/50 p-4.5 rounded-2xl border border-amber-200/80 flex items-center gap-3.5">
-          <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
+        <div className="bg-emerald-50/50 p-4.5 rounded-2xl border border-emerald-200/80 flex items-center gap-3.5">
+          <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
             <ShieldCheck className="w-5 h-5" />
           </div>
           <div>
-            <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider block">Safety Details</span>
-            <span className="text-2xl font-black text-amber-950">{safetyPending}</span>
+            <span className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider block">Verified Active</span>
+            <span className="text-2xl font-black text-emerald-950">{maids.filter(m => m.status === 'approved').length}</span>
           </div>
         </div>
       </div>
@@ -122,11 +104,12 @@ export const PendingMaidDetailsTab: React.FC = () => {
             className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:border-emerald-600 cursor-pointer"
           >
             <option value="All">All Locations</option>
-            <option value="Bachupally">Bachupally</option>
-            <option value="Kondapur">Kondapur</option>
-            <option value="Gachibowli">Gachibowli</option>
-            <option value="Miyapur">Miyapur</option>
-            <option value="KPHB">KPHB</option>
+            <option value="Karimnagar">Karimnagar</option>
+            <option value="Kazipet">Kazipet</option>
+            <option value="Hanamkonda">Hanamkonda</option>
+            <option value="Warangal">Warangal</option>
+            <option value="Hyderabad">Hyderabad</option>
+            <option value="Bengaluru">Bengaluru</option>
           </select>
 
           <select
@@ -144,103 +127,93 @@ export const PendingMaidDetailsTab: React.FC = () => {
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="Search by maid name, phone or ID..."
+              placeholder="Search by partner name, phone or ID..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 outline-none focus:border-emerald-600"
             />
           </div>
-
-          <button
-            onClick={resetFilters}
-            className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
-          >
-            <RotateCcw className="w-3.5 h-3.5" /> Reset
-          </button>
         </div>
       </div>
 
-      {/* Pending Maids Table */}
+      {/* Table */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-black text-slate-500 uppercase tracking-wider">
-                <th className="py-3.5 px-4 w-10 text-center">#</th>
-                <th className="py-3.5 px-4">Maid ID</th>
-                <th className="py-3.5 px-4">Maid Name</th>
+              <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">
+                <th className="py-3.5 px-4">Partner Details</th>
                 <th className="py-3.5 px-4">Phone</th>
-                <th className="py-3.5 px-4">Registration Date</th>
-                <th className="py-3.5 px-4">Completion</th>
-                <th className="py-3.5 px-4">Missing Sections</th>
-                <th className="py-3.5 px-4">Location</th>
-                <th className="py-3.5 px-4">Last Updated</th>
+                <th className="py-3.5 px-4">Services Provided</th>
+                <th className="py-3.5 px-4">Languages</th>
+                <th className="py-3.5 px-4">Status</th>
                 <th className="py-3.5 px-4 text-right">Action</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
-              {filtered.map((maid, idx) => {
-                const pct = maid.kycCompletionPct || 60;
-                return (
-                  <tr key={maid.uid} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="py-3.5 px-4 text-center text-slate-400 font-bold">{idx + 1}</td>
-                    <td className="py-3.5 px-4 font-extrabold text-slate-900">{maid.maidId || maid.uid}</td>
-                    <td className="py-3.5 px-4">
-                      <div className="flex items-center gap-2.5">
-                        <img
-                          src={maid.photoUrl}
-                          alt={maid.fullName}
-                          className="w-8 h-8 rounded-full object-cover border border-slate-200"
-                        />
-                        <strong className="text-slate-900 font-bold">{maid.fullName}</strong>
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-4 font-semibold text-slate-700">{maid.phone}</td>
-                    <td className="py-3.5 px-4 text-slate-500">{maid.appliedAt}</td>
-                    <td className="py-3.5 px-4 w-36">
-                      <div className="flex items-center gap-2">
-                        <strong className="text-xs font-black text-slate-900 w-8">{pct}%</strong>
-                        <div className="flex-1 bg-slate-100 h-2 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full rounded-full ${
-                              pct >= 80 ? 'bg-emerald-500' : pct >= 50 ? 'bg-amber-500' : 'bg-rose-500'
-                            }`}
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <div className="flex flex-wrap gap-1.5">
-                        {(maid.missingSections || ['Bank', 'Safety']).map((sec, i) => (
-                          <span
-                            key={i}
-                            className="px-2 py-0.5 bg-rose-50 text-rose-700 border border-rose-200 rounded-md text-[10px] font-bold"
-                          >
-                            {sec}
+            <tbody className="divide-y divide-slate-100 text-xs">
+              {filtered.map(maid => (
+                <tr key={maid.uid} className="hover:bg-slate-50/80 transition-all">
+                  <td className="py-3.5 px-4">
+                    <div className="flex items-center gap-3">
+                      <img
+                        src={maid.photoUrl || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80'}
+                        alt={maid.fullName}
+                        className="w-10 h-10 rounded-full object-cover border border-slate-200"
+                      />
+                      <div>
+                        <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                          {maid.fullName}
+                          <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md">
+                            {maid.maidId || 'GC-PARTNER'}
                           </span>
-                        ))}
+                        </div>
+                        <div className="text-[11px] text-slate-500 mt-0.5">{maid.serviceArea || maid.city}</div>
                       </div>
-                    </td>
-                    <td className="py-3.5 px-4 font-semibold text-slate-800">{maid.serviceArea}</td>
-                    <td className="py-3.5 px-4 text-slate-500">{maid.lastUpdated || maid.appliedAt}</td>
-                    <td className="py-3.5 px-4 text-right">
-                      <button
-                        onClick={() => setActiveDrawerMaid(maid)}
-                        className="px-3.5 py-1.5 bg-[#043927] hover:bg-[#064e3b] text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-sm"
-                      >
-                        Review
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
+                    </div>
+                  </td>
+                  <td className="py-3.5 px-4 font-semibold text-slate-800">{maid.phone}</td>
+                  <td className="py-3.5 px-4">
+                    <div className="flex flex-wrap gap-1">
+                      {(maid.servicesProvided && maid.servicesProvided.length > 0
+                        ? maid.servicesProvided.map(s => s.serviceName)
+                        : (maid.skills as string[]) || ['General Cleaning']
+                      ).slice(0, 3).map((sName, i) => (
+                        <span key={i} className="px-2 py-0.5 bg-slate-100 text-slate-700 font-medium rounded-md text-[10px]">
+                          {sName}
+                        </span>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="py-3.5 px-4 font-medium text-slate-700">
+                    {(maid.languagesSpoken || maid.languages || ['Telugu', 'English']).join(', ')}
+                  </td>
+                  <td className="py-3.5 px-4">
+                    <span
+                      className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold ${
+                        maid.status === 'correction_requested'
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-emerald-100 text-emerald-800'
+                      }`}
+                    >
+                      {maid.status === 'correction_requested' ? 'Correction Requested' : 'Pending Verification'}
+                    </span>
+                  </td>
+                  <td className="py-3.5 px-4 text-right">
+                    <button
+                      onClick={() => setActiveDrawerMaid(maid)}
+                      className="px-3.5 py-1.5 bg-[#123D2A] hover:bg-[#184a34] text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-sm"
+                    >
+                      Review
+                    </button>
+                  </td>
+                </tr>
+              ))}
 
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center text-slate-400">
+                  <td colSpan={6} className="py-12 text-center text-slate-400">
                     <Clock className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                    <p className="text-sm font-semibold">No pending registrations found.</p>
+                    <p className="text-sm font-semibold">No pending partner applications found.</p>
                   </td>
                 </tr>
               )}
@@ -249,161 +222,241 @@ export const PendingMaidDetailsTab: React.FC = () => {
         </div>
       </div>
 
-      {/* Screen 2 Pending Review Side Drawer */}
+      {/* Review Side Drawer */}
       {activeDrawerMaid && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex justify-end animate-fadeIn">
-          <div className="w-full max-w-md bg-white h-full shadow-2xl overflow-y-auto flex flex-col justify-between font-sans">
+          <div className="w-full max-w-lg bg-white h-full shadow-2xl overflow-y-auto flex flex-col justify-between font-sans">
             <div>
               {/* Drawer Header */}
               <div className="px-6 py-5 border-b border-slate-200 flex items-center justify-between bg-slate-50/50">
                 <div className="flex items-center gap-3">
                   <img
-                    src={activeDrawerMaid.photoUrl}
+                    src={activeDrawerMaid.photoUrl || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80'}
                     alt={activeDrawerMaid.fullName}
-                    className="w-12 h-12 rounded-full object-cover border-2 border-amber-500"
+                    className="w-12 h-12 rounded-full object-cover border-2 border-emerald-500"
                   />
                   <div>
                     <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
                       {activeDrawerMaid.fullName}
                       <span className="text-[10px] bg-amber-100 text-amber-800 font-extrabold px-2 py-0.5 rounded-full">
-                        Pending Details
+                        {activeDrawerMaid.status === 'correction_requested' ? 'Correction Requested' : 'Pending Verification'}
                       </span>
                     </h3>
                     <p className="text-xs text-slate-500 font-medium mt-0.5">
-                      Maid ID: {activeDrawerMaid.maidId || activeDrawerMaid.uid} • Registered {activeDrawerMaid.appliedAt}
+                      Partner ID: {activeDrawerMaid.maidId || activeDrawerMaid.uid} • Applied: {activeDrawerMaid.appliedAt}
                     </p>
                   </div>
                 </div>
 
                 <button
-                  onClick={() => setActiveDrawerMaid(null)}
+                  onClick={() => {
+                    setActiveDrawerMaid(null);
+                    setShowCorrectionPrompt(false);
+                  }}
                   className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-all cursor-pointer"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
 
-              {/* Progress Card */}
-              <div className="p-6 border-b border-slate-100">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-extrabold text-slate-700">Registration Progress</span>
-                  <span className="text-xs font-black text-amber-600">{activeDrawerMaid.kycCompletionPct || 60}%</span>
-                </div>
-                <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden mb-6">
-                  <div
-                    className="bg-emerald-600 h-full rounded-full"
-                    style={{ width: `${activeDrawerMaid.kycCompletionPct || 60}%` }}
-                  />
-                </div>
-
-                {/* Section Checklist */}
-                <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider mb-3">Registration Sections</h4>
-                <div className="space-y-2.5">
-                  {/* Personal Details */}
-                  <div className="p-3 bg-slate-50 rounded-xl flex items-center justify-between border border-slate-200">
-                    <div className="flex items-center gap-2.5">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                      <span className="text-xs font-bold text-slate-800">Personal Details</span>
-                    </div>
-                    <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">Completed</span>
-                  </div>
-
-                  {/* Hub / Location Details */}
-                  <div className="p-3 bg-amber-50/50 rounded-xl flex items-center justify-between border border-amber-200">
-                    <div className="flex items-center gap-2.5">
-                      <AlertCircle className="w-4 h-4 text-amber-600" />
-                      <span className="text-xs font-bold text-slate-800">Hub / Location Details</span>
-                    </div>
-                    <button className="text-[11px] font-extrabold text-sky-600 hover:underline">Fill Now</button>
-                  </div>
-
-                  {/* KYC Documents */}
-                  <div className="p-3 bg-slate-50 rounded-xl flex items-center justify-between border border-slate-200">
-                    <div className="flex items-center gap-2.5">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                      <span className="text-xs font-bold text-slate-800">KYC Documents</span>
-                    </div>
-                    <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">Completed</span>
-                  </div>
-
-                  {/* Bank Details */}
-                  <div className="p-3 bg-amber-50/50 rounded-xl flex items-center justify-between border border-amber-200">
-                    <div className="flex items-center gap-2.5">
-                      <AlertCircle className="w-4 h-4 text-amber-600" />
-                      <span className="text-xs font-bold text-slate-800">Bank Details</span>
-                    </div>
-                    <button className="text-[11px] font-extrabold text-sky-600 hover:underline">Fill Now</button>
-                  </div>
-
-                  {/* Safety & Compliance */}
-                  <div className="p-3 bg-amber-50/50 rounded-xl flex items-center justify-between border border-amber-200">
-                    <div className="flex items-center gap-2.5">
-                      <AlertCircle className="w-4 h-4 text-amber-600" />
-                      <span className="text-xs font-bold text-slate-800">Safety & Compliance</span>
-                    </div>
-                    <button className="text-[11px] font-extrabold text-sky-600 hover:underline">Fill Now</button>
-                  </div>
-                </div>
-
-                {/* Basic Info */}
-                <div className="mt-6">
-                  <div className="flex items-center justify-between mb-3">
-                    <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">Basic Information</h4>
-                    <button className="text-xs font-bold text-emerald-700 flex items-center gap-1 hover:underline">
-                      <Edit2 className="w-3 h-3" /> Edit
-                    </button>
-                  </div>
-
-                  <div className="space-y-2 text-xs text-slate-700 font-medium">
-                    <div className="flex justify-between py-1 border-b border-slate-100">
+              {/* Drawer Content */}
+              <div className="p-6 space-y-6">
+                {/* 1. Personal & Contact Details */}
+                <div>
+                  <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <User className="w-4 h-4 text-emerald-600" /> Personal & Emergency Contact
+                  </h4>
+                  <div className="bg-slate-50 p-4 rounded-xl space-y-2 text-xs text-slate-700">
+                    <div className="flex justify-between py-1 border-b border-slate-200/60">
                       <span className="text-slate-500">Full Name</span>
                       <strong className="text-slate-900 font-bold">{activeDrawerMaid.fullName}</strong>
                     </div>
-                    <div className="flex justify-between py-1 border-b border-slate-100">
-                      <span className="text-slate-500">Phone Number</span>
+                    <div className="flex justify-between py-1 border-b border-slate-200/60">
+                      <span className="text-slate-500">Mobile Phone</span>
                       <strong className="text-slate-900 font-bold">{activeDrawerMaid.phone}</strong>
                     </div>
-                    <div className="flex justify-between py-1 border-b border-slate-100">
-                      <span className="text-slate-500">Location</span>
-                      <strong className="text-slate-900 font-bold">{activeDrawerMaid.serviceArea}</strong>
+                    <div className="flex justify-between py-1 border-b border-slate-200/60">
+                      <span className="text-slate-500">Email Address</span>
+                      <strong className="text-slate-900 font-bold">{activeDrawerMaid.email || 'N/A'}</strong>
                     </div>
-                    <div className="flex justify-between py-1 border-b border-slate-100">
-                      <span className="text-slate-500">Languages</span>
-                      <strong className="text-slate-900 font-bold">{(activeDrawerMaid.languages || ['Telugu', 'Hindi']).join(', ')}</strong>
+                    <div className="flex justify-between py-1 border-b border-slate-200/60">
+                      <span className="text-slate-500">Date of Birth / Gender</span>
+                      <strong className="text-slate-900 font-bold">{activeDrawerMaid.dob || 'N/A'} ({activeDrawerMaid.gender || 'N/A'})</strong>
                     </div>
-                    <div className="flex justify-between py-1 border-b border-slate-100">
-                      <span className="text-slate-500">Date of Birth</span>
-                      <strong className="text-slate-900 font-bold">{activeDrawerMaid.dob || '15 Mar 1998 (28 years)'}</strong>
+                    <div className="flex justify-between py-1">
+                      <span className="text-slate-500">Emergency Contact</span>
+                      <strong className="text-slate-900 font-bold">{activeDrawerMaid.emergencyContact || activeDrawerMaid.emergencyContactName}</strong>
                     </div>
                   </div>
                 </div>
+
+                {/* 2. Address & Operating Radius */}
+                <div>
+                  <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <MapPin className="w-4 h-4 text-emerald-600" /> Address & Operating Area
+                  </h4>
+                  <div className="bg-slate-50 p-4 rounded-xl space-y-2 text-xs text-slate-700">
+                    <div className="flex justify-between py-1 border-b border-slate-200/60">
+                      <span className="text-slate-500">Full Address</span>
+                      <strong className="text-slate-900 font-bold text-right max-w-[220px]">{activeDrawerMaid.fullAddress || activeDrawerMaid.address}</strong>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-slate-200/60">
+                      <span className="text-slate-500">City & Pincode</span>
+                      <strong className="text-slate-900 font-bold">{activeDrawerMaid.city} {activeDrawerMaid.pincode}</strong>
+                    </div>
+                    <div className="flex justify-between py-1">
+                      <span className="text-slate-500">Preferred Service Area & Radius</span>
+                      <strong className="text-slate-900 font-bold">{activeDrawerMaid.serviceArea} ({activeDrawerMaid.serviceRadiusKm} km)</strong>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Services Provided (Multi-Service Builder Display) */}
+                <div>
+                  <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <Briefcase className="w-4 h-4 text-emerald-600" /> Services Provided & Experience
+                  </h4>
+                  <div className="space-y-3">
+                    {(activeDrawerMaid.servicesProvided && activeDrawerMaid.servicesProvided.length > 0
+                      ? activeDrawerMaid.servicesProvided
+                      : (activeDrawerMaid.skills as any[]) || []
+                    ).map((srv: any, idx: number) => {
+                      const sName = typeof srv === 'object' ? srv.serviceName : String(srv);
+                      const expYrs = typeof srv === 'object' ? srv.experienceYears || 1 : 1;
+                      const expMths = typeof srv === 'object' ? srv.experienceMonths || 0 : 0;
+                      const desc = typeof srv === 'object' ? srv.description : '';
+
+                      return (
+                        <div key={idx} className="p-3 bg-emerald-50/50 border border-emerald-200/80 rounded-xl space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="font-extrabold text-slate-900 text-xs">{sName || 'General Service'}</span>
+                            <span className="text-[10px] bg-emerald-600 text-white font-bold px-2 py-0.5 rounded-full">
+                              {expYrs} yrs {expMths > 0 ? `${expMths} mos` : ''} exp
+                            </span>
+                          </div>
+                          {desc ? <p className="text-[11px] text-slate-600 mt-1">{desc}</p> : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 4. Languages Spoken */}
+                <div>
+                  <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-emerald-600" /> Languages Spoken
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {(activeDrawerMaid.languagesSpoken || activeDrawerMaid.languages || ['Telugu', 'English']).map((lang, i) => (
+                      <span key={i} className="px-3 py-1 bg-slate-100 border border-slate-200 text-slate-800 font-bold rounded-full text-xs">
+                        {lang}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 5. Bank Payout Details */}
+                <div>
+                  <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <CreditCard className="w-4 h-4 text-emerald-600" /> Bank Payout Setup
+                  </h4>
+                  <div className="bg-slate-50 p-4 rounded-xl space-y-2 text-xs text-slate-700">
+                    <div className="flex justify-between py-1 border-b border-slate-200/60">
+                      <span className="text-slate-500">Account Holder</span>
+                      <strong className="text-slate-900 font-bold">{activeDrawerMaid.bankDetails?.accountName || activeDrawerMaid.fullName}</strong>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-slate-200/60">
+                      <span className="text-slate-500">Bank Name</span>
+                      <strong className="text-slate-900 font-bold">{activeDrawerMaid.bankDetails?.bankName}</strong>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-slate-200/60">
+                      <span className="text-slate-500">Account Number</span>
+                      <strong className="text-slate-900 font-bold">{activeDrawerMaid.bankDetails?.accountNumber}</strong>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-slate-200/60">
+                      <span className="text-slate-500">IFSC Code</span>
+                      <strong className="text-slate-900 font-bold">{activeDrawerMaid.bankDetails?.ifscCode}</strong>
+                    </div>
+                    {activeDrawerMaid.bankDetails?.upiId && (
+                      <div className="flex justify-between py-1">
+                        <span className="text-slate-500">UPI ID</span>
+                        <strong className="text-slate-900 font-bold">{activeDrawerMaid.bankDetails.upiId}</strong>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Prompt Box for Requesting Correction */}
+                {showCorrectionPrompt && (
+                  <div className="p-4 bg-amber-50 border border-amber-300 rounded-xl space-y-3">
+                    <h5 className="text-xs font-extrabold text-amber-900">Specify Missing or Incorrect Information:</h5>
+                    <textarea
+                      value={correctionNote}
+                      onChange={e => setCorrectionNote(e.target.value)}
+                      placeholder="e.g. Please re-upload clear Aadhaar Card back photo and check bank IFSC code."
+                      className="w-full p-2.5 bg-white border border-amber-200 rounded-lg text-xs outline-none focus:border-amber-500 h-20"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={async () => {
+                          if (!correctionNote.trim()) return alert('Please enter correction instructions for the partner.');
+                          await requestMaidCorrection(activeDrawerMaid.uid, correctionNote);
+                          setActiveDrawerMaid(null);
+                          setShowCorrectionPrompt(false);
+                          setCorrectionNote('');
+                        }}
+                        className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold"
+                      >
+                        Send Correction Request
+                      </button>
+                      <button
+                        onClick={() => setShowCorrectionPrompt(false)}
+                        className="px-3 py-2 bg-slate-200 text-slate-700 rounded-lg text-xs font-bold"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
-            {/* Action Bar */}
-            <div className="p-6 border-t border-slate-200 bg-slate-50 flex items-center gap-3">
-              <button
-                onClick={() => {
-                  requestMaidCorrection(activeDrawerMaid.uid, 'Please complete missing bank and safety details.');
-                  setActiveDrawerMaid(null);
-                }}
-                className="flex-1 py-2.5 bg-[#043927] hover:bg-[#064e3b] text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md"
-              >
-                <Send className="w-3.5 h-3.5" /> Request Details
-              </button>
-              <button
-                onClick={() => {
-                  rejectMaid(activeDrawerMaid.uid, 'Incomplete details provided.');
-                  setActiveDrawerMaid(null);
-                }}
-                className="px-4 py-2.5 bg-white border border-rose-200 text-rose-700 hover:bg-rose-50 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer"
-              >
-                <UserX className="w-3.5 h-3.5" /> Reject
-              </button>
-            </div>
+            {/* Action Buttons */}
+            {!showCorrectionPrompt && (
+              <div className="p-6 border-t border-slate-200 bg-slate-50 flex items-center gap-2">
+                <button
+                  onClick={async () => {
+                    await approveMaid(activeDrawerMaid.uid);
+                    setActiveDrawerMaid(null);
+                  }}
+                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md"
+                >
+                  <UserCheck className="w-4 h-4" /> Approve Partner
+                </button>
+
+                <button
+                  onClick={() => setShowCorrectionPrompt(true)}
+                  className="py-2.5 px-3 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-1 cursor-pointer"
+                >
+                  <Send className="w-3.5 h-3.5" /> Request Correction
+                </button>
+
+                <button
+                  onClick={async () => {
+                    const reason = prompt('Enter rejection reason:') || 'Application criteria not met';
+                    await rejectMaid(activeDrawerMaid.uid, reason);
+                    setActiveDrawerMaid(null);
+                  }}
+                  className="py-2.5 px-3 bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 rounded-xl text-xs font-extrabold transition-all flex items-center justify-center gap-1 cursor-pointer"
+                >
+                  <UserX className="w-3.5 h-3.5" /> Reject
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
     </div>
   );
 };
+

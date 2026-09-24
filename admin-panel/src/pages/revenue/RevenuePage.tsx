@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import { Download, IndianRupee, CreditCard, Building2, CheckCircle2, Search, ArrowUpRight, Plus, Ticket, TrendingUp, Users, Edit2, Trash2, Calendar, X, Tag } from 'lucide-react';
 import { supabase } from '../../config/supabase';
+import { exportFinancialsToCSV } from '../../utils/exportUtils';
+import { PaginationControls } from '../../components/PaginationControls';
 
 interface Coupon {
   id: string;
@@ -36,7 +38,7 @@ interface Payout {
 }
 
 export const RevenuePage: React.FC = () => {
-  const { bookings, maids, exportBookingsToCSV } = useAdmin();
+  const { currentTab, bookings, maids, exportBookingsToCSV } = useAdmin();
   const [activeTab, setActiveTab] = useState<'overview' | 'payouts' | 'coupons'>('overview');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [coupons, setCoupons] = useState<Coupon[]>([]);
@@ -44,6 +46,16 @@ export const RevenuePage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [showCouponModal, setShowCouponModal] = useState(false);
   const [editingCoupon, setEditingCoupon] = useState<Coupon | null>(null);
+
+  useEffect(() => {
+    if (currentTab === 'partner-payouts' || currentTab === 'payouts') {
+      setActiveTab('payouts');
+    } else if (currentTab === 'coupons') {
+      setActiveTab('coupons');
+    } else if (currentTab === 'transactions' || currentTab === 'revenue') {
+      setActiveTab('overview');
+    }
+  }, [currentTab]);
 
   // Fetch coupons and payouts
   useEffect(() => {
@@ -257,17 +269,17 @@ export const RevenuePage: React.FC = () => {
         </div>
 
         <button
-          onClick={exportBookingsToCSV}
-          className="bg-[#043927] hover:bg-emerald-950 text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-2 shadow-sm cursor-pointer"
+          onClick={() => exportFinancialsToCSV(bookings, payouts)}
+          className="bg-[#123D2A] hover:bg-emerald-950 text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-2 shadow-sm cursor-pointer"
         >
           <Download className="w-4 h-4 text-emerald-300" />
-          <span>Export Revenue Report</span>
+          <span>Export Revenue Report (CSV)</span>
         </button>
       </div>
 
       {/* KPI Cards Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        <div className="bg-[#043927] text-white p-5 rounded-2xl shadow-sm flex flex-col justify-between">
+        <div className="bg-[#123D2A] text-white p-5 rounded-2xl shadow-sm flex flex-col justify-between">
           <div>
             <span className="text-[11px] font-bold text-emerald-200 uppercase tracking-wider block">GROSS REVENUE</span>
             <h3 className="text-2xl font-black mt-1">₹{Math.round(totalGross).toLocaleString()}</h3>
@@ -277,18 +289,17 @@ export const RevenuePage: React.FC = () => {
 
         <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col justify-between">
           <div>
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">PLATFORM COMMISSION (30%)</span>
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">PLATFORM COMMISSION</span>
             <h3 className="text-2xl font-black text-emerald-900 mt-1">₹{Math.round(totalPlatformCommission).toLocaleString()}</h3>
           </div>
-          <span className="text-xs text-emerald-600 font-bold mt-3 flex items-center gap-1">
-            <TrendingUp className="w-3.5 h-3.5" />
+          <span className="text-xs text-emerald-600 font-bold mt-3 block">
             Net Earnings
           </span>
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col justify-between">
           <div>
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">MAID PAYOUTS (70%)</span>
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">PARTNER PAYOUTS</span>
             <h3 className="text-2xl font-black text-blue-900 mt-1">₹{Math.round(totalMaidPayouts).toLocaleString()}</h3>
           </div>
           <span className="text-xs text-blue-600 font-bold mt-3 block">Partner Share</span>
@@ -400,22 +411,26 @@ export const RevenuePage: React.FC = () => {
                 Top Earning Partners
               </h4>
               <div className="space-y-2">
-                {maids
-                  .filter(m => m.status === 'approved')
-                  .sort((a, b) => (b.totalEarnings || 0) - (a.totalEarnings || 0))
-                  .slice(0, 4)
-                  .map((maid, index) => (
-                    <div key={maid.uid} className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-black text-slate-400 w-4">#{index + 1}</span>
-                        <img src={maid.photoUrl} alt={maid.fullName} className="w-6 h-6 rounded-full" />
-                        <span className="text-xs font-medium text-slate-700">{maid.fullName}</span>
+                {maids.filter(m => m.status === 'approved' && (m.totalEarnings || 0) > 0).length === 0 ? (
+                  <p className="text-xs text-slate-400 py-3 text-center">No partner earnings recorded yet.</p>
+                ) : (
+                  maids
+                    .filter(m => m.status === 'approved')
+                    .sort((a, b) => (b.totalEarnings || 0) - (a.totalEarnings || 0))
+                    .slice(0, 4)
+                    .map((maid, index) => (
+                      <div key={maid.uid} className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-black text-slate-400 w-4">#{index + 1}</span>
+                          <img src={maid.photoUrl} alt={maid.fullName} className="w-6 h-6 rounded-full" />
+                          <span className="text-xs font-medium text-slate-700">{maid.fullName}</span>
+                        </div>
+                        <span className="text-xs font-black text-emerald-700">
+                          ₹{Math.round(maid.totalEarnings || 0).toLocaleString()}
+                        </span>
                       </div>
-                      <span className="text-xs font-black text-emerald-700">
-                        ₹{Math.round(maid.totalEarnings || 0).toLocaleString()}
-                      </span>
-                    </div>
-                  ))}
+                    ))
+                )}
               </div>
             </div>
           </div>
@@ -424,20 +439,24 @@ export const RevenuePage: React.FC = () => {
           <div className="mt-6">
             <h4 className="text-sm font-bold text-slate-700 mb-3">Recent Completed Transactions</h4>
             <div className="space-y-2">
-              {completedBookings.slice(0, 5).map(booking => (
-                <div key={booking.id} className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-emerald-50 rounded-lg flex items-center justify-center">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              {completedBookings.length === 0 ? (
+                <p className="text-xs text-slate-400 py-3 text-center">No completed transactions recorded yet.</p>
+              ) : (
+                completedBookings.slice(0, 5).map(booking => (
+                  <div key={booking.id} className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-emerald-50 rounded-lg flex items-center justify-center">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-slate-900">{booking.serviceName}</p>
+                        <p className="text-[10px] text-slate-500">{booking.customerName} • {new Date(booking.bookingDate || booking.date || '').toLocaleDateString()}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-xs font-bold text-slate-900">{booking.serviceName}</p>
-                      <p className="text-[10px] text-slate-500">{booking.customerName} • {new Date(booking.bookingDate || booking.date || '').toLocaleDateString()}</p>
-                    </div>
+                    <span className="text-sm font-black text-slate-900">₹{booking.totalAmount.toLocaleString()}</span>
                   </div>
-                  <span className="text-sm font-black text-slate-900">₹{booking.totalAmount.toLocaleString()}</span>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
         </div>
@@ -524,7 +543,7 @@ export const RevenuePage: React.FC = () => {
                           <button
                             onClick={() => handleDisburse(payout.id, payout.maid_id, payout.amount)}
                             disabled={isLoading}
-                            className="bg-[#043927] hover:bg-emerald-950 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition-all shadow-sm cursor-pointer inline-flex items-center gap-1 disabled:opacity-50"
+                            className="bg-[#123D2A] hover:bg-emerald-950 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition-all shadow-sm cursor-pointer inline-flex items-center gap-1 disabled:opacity-50"
                           >
                             <CreditCard className="w-3.5 h-3.5 text-emerald-300" />
                             <span>Disburse</span>
@@ -570,7 +589,7 @@ export const RevenuePage: React.FC = () => {
                   setEditingCoupon(null);
                   setShowCouponModal(true);
                 }}
-                className="bg-[#043927] hover:bg-emerald-950 text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-2 shadow-sm cursor-pointer whitespace-nowrap"
+                className="bg-[#123D2A] hover:bg-emerald-950 text-white font-bold px-4 py-2 rounded-xl text-xs flex items-center gap-2 shadow-sm cursor-pointer whitespace-nowrap"
               >
                 <Plus className="w-4 h-4" />
                 <span>Add Coupon</span>
@@ -822,7 +841,7 @@ export const RevenuePage: React.FC = () => {
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="flex-1 bg-[#043927] hover:bg-emerald-950 text-white font-bold py-2.5 rounded-xl text-sm transition-colors disabled:opacity-50"
+                  className="flex-1 bg-[#123D2A] hover:bg-emerald-950 text-white font-bold py-2.5 rounded-xl text-sm transition-colors disabled:opacity-50"
                 >
                   {editingCoupon ? 'Update Coupon' : 'Create Coupon'}
                 </button>
@@ -836,3 +855,4 @@ export const RevenuePage: React.FC = () => {
 };
 
 export default RevenuePage;
+

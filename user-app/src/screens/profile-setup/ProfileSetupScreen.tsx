@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,554 +6,464 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
-  Image,
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  StatusBar,
+  Keyboard,
+  TouchableWithoutFeedback,
 } from 'react-native';
+import { User, Mail, ChevronLeft, AlertCircle, ArrowLeft } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { AppLogo } from '../../components/ui/AppLogo';
-import { ProgressStepper } from '../../components/ui/ProgressStepper';
-import { BottomWaveDecoration } from '../../components/ui/BottomWaveDecoration';
-import { CitySelectModal, CityItem, INDIAN_CITIES } from '../../components/ui/CitySelectModal';
-import { AddressInputModal } from '../../components/ui/AddressInputModal';
-import { PhotoPickerModal } from '../../components/ui/PhotoPickerModal';
-import {
-  User,
-  Mail,
-  MapPin,
-  Home,
-  Camera,
-  ChevronDown,
-  ShieldCheck,
-  ArrowRight,
-  Heart,
-} from 'lucide-react-native';
+import { PhoneNumberInput } from '../login/components/PhoneNumberInput';
+import { PrimaryButton } from '../login/components/PrimaryButton';
+import { TermsText } from '../login/components/TermsText';
 
 export const ProfileSetupScreen: React.FC = () => {
   const {
-    user,
-    pendingPhoneNumber,
-    completeProfileSetup,
+    registrationDraft,
+    setRegistrationDraft,
+    startRegistration,
     isAuthLoading,
     authError,
     clearAuthError,
+    navigateTo,
   } = useAuth();
 
-  const [fullName, setFullName] = useState(user?.name || 'Rohan Sharma');
-  const [email, setEmail] = useState(user?.email || 'rohan@gmail.com');
-  const [city, setCity] = useState('Bengaluru, Karnataka');
-  const [address, setAddress] = useState('123, 4th Cross, HSR Layout\nBengaluru, Karnataka - 560102');
-  const [profilePhoto, setProfilePhoto] = useState(user?.profilePhoto || '');
+  // Pre-fill from registration draft if returning back from OTP screen
+  const initialPhone = registrationDraft?.phone ? registrationDraft.phone.replace(/\D/g, '').slice(-10) : '';
+  const [fullName, setFullName] = useState(registrationDraft?.name || '');
+  const [phoneNumber, setPhoneNumber] = useState(initialPhone);
+  const [email, setEmail] = useState(registrationDraft?.email || '');
 
-  // Modals
-  const [showCityModal, setShowCityModal] = useState(false);
-  const [showAddressModal, setShowAddressModal] = useState(false);
-  const [showPhotoModal, setShowPhotoModal] = useState(false);
+  // Validation & error states
+  const [nameError, setNameError] = useState('');
+  const [phoneError, setPhoneError] = useState('');
+  const [emailError, setEmailError] = useState('');
+  const [alreadyRegisteredError, setAlreadyRegisteredError] = useState('');
 
-  // Validation errors
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  // Focused state for inputs
+  const [isNameFocused, setIsNameFocused] = useState(false);
+  const [isEmailFocused, setIsEmailFocused] = useState(false);
 
-  const validateForm = () => {
-    const newErrors: Record<string, string> = {};
+  // Sync draft as user types so it persists across back navigation
+  useEffect(() => {
+    setRegistrationDraft({
+      name: fullName,
+      phone: phoneNumber ? `+91 ${phoneNumber}` : '',
+      email,
+    });
+  }, [fullName, phoneNumber, email]);
 
-    if (!fullName.trim() || fullName.trim().length < 2) {
-      newErrors.fullName = 'Please enter your full name (at least 2 characters).';
-    }
-
-    if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      newErrors.email = 'Please enter a valid email address.';
-    }
-
-    if (!city.trim()) {
-      newErrors.city = 'Please select your city.';
-    }
-
-    if (!address.trim() || address.trim().length < 5) {
-      newErrors.address = 'Please provide your home address.';
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+  const handleNameChange = (text: string) => {
+    setFullName(text);
+    if (nameError) setNameError('');
+    if (authError) clearAuthError();
   };
 
-  const handleCitySelect = (selectedCity: CityItem) => {
-    const formatted = `${selectedCity.name}, ${selectedCity.state}`;
-    setCity(formatted);
-    // Auto update address city part if needed
-    if (errors.city) {
-      const next = { ...errors };
-      delete next.city;
-      setErrors(next);
-    }
-  };
-
-  const handleAddressSave = (newAddress: string) => {
-    setAddress(newAddress);
-    if (errors.address) {
-      const next = { ...errors };
-      delete next.address;
-      setErrors(next);
-    }
-  };
-
-  const handleSubmit = async () => {
-    if (!validateForm()) return;
+  const handlePhoneChange = (text: string) => {
+    const cleaned = text.replace(/[^0-9]/g, '');
+    setPhoneNumber(cleaned);
+    if (phoneError) setPhoneError('');
+    if (alreadyRegisteredError) setAlreadyRegisteredError('');
     if (authError) clearAuthError();
 
-    await completeProfileSetup({
+    if (cleaned.length === 10) {
+      if (!/^[6-9]/.test(cleaned)) {
+        setPhoneError('Please enter a valid 10-digit mobile number starting with 6-9.');
+      } else {
+        setPhoneError('');
+      }
+    }
+  };
+
+  const handleEmailChange = (text: string) => {
+    setEmail(text);
+    if (emailError) setEmailError('');
+    if (authError) clearAuthError();
+  };
+
+  const handleClearPhone = () => {
+    setPhoneNumber('');
+    setPhoneError('');
+    setAlreadyRegisteredError('');
+    if (authError) clearAuthError();
+  };
+
+  const validate = () => {
+    let isValid = true;
+    setNameError('');
+    setPhoneError('');
+    setEmailError('');
+    setAlreadyRegisteredError('');
+
+    // Full Name: required, at least 2 characters
+    if (!fullName.trim()) {
+      setNameError('Please enter your full name');
+      isValid = false;
+    } else if (fullName.trim().length < 2) {
+      setNameError('Full name must be at least 2 characters');
+      isValid = false;
+    }
+
+    // Mobile Number: required, 10 digits starting with 6-9
+    const rawDigits = phoneNumber.replace(/\D/g, '');
+    if (!rawDigits) {
+      setPhoneError('Please enter a valid mobile number');
+      isValid = false;
+    } else if (rawDigits.length !== 10 || !/^[6-9]\d{9}$/.test(rawDigits)) {
+      setPhoneError('Please enter a valid 10-digit Indian mobile number');
+      isValid = false;
+    }
+
+    // Email: optional, format checked if provided
+    if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setEmailError('Please enter a valid email address');
+      isValid = false;
+    }
+
+    return isValid;
+  };
+
+  const handleContinue = async () => {
+    Keyboard.dismiss();
+    if (!validate() || isAuthLoading) return;
+
+    const fullPhone = `+91 ${phoneNumber.replace(/\D/g, '')}`;
+
+    // startRegistration verifies availability in Supabase, saves draft, and sends OTP
+    const res = await startRegistration({
       name: fullName.trim(),
+      phone: fullPhone,
       email: email.trim() || undefined,
-      city,
-      address,
-      profilePhoto: profilePhoto || undefined,
     });
+
+    if (!res.success) {
+      if (res.message && res.message.includes('already registered')) {
+        setAlreadyRegisteredError('This mobile number is already registered. Please sign in to continue.');
+      }
+    }
+  };
+
+  const handleBackToLogin = () => {
+    if (authError) clearAuthError();
+    navigateTo('login');
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.keyboardContainer}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.contentContainer}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Top Header & Right Slogan Badge */}
-        <View style={styles.topHeaderRow}>
-          <AppLogo size="sm" showTagline={true} align="left" />
-          <View style={styles.topBadge}>
-            <Text style={styles.topBadgeText}>Clean Spaces</Text>
-            <Text style={styles.topBadgeText}>Brighter Lives</Text>
-            <Heart size={9} color="#168A68" fill="#168A68" style={{ marginTop: 1 }} />
-          </View>
-        </View>
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss} touchSoundDisabled>
+      <View style={styles.safeContainer}>
+        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
-        {/* Stepper Progress Bar */}
-        <View style={styles.stepperWrapper}>
-          <ProgressStepper currentStep={3} />
-        </View>
-
-        {/* Screen Title & Subtitle */}
-        <View style={styles.titleSection}>
-          <Text style={styles.screenTitle}>Complete Your Profile</Text>
-          <Text style={styles.screenSubtitle}>Just a few details to get you started</Text>
-        </View>
-
-        {/* Profile Avatar Upload Picker */}
-        <View style={styles.avatarSection}>
-          <TouchableOpacity
-            style={styles.avatarCircleWrapper}
-            onPress={() => setShowPhotoModal(true)}
-            activeOpacity={0.85}
+        <KeyboardAvoidingView
+          style={styles.flexWrapper}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <ScrollView
+            style={styles.scrollContainer}
+            contentContainerStyle={styles.contentContainer}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
           >
-            {profilePhoto ? (
-              <Image source={{ uri: profilePhoto }} style={styles.avatarImage} />
-            ) : (
-              <View style={styles.avatarPlaceholder}>
-                <User size={38} color="#A7F3D0" />
+            {/* Top Navigation Row */}
+            <View style={styles.topHeaderRow}>
+              <TouchableOpacity
+                style={styles.backBtn}
+                onPress={handleBackToLogin}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="Back to Login"
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <ChevronLeft size={22} color="#10243A" />
+              </TouchableOpacity>
+              <AppLogo size="sm" showTagline={false} align="center" />
+              <View style={styles.backBtnPlaceholder} />
+            </View>
+
+            {/* Screen Title & Subtitle */}
+            <View style={styles.titleSection}>
+              <Text style={styles.screenTitle}>Complete Your Profile</Text>
+              <Text style={styles.screenSubtitle}>Enter your details to create an account</Text>
+            </View>
+
+            {/* Form Area */}
+            <View style={styles.formContainer}>
+              {/* Already Registered Error Banner with Back to Login option */}
+              {Boolean(alreadyRegisteredError) && (
+                <View style={styles.alreadyRegisteredCard}>
+                  <View style={styles.alreadyRegisteredRow}>
+                    <AlertCircle size={18} color="#DC2626" style={{ marginTop: 2 }} />
+                    <View style={styles.alreadyRegisteredTextCol}>
+                      <Text style={styles.alreadyRegisteredTitle}>
+                        {alreadyRegisteredError}
+                      </Text>
+                      <TouchableOpacity
+                        style={styles.backToLoginActionBtn}
+                        onPress={handleBackToLogin}
+                        activeOpacity={0.75}
+                      >
+                        <ArrowLeft size={14} color="#123D2A" />
+                        <Text style={styles.backToLoginActionText}>Back to Login</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </View>
+              )}
+
+              {/* 1. Full Name Input (Required) */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>
+                  Full Name <Text style={styles.requiredAsterisk}>*</Text>
+                </Text>
+                <View
+                  style={[
+                    styles.inputFieldWrapper,
+                    isNameFocused && styles.inputFieldFocused,
+                    Boolean(nameError) && styles.inputFieldError,
+                  ]}
+                >
+                  <User size={18} color={isNameFocused ? '#0D8846' : '#64748B'} />
+                  <TextInput
+                    style={styles.textInput}
+                    value={fullName}
+                    onChangeText={handleNameChange}
+                    onFocus={() => setIsNameFocused(true)}
+                    onBlur={() => setIsNameFocused(false)}
+                    placeholder="Enter your full name"
+                    placeholderTextColor="#94A3B8"
+                    autoCapitalize="words"
+                    accessibilityLabel="Full Name input"
+                  />
+                </View>
+                {Boolean(nameError) && (
+                  <Text style={styles.errorText} accessibilityLiveRegion="polite">
+                    {nameError}
+                  </Text>
+                )}
               </View>
-            )}
 
-            {/* Camera Floating Badge */}
-            <View style={styles.cameraBadge}>
-              <Camera size={14} color="#FFFFFF" strokeWidth={2.4} />
-            </View>
-          </TouchableOpacity>
-
-          <TouchableOpacity onPress={() => setShowPhotoModal(true)} activeOpacity={0.7}>
-            <Text style={styles.avatarLabel}>Add Profile Photo</Text>
-          </TouchableOpacity>
-          <Text style={styles.avatarHint}>Helps us personalize your experience</Text>
-        </View>
-
-        {/* Main Form Fields Container */}
-        <View style={styles.formCard}>
-          {/* Field 1: Full Name */}
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Full Name</Text>
-            <View style={[styles.fieldBox, errors.fullName ? styles.fieldBoxError : null]}>
-              <User size={18} color="#168A68" />
-              <TextInput
-                style={styles.fieldInput}
-                value={fullName}
-                onChangeText={text => {
-                  setFullName(text);
-                  if (errors.fullName) {
-                    const next = { ...errors };
-                    delete next.fullName;
-                    setErrors(next);
-                  }
-                }}
-                placeholder="e.g. Rohan Sharma"
-                placeholderTextColor="#94A3B8"
+              {/* 2. Mobile Number Input with +91 fixed badge (Required) */}
+              <PhoneNumberInput
+                phoneNumber={phoneNumber}
+                onChangeText={handlePhoneChange}
+                onClear={handleClearPhone}
+                error={phoneError}
               />
+
+              {/* 3. Email Input (Optional) */}
+              <View style={styles.inputGroup}>
+                <View style={styles.labelRow}>
+                  <Text style={styles.inputLabel}>Email Address</Text>
+                  <Text style={styles.optionalBadge}>Optional</Text>
+                </View>
+                <View
+                  style={[
+                    styles.inputFieldWrapper,
+                    isEmailFocused && styles.inputFieldFocused,
+                    Boolean(emailError) && styles.inputFieldError,
+                  ]}
+                >
+                  <Mail size={18} color={isEmailFocused ? '#0D8846' : '#64748B'} />
+                  <TextInput
+                    style={styles.textInput}
+                    value={email}
+                    onChangeText={handleEmailChange}
+                    onFocus={() => setIsEmailFocused(true)}
+                    onBlur={() => setIsEmailFocused(false)}
+                    placeholder="name@example.com"
+                    placeholderTextColor="#94A3B8"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    accessibilityLabel="Email input (optional)"
+                  />
+                </View>
+                {Boolean(emailError) && (
+                  <Text style={styles.errorText} accessibilityLiveRegion="polite">
+                    {emailError}
+                  </Text>
+                )}
+              </View>
+
+              {/* Primary Continue CTA Button */}
+              <View style={styles.buttonWrapper}>
+                <PrimaryButton
+                  title={isAuthLoading ? 'Checking & Sending OTP...' : 'Continue'}
+                  onPress={handleContinue}
+                  disabled={isAuthLoading}
+                  loading={isAuthLoading}
+                  accessibilityLabel="Continue to verify mobile number"
+                />
+              </View>
             </View>
-            {errors.fullName ? <Text style={styles.errorText}>{errors.fullName}</Text> : null}
-          </View>
 
-          {/* Field 2: Email (Optional) */}
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Email (Optional)</Text>
-            <View style={[styles.fieldBox, errors.email ? styles.fieldBoxError : null]}>
-              <Mail size={18} color="#168A68" />
-              <TextInput
-                style={styles.fieldInput}
-                value={email}
-                onChangeText={text => {
-                  setEmail(text);
-                  if (errors.email) {
-                    const next = { ...errors };
-                    delete next.email;
-                    setErrors(next);
-                  }
-                }}
-                placeholder="e.g. rohan@gmail.com"
-                placeholderTextColor="#94A3B8"
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
-            </View>
-            {errors.email ? <Text style={styles.errorText}>{errors.email}</Text> : null}
-          </View>
-
-          {/* Field 3: Select City */}
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Select City</Text>
-            <TouchableOpacity
-              style={[styles.fieldBox, errors.city ? styles.fieldBoxError : null]}
-              onPress={() => setShowCityModal(true)}
-              activeOpacity={0.8}
-            >
-              <MapPin size={18} color="#168A68" />
-              <Text style={styles.fieldDropdownText} numberOfLines={1}>
-                {city || 'Select your city'}
-              </Text>
-              <ChevronDown size={18} color="#68788C" />
-            </TouchableOpacity>
-            {errors.city ? <Text style={styles.errorText}>{errors.city}</Text> : null}
-          </View>
-
-          {/* Field 4: Your Address */}
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Your Address</Text>
-            <TouchableOpacity
-              style={[styles.fieldBox, styles.addressFieldBox, errors.address ? styles.fieldBoxError : null]}
-              onPress={() => setShowAddressModal(true)}
-              activeOpacity={0.8}
-            >
-              <Home size={18} color="#168A68" style={{ marginTop: 2 }} />
-              <Text style={styles.addressDropdownText} numberOfLines={2}>
-                {address || 'Tap to enter house, street & locality'}
-              </Text>
-              <ChevronDown size={18} color="#68788C" />
-            </TouchableOpacity>
-            {errors.address ? <Text style={styles.errorText}>{errors.address}</Text> : null}
-          </View>
-
-          {/* Security Information Card */}
-          <View style={styles.securityInfoCard}>
-            <View style={styles.securityIconBox}>
-              <ShieldCheck size={20} color="#168A68" strokeWidth={2.2} />
-            </View>
-            <View style={styles.securityTextCol}>
-              <Text style={styles.securityTitle}>Your information is safe with us</Text>
-              <Text style={styles.securitySubtitle}>
-                We use your details only to provide and improve our services.
-              </Text>
-            </View>
-          </View>
-
-          {/* Global Auth Error */}
-          {authError ? <Text style={styles.globalErrorBanner}>{authError}</Text> : null}
-
-          {/* Primary CTA */}
-          <TouchableOpacity
-            style={[styles.continueBtn, isAuthLoading && styles.continueBtnDisabled]}
-            onPress={handleSubmit}
-            disabled={isAuthLoading}
-            activeOpacity={0.88}
-          >
-            {isAuthLoading ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
-            ) : (
-              <>
-                <Text style={styles.continueBtnText}>Continue</Text>
-                <ArrowRight size={18} color="#FFFFFF" strokeWidth={2.4} />
-              </>
-            )}
-          </TouchableOpacity>
-        </View>
-
-        {/* Bottom Slogan Wave */}
-        <BottomWaveDecoration slogan="A Cleaner Home for a Happier You" />
-      </ScrollView>
-
-      {/* Modals */}
-      <CitySelectModal
-        visible={showCityModal}
-        selectedCity={city}
-        onSelect={handleCitySelect}
-        onClose={() => setShowCityModal(false)}
-      />
-
-      <AddressInputModal
-        visible={showAddressModal}
-        currentAddress={address}
-        selectedCity={city}
-        onSave={handleAddressSave}
-        onClose={() => setShowAddressModal(false)}
-      />
-
-      <PhotoPickerModal
-        visible={showPhotoModal}
-        currentPhotoUri={profilePhoto}
-        onSelectPhoto={setProfilePhoto}
-        onRemovePhoto={() => setProfilePhoto('')}
-        onClose={() => setShowPhotoModal(false)}
-      />
-    </KeyboardAvoidingView>
+            {/* Terms and Privacy Footer */}
+            <TermsText />
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </View>
+    </TouchableWithoutFeedback>
   );
 };
 
 const styles = StyleSheet.create({
-  keyboardContainer: {
+  safeContainer: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 0,
   },
-  container: {
+  flexWrapper: {
+    flex: 1,
+  },
+  scrollContainer: {
     flex: 1,
     backgroundColor: '#FFFFFF',
   },
   contentContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 24,
-    minHeight: '100%',
+    paddingHorizontal: 22,
+    paddingTop: Platform.OS === 'ios' ? 12 : 8,
+    paddingBottom: Platform.OS === 'ios' ? 24 : 16,
+    flexGrow: 1,
+    justifyContent: 'space-between',
   },
   topHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    marginBottom: 20,
   },
-  topBadge: {
-    backgroundColor: '#EAF8F1',
+  backBtn: {
+    width: 40,
+    height: 40,
     borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
     borderWidth: 1,
-    borderColor: '#C6EEDB',
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  topBadgeText: {
-    fontSize: 8.5,
-    fontWeight: '800',
-    color: '#0E5B47',
-    lineHeight: 11,
-  },
-  stepperWrapper: {
-    marginBottom: 8,
+  backBtnPlaceholder: {
+    width: 40,
   },
   titleSection: {
+    marginBottom: 24,
     alignItems: 'center',
-    marginBottom: 14,
   },
   screenTitle: {
-    fontSize: 22,
-    fontWeight: '900',
+    fontSize: 24,
+    fontWeight: '800',
     color: '#10243A',
+    textAlign: 'center',
     letterSpacing: -0.3,
   },
   screenSubtitle: {
-    fontSize: 12.5,
-    color: '#68788C',
-    marginTop: 2,
+    fontSize: 14,
+    color: '#64748B',
+    textAlign: 'center',
+    marginTop: 6,
+    fontWeight: '500',
   },
-  avatarSection: {
-    alignItems: 'center',
+  formContainer: {
+    width: '100%',
     marginBottom: 16,
   },
-  avatarCircleWrapper: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    borderWidth: 2,
-    borderColor: '#C6EEDB',
-    borderStyle: 'dashed',
-    justifyContent: 'center',
+  inputGroup: {
+    marginBottom: 16,
+  },
+  labelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    position: 'relative',
-    backgroundColor: '#F5FCF8',
     marginBottom: 6,
   },
-  avatarPlaceholder: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: '#EAF8F1',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  avatarImage: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-  },
-  cameraBadge: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: '#168A68',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-  },
-  avatarLabel: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#168A68',
-  },
-  avatarHint: {
-    fontSize: 11,
-    color: '#68788C',
-    marginTop: 2,
-  },
-  formCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#E1E8E5',
-    shadowColor: '#10243A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-    marginBottom: 12,
-  },
-  fieldGroup: {
-    marginBottom: 12,
-  },
-  fieldLabel: {
-    fontSize: 12,
+  inputLabel: {
+    fontSize: 12.5,
     fontWeight: '700',
-    color: '#68788C',
+    color: '#334155',
     marginBottom: 6,
   },
-  fieldBox: {
+  requiredAsterisk: {
+    color: '#DC2626',
+  },
+  optionalBadge: {
+    fontSize: 11,
+    color: '#94A3B8',
+    fontWeight: '500',
+  },
+  inputFieldWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    backgroundColor: '#F5FCF8',
+    backgroundColor: '#F8FAFC',
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#E1E8E5',
-    paddingHorizontal: 12,
-    paddingVertical: 11,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 14,
+    height: 52,
+    gap: 10,
   },
-  addressFieldBox: {
-    alignItems: 'flex-start',
-    paddingVertical: 9,
+  inputFieldFocused: {
+    borderColor: '#123D2A',
+    backgroundColor: '#FFFFFF',
   },
-  fieldBoxError: {
-    borderColor: '#EF4444',
+  inputFieldError: {
+    borderColor: '#DC2626',
     backgroundColor: '#FEF2F2',
   },
-  fieldInput: {
+  textInput: {
     flex: 1,
-    fontSize: 14.5,
-    fontWeight: '700',
-    color: '#10243A',
-  },
-  fieldDropdownText: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#10243A',
-  },
-  addressDropdownText: {
-    flex: 1,
-    fontSize: 13,
+    fontSize: 15,
+    color: '#171A18',
     fontWeight: '600',
-    color: '#10243A',
-    lineHeight: 18,
+    paddingVertical: 0,
   },
   errorText: {
-    fontSize: 11,
-    color: '#EF4444',
+    fontSize: 11.5,
+    color: '#DC2626',
     marginTop: 4,
-    fontWeight: '600',
+    marginLeft: 2,
+    fontWeight: '500',
   },
-  securityInfoCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: '#EAF8F1',
-    borderRadius: 12,
-    padding: 12,
+  alreadyRegisteredCard: {
+    backgroundColor: '#FEF2F2',
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#C6EEDB',
-    marginTop: 4,
-    marginBottom: 14,
+    borderColor: '#FECACA',
+    padding: 14,
+    marginBottom: 18,
   },
-  securityIconBox: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#FFFFFF',
-    justifyContent: 'center',
-    alignItems: 'center',
+  alreadyRegisteredRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
   },
-  securityTextCol: {
+  alreadyRegisteredTextCol: {
     flex: 1,
   },
-  securityTitle: {
-    fontSize: 12.5,
-    fontWeight: '800',
-    color: '#0E5B47',
-  },
-  securitySubtitle: {
-    fontSize: 11,
-    color: '#168A68',
-    marginTop: 2,
-    lineHeight: 14,
-  },
-  globalErrorBanner: {
-    fontSize: 12,
-    color: '#EF4444',
+  alreadyRegisteredTitle: {
+    fontSize: 13,
+    color: '#991B1B',
     fontWeight: '600',
-    textAlign: 'center',
-    marginBottom: 10,
+    lineHeight: 18,
   },
-  continueBtn: {
-    backgroundColor: '#168A68',
-    borderRadius: 26,
-    paddingVertical: 14,
+  backToLoginActionBtn: {
     flexDirection: 'row',
-    justifyContent: 'center',
     alignItems: 'center',
-    gap: 8,
-    shadowColor: '#168A68',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 4,
+    gap: 6,
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#C6E3CB',
   },
-  continueBtnDisabled: {
-    backgroundColor: '#A3D9C9',
-    shadowOpacity: 0,
-    elevation: 0,
+  backToLoginActionText: {
+    fontSize: 12.5,
+    color: '#123D2A',
+    fontWeight: '700',
   },
-  continueBtnText: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#FFFFFF',
+  buttonWrapper: {
+    marginTop: 8,
   },
 });

@@ -33,19 +33,22 @@ export const DocumentsManagementTab: React.FC = () => {
   const [selectedDrawerDoc, setSelectedDrawerDoc] = useState<any | null>(null);
   const [activeDrawerTab, setActiveDrawerTab] = useState<'Document Details' | 'History'>('Document Details');
 
-  // Seed documents list for Documents Management view matching Reference Screenshot
-  const documentsList = [
-    { id: 'doc_1', maidId: 'MD001', maidName: 'Lakshmi Devi', photo: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=200', type: 'Aadhaar Card', fileName: 'aadhaar_lakshmi.pdf', uploadDate: '14 Sep 2026', status: 'Verified', verifiedBy: 'Admin', fileSize: '245 KB' },
-    { id: 'doc_2', maidId: 'MD001', maidName: 'Lakshmi Devi', photo: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=200', type: 'PAN Card', fileName: 'pan_lakshmi.pdf', uploadDate: '14 Sep 2026', status: 'Verified', verifiedBy: 'Admin', fileSize: '180 KB' },
-    { id: 'doc_3', maidId: 'MD003', maidName: 'Divya M.', photo: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=200', type: 'Address Proof', fileName: 'address_divya.pdf', uploadDate: '13 Sep 2026', status: 'Under Review', verifiedBy: '-', fileSize: '320 KB' },
-    { id: 'doc_4', maidId: 'MD005', maidName: 'Madhuri L.', photo: 'https://images.unsplash.com/photo-1567532939604-b6b5b0db2604?auto=format&fit=crop&q=80&w=200', type: 'Address Proof', fileName: 'address_madhuri.pdf', uploadDate: '12 Sep 2026', status: 'Rejected', verifiedBy: 'Admin', fileSize: '410 KB' },
-    { id: 'doc_5', maidId: 'MD008', maidName: 'Saroja P.', photo: 'https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?auto=format&fit=crop&q=80&w=200', type: 'Profile Photo', fileName: 'profile_saroja.jpg', uploadDate: '12 Sep 2026', status: 'Verified', verifiedBy: 'Admin', fileSize: '512 KB' },
-    { id: 'doc_6', maidId: 'MD011', maidName: 'Priya S.', photo: 'https://images.unsplash.com/photo-1548142813-c348350df52b?auto=format&fit=crop&q=80&w=200', type: 'Bank Passbook', fileName: 'bank_priya.pdf', uploadDate: '11 Sep 2026', status: 'Verified', verifiedBy: 'Admin', fileSize: '290 KB' },
-    { id: 'doc_7', maidId: 'MD015', maidName: 'Kavya N.', photo: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&q=80&w=200', type: 'Aadhaar Card', fileName: 'aadhaar_kavya.pdf', uploadDate: '10 Sep 2026', status: 'Rejected', verifiedBy: 'Admin', fileSize: '190 KB' },
-    { id: 'doc_8', maidId: 'MD017', maidName: 'Jyothi R.', photo: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200', type: 'PAN Card', fileName: 'pan_jyothi.pdf', uploadDate: '09 Sep 2026', status: 'Verified', verifiedBy: 'Admin', fileSize: '210 KB' },
-    { id: 'doc_9', maidId: 'MD022', maidName: 'Divya L.', photo: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=200', type: 'Address Proof', fileName: 'address_divya.pdf', uploadDate: '08 Sep 2026', status: 'Under Review', verifiedBy: '-', fileSize: '340 KB' },
-    { id: 'doc_10', maidId: 'MD026', maidName: 'Madhavi T.', photo: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=200', type: 'Address Proof', fileName: 'address_madhavi.pdf', uploadDate: '07 Sep 2026', status: 'Missing', verifiedBy: '-', fileSize: '0 KB' }
-  ];
+  // Dynamically derive documents list from live registered maids and their KYC documents
+  const documentsList = maids.flatMap(m => {
+    return (m.kycDocuments || []).map(doc => ({
+      id: doc.id,
+      maidId: m.maidId || m.uid,
+      maidName: m.fullName,
+      photo: m.photoUrl,
+      type: doc.type === 'aadhaar' ? 'Aadhaar Card' : doc.type === 'pan' ? 'PAN Card' : doc.type === 'address_proof' ? 'Address Proof' : doc.type === 'bank_passbook' ? 'Bank Passbook' : doc.title || 'Document',
+      fileName: doc.fileName,
+      uploadDate: doc.uploadedAt || 'Recently',
+      status: doc.status === 'verified' ? 'Verified' : doc.status === 'rejected' ? 'Rejected' : doc.status === 'under_review' ? 'Under Review' : 'Missing',
+      verifiedBy: doc.verifiedBy || (doc.status === 'verified' ? 'Admin' : '-'),
+      fileSize: doc.fileSize || '150 KB',
+      fileUrl: doc.fileUrl,
+    }));
+  });
 
   const filtered = documentsList.filter(d => {
     if (activeSubPill !== 'All' && !d.type.toLowerCase().includes(activeSubPill.toLowerCase())) return false;
@@ -56,6 +59,22 @@ export const DocumentsManagementTab: React.FC = () => {
     }
     return true;
   });
+
+  const totalDocs = documentsList.length;
+  const verifiedDocs = documentsList.filter(d => d.status === 'Verified').length;
+  const underReviewDocs = documentsList.filter(d => d.status === 'Under Review').length;
+  const rejectedDocs = documentsList.filter(d => d.status === 'Rejected').length;
+  const missingDocs = documentsList.filter(d => d.status === 'Missing').length;
+
+  const docCounts: Record<string, number> = {
+    All: totalDocs,
+    Aadhaar: documentsList.filter(d => d.type.toLowerCase().includes('aadhaar')).length,
+    PAN: documentsList.filter(d => d.type.toLowerCase().includes('pan')).length,
+    Address: documentsList.filter(d => d.type.toLowerCase().includes('address')).length,
+    Profile: documentsList.filter(d => d.type.toLowerCase().includes('profile')).length,
+    Bank: documentsList.filter(d => d.type.toLowerCase().includes('bank')).length,
+    Other: documentsList.filter(d => !['aadhaar', 'pan', 'address', 'profile', 'bank'].some(k => d.type.toLowerCase().includes(k))).length,
+  };
 
   const resetFilters = () => {
     setActiveSubPill('All');
@@ -77,7 +96,7 @@ export const DocumentsManagementTab: React.FC = () => {
 
         <button
           onClick={() => alert('Upload document flow initialized.')}
-          className="px-4 py-2.5 bg-[#043927] hover:bg-[#064e3b] text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer shadow-md self-start md:self-auto"
+          className="px-4 py-2.5 bg-[#123D2A] hover:bg-[#184a34] text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer shadow-md self-start md:self-auto"
         >
           <Upload className="w-4 h-4" /> Upload Document
         </button>
@@ -86,20 +105,20 @@ export const DocumentsManagementTab: React.FC = () => {
       {/* Top Document Type Sub-Pills matching Reference Screenshot */}
       <div className="bg-white p-1.5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-1.5 overflow-x-auto">
         {[
-          { id: 'All', label: 'All Documents', count: 842 },
-          { id: 'Aadhaar', label: 'Aadhaar', count: 206 },
-          { id: 'PAN', label: 'PAN', count: 198 },
-          { id: 'Address', label: 'Address Proof', count: 184 },
-          { id: 'Profile', label: 'Profile Photos', count: 128 },
-          { id: 'Bank', label: 'Bank Documents', count: 98 },
-          { id: 'Other', label: 'Other Documents', count: 110 }
+          { id: 'All', label: 'All Documents', count: docCounts.All },
+          { id: 'Aadhaar', label: 'Aadhaar', count: docCounts.Aadhaar },
+          { id: 'PAN', label: 'PAN', count: docCounts.PAN },
+          { id: 'Address', label: 'Address Proof', count: docCounts.Address },
+          { id: 'Profile', label: 'Profile Photos', count: docCounts.Profile },
+          { id: 'Bank', label: 'Bank Documents', count: docCounts.Bank },
+          { id: 'Other', label: 'Other Documents', count: docCounts.Other }
         ].map(pill => (
           <button
             key={pill.id}
             onClick={() => setActiveSubPill(pill.id)}
             className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
               activeSubPill === pill.id
-                ? 'bg-[#043927] text-white shadow-sm'
+                ? 'bg-[#123D2A] text-white shadow-sm'
                 : 'text-slate-600 hover:bg-slate-100'
             }`}
           >
@@ -119,8 +138,7 @@ export const DocumentsManagementTab: React.FC = () => {
           <div>
             <span className="text-xs font-bold text-slate-400 block mb-1">Total Documents</span>
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-black text-slate-900">842</span>
-              <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md">↑ 18% vs last month</span>
+              <span className="text-2xl font-black text-slate-900">{totalDocs}</span>
             </div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-sky-50 text-sky-700 flex items-center justify-center font-bold">
@@ -132,8 +150,7 @@ export const DocumentsManagementTab: React.FC = () => {
           <div>
             <span className="text-xs font-bold text-slate-400 block mb-1">Verified</span>
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-black text-slate-900">612</span>
-              <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md">73% of total</span>
+              <span className="text-2xl font-black text-slate-900">{verifiedDocs}</span>
             </div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold">
@@ -145,8 +162,7 @@ export const DocumentsManagementTab: React.FC = () => {
           <div>
             <span className="text-xs font-bold text-slate-400 block mb-1">Under Review</span>
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-black text-slate-900">124</span>
-              <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-md">15% of total</span>
+              <span className="text-2xl font-black text-slate-900">{underReviewDocs}</span>
             </div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
@@ -158,25 +174,23 @@ export const DocumentsManagementTab: React.FC = () => {
           <div>
             <span className="text-xs font-bold text-slate-400 block mb-1">Rejected</span>
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-black text-slate-900">62</span>
-              <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded-md">7% of total</span>
+              <span className="text-2xl font-black text-slate-900">{rejectedDocs}</span>
             </div>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center font-bold">
+          <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-700 flex items-center justify-center font-bold">
             <XCircle className="w-5 h-5" />
           </div>
         </div>
 
         <div className="bg-white p-4.5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
           <div>
-            <span className="text-xs font-bold text-slate-400 block mb-1">Missing / Not Submitted</span>
+            <span className="text-xs font-bold text-slate-400 block mb-1">Missing</span>
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-black text-slate-900">44</span>
-              <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded-md">5% of total</span>
+              <span className="text-2xl font-black text-slate-900">{missingDocs}</span>
             </div>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center font-bold">
-            <FileX className="w-5 h-5" />
+          <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center font-bold">
+            <AlertCircle className="w-5 h-5" />
           </div>
         </div>
       </div>
@@ -249,7 +263,7 @@ export const DocumentsManagementTab: React.FC = () => {
           </button>
 
           <button
-            className="px-4 py-2 bg-[#043927] hover:bg-[#064e3b] text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+            className="px-4 py-2 bg-[#123D2A] hover:bg-[#184a34] text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
           >
             <Search className="w-3.5 h-3.5" /> Search
           </button>
@@ -309,7 +323,7 @@ export const DocumentsManagementTab: React.FC = () => {
                     <td className="py-3.5 px-4 text-right">
                       <button
                         onClick={() => setSelectedDrawerDoc(d)}
-                        className="px-3.5 py-1.5 bg-[#043927] hover:bg-[#064e3b] text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-sm"
+                        className="px-3.5 py-1.5 bg-[#123D2A] hover:bg-[#184a34] text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-sm"
                       >
                         View
                       </button>
@@ -317,6 +331,15 @@ export const DocumentsManagementTab: React.FC = () => {
                   </tr>
                 );
               })}
+
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="py-12 text-center text-slate-400">
+                    <FileText className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+                    <p className="text-sm font-semibold">No documents found matching criteria.</p>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -480,4 +503,5 @@ export const DocumentsManagementTab: React.FC = () => {
     </div>
   );
 };
+
 

@@ -16,7 +16,8 @@ import {
   CheckCircle2,
   Clock,
   UserCheck,
-  Edit2
+  Edit2,
+  AlertCircle
 } from 'lucide-react';
 
 export const InactiveMaidsTab: React.FC = () => {
@@ -40,10 +41,10 @@ export const InactiveMaidsTab: React.FC = () => {
     return true;
   });
 
-  const totalInactive = 18;
-  const onLeaveCount = 8;
-  const deactivatedCount = 6;
-  const notRespondingCount = 4;
+  const totalInactive = inactiveMaids.length;
+  const onLeaveCount = inactiveMaids.filter(m => m.adminNotes?.toLowerCase().includes('leave')).length;
+  const deactivatedCount = inactiveMaids.filter(m => m.status === 'rejected').length;
+  const notRespondingCount = inactiveMaids.filter(m => !m.isOnline && m.status === 'approved').length;
 
   const resetFilters = () => {
     setSelectedReason('All');
@@ -60,7 +61,6 @@ export const InactiveMaidsTab: React.FC = () => {
             <span className="text-xs font-bold text-rose-800 uppercase tracking-wider block mb-1">Total Inactive Maids</span>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-black text-rose-950">{totalInactive}</span>
-              <span className="text-[10px] font-bold text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded-md">↓ 12% vs last month</span>
             </div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-rose-600 text-white flex items-center justify-center font-bold">
@@ -73,7 +73,6 @@ export const InactiveMaidsTab: React.FC = () => {
             <span className="text-xs font-bold text-slate-400 block mb-1">On Leave</span>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-black text-slate-900">{onLeaveCount}</span>
-              <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-md">44% of inactive</span>
             </div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
@@ -86,7 +85,6 @@ export const InactiveMaidsTab: React.FC = () => {
             <span className="text-xs font-bold text-slate-400 block mb-1">Deactivated</span>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-black text-slate-900">{deactivatedCount}</span>
-              <span className="text-[10px] font-bold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded-md">33% of inactive</span>
             </div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center font-bold">
@@ -99,7 +97,6 @@ export const InactiveMaidsTab: React.FC = () => {
             <span className="text-xs font-bold text-slate-400 block mb-1">Not Responding</span>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-black text-slate-900">{notRespondingCount}</span>
-              <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded-md">22% of inactive</span>
             </div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center font-bold">
@@ -172,49 +169,47 @@ export const InactiveMaidsTab: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
-              {[
-                { id: 'MD004', name: 'Sravani P.', phone: '+91 91234 56789', loc: 'Kondapur', last: '12 Aug 2026', reason: 'On Leave', since: '12 Aug 2026', status: 'On Leave', bg: 'bg-amber-100 text-amber-900' },
-                { id: 'MD011', name: 'Neha R.', phone: '+91 99876 11223', loc: 'Miyapur', last: '05 Sep 2026', reason: 'Not Responding', since: '05 Sep 2026', status: 'Not Responding', bg: 'bg-rose-100 text-rose-800' },
-                { id: 'MD018', name: 'Pooja T.', phone: '+91 93456 77890', loc: 'Bachupally', last: '28 Aug 2026', reason: 'Personal Reasons', since: '28 Aug 2026', status: 'On Leave', bg: 'bg-amber-100 text-amber-900' },
-                { id: 'MD022', name: 'Kavitha M.', phone: '+91 90123 44556', loc: 'Gachibowli', last: '20 Aug 2026', reason: 'Health Issues', since: '20 Aug 2026', status: 'On Leave', bg: 'bg-amber-100 text-amber-900' },
-                { id: 'MD028', name: 'Divya L.', phone: '+91 98765 43210', loc: 'Kondapur', last: '15 Jul 2026', reason: 'Moved to Another City', since: '15 Jul 2026', status: 'Deactivated', bg: 'bg-rose-100 text-rose-800' },
-                { id: 'MD034', name: 'Anjali R.', phone: '+91 79876 55432', loc: 'Madhapur', last: '02 Sep 2026', reason: 'Not Interested', since: '02 Sep 2026', status: 'Deactivated', bg: 'bg-rose-100 text-rose-800' },
-                { id: 'MD038', name: 'Rekha S.', phone: '+91 77890 33445', loc: 'KPHB', last: '18 Aug 2026', reason: 'Family Commitments', since: '18 Aug 2026', status: 'On Leave', bg: 'bg-amber-100 text-amber-900' }
-              ].map((row, idx) => (
-                <tr key={row.id} className="hover:bg-slate-50/80 transition-colors">
-                  <td className="py-3.5 px-4 text-center text-slate-400 font-bold">{idx + 1}</td>
-                  <td className="py-3.5 px-4 font-extrabold text-slate-900">{row.id}</td>
-                  <td className="py-3.5 px-4">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-full bg-slate-200 font-bold text-slate-700 flex items-center justify-center text-xs">
-                        {row.name.charAt(0)}
-                      </div>
-                      <strong className="text-slate-900 font-bold">{row.name}</strong>
-                    </div>
-                  </td>
-                  <td className="py-3.5 px-4 font-semibold text-slate-700">{row.phone}</td>
-                  <td className="py-3.5 px-4 font-semibold text-slate-800">{row.loc}</td>
-                  <td className="py-3.5 px-4 text-slate-500">{row.last}</td>
-                  <td className="py-3.5 px-4 font-semibold text-slate-700">{row.reason}</td>
-                  <td className="py-3.5 px-4 text-slate-500">{row.since}</td>
-                  <td className="py-3.5 px-4">
-                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${row.bg}`}>
-                      {row.status}
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-4 text-right">
-                    <button
-                      onClick={() => {
-                        const target = maids.find(m => m.fullName.includes(row.name.split(' ')[0])) || maids[0];
-                        setActiveDrawerMaid(target);
-                      }}
-                      className="px-3.5 py-1.5 bg-[#043927] hover:bg-[#064e3b] text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-sm"
-                    >
-                      View
-                    </button>
+              {filtered.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="py-12 text-center text-slate-400">
+                    <AlertCircle className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+                    <p className="text-sm font-semibold">No inactive maid partners found.</p>
                   </td>
                 </tr>
-              ))}
+              ) : (
+                filtered.map((m, idx) => (
+                  <tr key={m.uid} className="hover:bg-slate-50/80 transition-colors">
+                    <td className="py-3.5 px-4 text-center text-slate-400 font-bold">{idx + 1}</td>
+                    <td className="py-3.5 px-4 font-extrabold text-slate-900">{m.maidId || m.uid}</td>
+                    <td className="py-3.5 px-4">
+                      <div className="flex items-center gap-2.5">
+                        <img src={m.photoUrl} alt={m.fullName} className="w-8 h-8 rounded-full object-cover border border-slate-200" />
+                        <strong className="text-slate-900 font-bold">{m.fullName}</strong>
+                      </div>
+                    </td>
+                    <td className="py-3.5 px-4 font-semibold text-slate-700">{m.phone}</td>
+                    <td className="py-3.5 px-4 font-semibold text-slate-800">{m.serviceArea}</td>
+                    <td className="py-3.5 px-4 text-slate-500">{m.lastActive || 'N/A'}</td>
+                    <td className="py-3.5 px-4 font-semibold text-slate-700">{m.rejectionReason || m.adminNotes || 'Inactive'}</td>
+                    <td className="py-3.5 px-4 text-slate-500">{m.lastUpdated || m.appliedAt || 'N/A'}</td>
+                    <td className="py-3.5 px-4">
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${
+                        m.status === 'rejected' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-900'
+                      }`}>
+                        {m.status === 'rejected' ? 'Deactivated' : 'Inactive'}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4 text-right">
+                      <button
+                        onClick={() => setActiveDrawerMaid(m)}
+                        className="px-3.5 py-1.5 bg-[#123D2A] hover:bg-[#184a34] text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-sm"
+                      >
+                        View
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
@@ -293,3 +288,4 @@ export const InactiveMaidsTab: React.FC = () => {
     </div>
   );
 };
+

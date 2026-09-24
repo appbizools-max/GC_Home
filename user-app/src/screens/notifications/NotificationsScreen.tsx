@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../config/supabase';
 import { AppLogo } from '../../components/ui/AppLogo';
 import {
   ArrowLeft,
@@ -31,62 +32,90 @@ interface NotificationItem {
   targetScreen?: string;
 }
 
-const NOTIFICATIONS_SEED: NotificationItem[] = [
-  {
-    id: 'notif_1',
-    category: 'bookings',
-    title: 'Professional Assigned',
-    message: 'Sunita Devi has been assigned for your 4:00 PM Home Cleaning appointment.',
-    time: '10 mins ago',
-    isUnread: true,
-    targetScreen: 'booking-tracking',
-  },
-  {
-    id: 'notif_2',
-    category: 'offers',
-    title: '20% OFF Coupon Available',
-    message: 'Use code GCHOME20 at checkout for 20% flat discount on full home deep cleaning.',
-    time: '2 hours ago',
-    isUnread: true,
-    targetScreen: 'offers',
-  },
-  {
-    id: 'notif_3',
-    category: 'payments',
-    title: 'Payment Successful',
-    message: 'Payment of ₹848 for Booking #GC-89421 was received securely via UPI.',
-    time: 'Yesterday',
-    isUnread: false,
-    targetScreen: 'my-bookings',
-  },
-  {
-    id: 'notif_4',
-    category: 'updates',
-    title: 'Eco-Friendly Guarantee',
-    message: 'We have updated our safety protocols with 100% plant-based organic cleaning agents.',
-    time: '2 days ago',
-    isUnread: false,
-    targetScreen: 'customer_home',
-  },
-];
+const NOTIFICATIONS_SEED: NotificationItem[] = [];
 
 export const NotificationsScreen: React.FC = () => {
-  const { navigateTo } = useAuth();
+  const { navigateTo, user } = useAuth();
   const [activeCat, setActiveCat] = useState<NotificationCategory>('all');
-  const [notifications, setNotifications] = useState(NOTIFICATIONS_SEED);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+
+  const fetchNotifications = useCallback(async () => {
+    try {
+      let query = supabase
+        .from('notifications')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(40);
+
+      if (user?.uid) {
+        query = query.or(`recipient_id.eq.${user.uid},recipient_role.eq.customer,recipient_role.eq.all`);
+      } else {
+        query = query.or('recipient_role.eq.customer,recipient_role.eq.all');
+      }
+
+      const { data, error } = await query;
+      if (!error && data) {
+        const mapped: NotificationItem[] = data.map((r: any) => ({
+          id: r.id,
+          title: r.title || 'Notification',
+          message: r.message || '',
+          time: r.created_at ? new Date(r.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now',
+          category: (r.category as NotificationCategory) || 'bookings',
+          isUnread: !r.is_read,
+          targetScreen: r.related_booking_id ? 'booking-tracking' : undefined,
+        }));
+        setNotifications(mapped);
+      }
+    } catch (err) {
+      console.warn('Error fetching notifications:', err);
+    }
+  }, [user?.uid]);
+
+  useEffect(() => {
+    fetchNotifications();
+
+    const channel = supabase
+      .channel('user_notifications_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => {
+        fetchNotifications();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchNotifications]);
 
   const filtered = notifications.filter(
     n => activeCat === 'all' || n.category === activeCat
   );
 
-  const handleMarkAllRead = () => {
+  const handleMarkAllRead = async () => {
     setNotifications(prev => prev.map(n => ({ ...n, isUnread: false })));
+    if (user?.uid) {
+      try {
+        await supabase
+          .from('notifications')
+          .update({ is_read: true })
+          .eq('recipient_id', user.uid);
+      } catch (err) {
+        console.warn('Mark all read notice:', err);
+      }
+    }
   };
 
-  const handleItemPress = (notif: NotificationItem) => {
+  const handleItemPress = async (notif: NotificationItem) => {
     setNotifications(prev =>
       prev.map(n => (n.id === notif.id ? { ...n, isUnread: false } : n))
     );
+    try {
+      await supabase
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('id', notif.id);
+    } catch (err) {
+      console.warn('Mark read notice:', err);
+    }
     if (notif.targetScreen) {
       navigateTo(notif.targetScreen);
     }
@@ -158,26 +187,36 @@ export const NotificationsScreen: React.FC = () => {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {filtered.map(item => (
-          <TouchableOpacity
-            key={item.id}
-            style={[styles.notifCard, item.isUnread && styles.notifCardUnread]}
-            onPress={() => handleItemPress(item)}
-            activeOpacity={0.88}
-          >
-            <View style={styles.iconBox}>{getCategoryIcon(item.category)}</View>
+        {filtered.length === 0 ? (
+          <View style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 48, paddingHorizontal: 24 }}>
+            <Bell size={48} color="#CBD5E1" />
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#1E293B', marginTop: 12 }}>No Notifications</Text>
+            <Text style={{ fontSize: 13, color: '#64748B', textAlign: 'center', marginTop: 4 }}>
+              You do not have any notifications right now.
+            </Text>
+          </View>
+        ) : (
+          filtered.map(item => (
+            <TouchableOpacity
+              key={item.id}
+              style={[styles.notifCard, item.isUnread && styles.notifCardUnread]}
+              onPress={() => handleItemPress(item)}
+              activeOpacity={0.88}
+            >
+              <View style={styles.iconBox}>{getCategoryIcon(item.category)}</View>
 
-            <View style={styles.notifBody}>
-              <View style={styles.titleRow}>
-                <Text style={styles.notifTitle}>{item.title}</Text>
-                <Text style={styles.notifTime}>{item.time}</Text>
+              <View style={styles.notifBody}>
+                <View style={styles.titleRow}>
+                  <Text style={styles.notifTitle}>{item.title}</Text>
+                  <Text style={styles.notifTime}>{item.time}</Text>
+                </View>
+                <Text style={styles.notifMsg}>{item.message}</Text>
               </View>
-              <Text style={styles.notifMsg}>{item.message}</Text>
-            </View>
 
-            {item.isUnread && <View style={styles.unreadDot} />}
-          </TouchableOpacity>
-        ))}
+              {item.isUnread && <View style={styles.unreadDot} />}
+            </TouchableOpacity>
+          ))
+        )}
       </ScrollView>
     </View>
   );

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,13 +12,17 @@ import {
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useCart } from '../../context/CartContext';
-import { AppLogo } from '../../components/ui/AppLogo';
+
+
 import { PromotionalOfferBanner } from '../../components/home/PromotionalOfferBanner';
 import { SelectLocationModal } from '../../components/location/SelectLocationModal';
 import { TwoColumnServicesGrid } from '../../components/common/TwoColumnServicesGrid';
+import { FloatingCartBar } from '../../components/common/FloatingCartBar';
 import { resolveImageSource } from '../../utils/imageUtils';
 import { ASSETS } from '../../assets/index';
 import { Service } from '../../types';
+import { homeService, ServiceCategory, normalizeLocationString } from '../../services/homeService';
+import { supabase } from '../../config/supabase';
 import {
   Bell,
   ShoppingCart,
@@ -38,6 +42,19 @@ import {
   Armchair,
   CheckCircle2,
   Navigation,
+  Sofa,
+  Bed,
+  Layers,
+  Maximize2,
+  ShieldCheck,
+  Activity,
+  AlertTriangle,
+  Truck,
+  Briefcase,
+  Wrench,
+  Package,
+  KeyRound,
+  Utensils,
 } from 'lucide-react-native';
 
 
@@ -47,101 +64,57 @@ export const FULL_SERVICES_SEED: (Service & {
   rating?: number;
   reviewCount?: string;
   isFavorite?: boolean;
-})[] = [
-  {
-    serviceId: 'srv_home_clean',
-    name: 'Home Cleaning',
-    category: 'Home',
-    description: 'Complete home cleaning for a fresh and healthy living space',
-    startingPrice: 699,
-    estimatedDuration: '2 - 4 hrs',
-    imageUrl: ASSETS.heroLivingRoom,
-    isActive: true,
-    features: ['All rooms dusted & mopped', 'Trash disposal', 'Eco-friendly solutions'],
-    isBestseller: true,
-    rating: 4.8,
-    reviewCount: '2.1K',
-  },
-  {
-    serviceId: 'srv_kitchen_clean',
-    name: 'Kitchen Cleaning',
-    category: 'Kitchen',
-    description: 'Deep cleaning for a hygienic and sparkling kitchen',
-    startingPrice: 599,
-    estimatedDuration: '2 - 3 hrs',
-    imageUrl: ASSETS.serviceKitchen,
-    isActive: true,
-    features: ['Oil & grease degreasing', 'Sink sanitize', 'Appliance exterior scrub'],
-    isBestseller: false,
-    rating: 4.7,
-    reviewCount: '1.5K',
-  },
-  {
-    serviceId: 'srv_bathroom_clean',
-    name: 'Bathroom Cleaning',
-    category: 'Bathroom',
-    description: 'Remove dirt, stains and germs for a cleaner bathroom',
-    startingPrice: 499,
-    estimatedDuration: '2 - 3 hrs',
-    imageUrl: ASSETS.serviceBathroom,
-    isActive: true,
-    features: ['Tile descaling', 'Mirror polish', 'Toilet sanitize & anti-bacterial scrub'],
-    isBestseller: false,
-    rating: 4.6,
-    reviewCount: '1.2K',
-  },
-  {
-    serviceId: 'srv_sofa_clean',
-    name: 'Sofa & Carpet Cleaning',
-    category: 'Sofa & Carpet',
-    description: 'Deep clean your sofas, carpets and upholstery',
-    startingPrice: 799,
-    estimatedDuration: '1 - 3 hrs',
-    imageUrl: ASSETS.serviceSofa,
-    isActive: true,
-    features: ['Deep shampoo extraction', 'Dust mite sanitization', 'Fabric dry care'],
-    isBestseller: false,
-    rating: 4.8,
-    reviewCount: '980',
-  },
-  {
-    serviceId: 'srv_deep_clean',
-    name: 'Deep Cleaning',
-    category: 'Deep Cleaning',
-    description: 'Intensive cleaning for a healthier and fresher home',
-    startingPrice: 1499,
-    estimatedDuration: '4 - 6 hrs',
-    imageUrl: ASSETS.serviceKitchen,
-    isActive: true,
-    features: ['Full sanitization', 'Behind appliances', 'Ceiling fans & windows'],
-    isBestseller: true,
-    rating: 4.9,
-    reviewCount: '640',
-  },
-  {
-    serviceId: 'srv_move_clean',
-    name: 'Move-in / Move-out Cleaning',
-    category: 'Home',
-    description: 'Thorough cleaning for a fresh start in your new place',
-    startingPrice: 1299,
-    estimatedDuration: '3 - 5 hrs',
-    imageUrl: ASSETS.heroLivingRoom,
-    isActive: true,
-    features: ['Empty house overhaul', 'Cabinet interiors', 'Disinfection wash'],
-    isBestseller: false,
-    rating: 4.7,
-    reviewCount: '320',
-  },
-];
+})[] = [];
 
-const CATEGORIES = [
-  { id: 'All', label: 'All', icon: LayoutGrid },
-  { id: 'Home', label: 'Home', icon: HomeIcon },
-  { id: 'Kitchen', label: 'Kitchen', icon: ChefHat },
-  { id: 'Bathroom', label: 'Bathroom', icon: Bath },
-  { id: 'Sofa & Carpet', label: 'Sofa & Carpet', icon: Armchair },
-  { id: 'Deep Cleaning', label: 'Deep Cleaning', icon: Sparkles },
-];
+const DEFAULT_CATEGORIES: ServiceCategory[] = [];
+
+const renderCategoryIcon = (iconName?: string, color: string = '#168A68') => {
+  const sz = 16;
+  switch (iconName) {
+    // Full Home Cleaning
+    case 'home':         return <HomeIcon size={sz} color={color} />;
+    // Kitchen Cleaning
+    case 'utensils':     return <Utensils size={sz} color={color} />;
+    case 'kitchen':      return <ChefHat size={sz} color={color} />;
+    // Bathroom Cleaning
+    case 'bath':         return <Bath size={sz} color={color} />;
+    // Living Room Cleaning
+    case 'couch':        return <Sofa size={sz} color={color} />;
+    // Bedroom Cleaning
+    case 'bed':          return <Bed size={sz} color={color} />;
+    // Sofa Cleaning
+    case 'armchair':     return <Armchair size={sz} color={color} />;
+    case 'sofa':         return <Armchair size={sz} color={color} />;
+    // Mattress Cleaning
+    case 'sparkles':     return <Sparkles size={sz} color={color} />;
+    // Floor Cleaning
+    case 'layers':       return <Layers size={sz} color={color} />;
+    // Window & Glass Cleaning
+    case 'maximize':     return <Maximize2 size={sz} color={color} />;
+    // Regular Cleaning
+    case 'clock':        return <Clock size={sz} color={color} />;
+    // Deep Cleaning
+    case 'deep':         return <Sparkles size={sz} color={color} />;
+    case 'shield-check': return <ShieldCheck size={sz} color={color} />;
+    // Sanitization
+    case 'activity':     return <Activity size={sz} color={color} />;
+    // Pest Control
+    case 'alert-triangle': return <AlertTriangle size={sz} color={color} />;
+    // Car Cleaning
+    case 'truck':        return <Truck size={sz} color={color} />;
+    // Office Cleaning
+    case 'briefcase':    return <Briefcase size={sz} color={color} />;
+    // Post-Construction Cleaning
+    case 'tool':         return <Wrench size={sz} color={color} />;
+    // Move-In Cleaning
+    case 'package':      return <Package size={sz} color={color} />;
+    // Move-Out Cleaning
+    case 'key':          return <KeyRound size={sz} color={color} />;
+    case 'more':
+    default:
+      return <LayoutGrid size={sz} color={color} />;
+  }
+};
 
 const SORT_OPTIONS = [
   { id: 'recommended', label: 'Recommended' },
@@ -162,24 +135,127 @@ export const CleaningServicesScreen: React.FC<CleaningServicesScreenProps> = ({
   onOpenNotifications,
   onOpenCart,
 }) => {
-  const { navigateTo } = useAuth();
-  const { cart, setCartService, cartItemsCount } = useCart();
+  const { navigateTo, navigationPayload, savedAddresses } = useAuth();
+  const { cart, addServiceToCart, cartItemsCount } = useCart();
 
-  const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  const defaultLocation = normalizeLocationString(
+    savedAddresses && savedAddresses.length > 0
+      ? `${savedAddresses[0].locality || savedAddresses[0].street}, ${savedAddresses[0].city} ${savedAddresses[0].pincode}`
+      : 'HSR Layout, Bengaluru, Karnataka 560102'
+  );
+
+  const initialServices = homeService.getCachedServices();
+  const initialCategories = homeService.getCachedCategories();
+
+  const [liveCategories, setLiveCategories] = useState<ServiceCategory[]>(initialCategories || []);
+  const [selectedCategory, setSelectedCategory] = useState<string>(
+    navigationPayload?.categoryId || navigationPayload?.categoryName || 'All'
+  );
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedSort, setSelectedSort] = useState<string>('recommended');
   const [showSortDropdown, setShowSortDropdown] = useState(false);
   const [favorites, setFavorites] = useState<Record<string, boolean>>({});
   const [showLocationModal, setShowLocationModal] = useState(false);
-  const [currentLocation, setCurrentLocation] = useState('HSR Layout, Bengaluru, Karnataka 560102');
+  const [currentLocation, setCurrentLocation] = useState(defaultLocation);
+
+  const [liveServices, setLiveServices] = useState<(Service & { isBestseller?: boolean; reviewCount?: string; rating?: number })[]>(initialServices || []);
+  const [isLoadingServices, setIsLoadingServices] = useState<boolean>(!initialServices || initialServices.length === 0);
+  const [servicesError, setServicesError] = useState<string | null>(null);
+  const requestIdRef = React.useRef<number>(0);
+
+  // Sync category selection whenever navigation payload updates (e.g. from Home category icons)
+  useEffect(() => {
+    if (navigationPayload?.categoryId) {
+      setSelectedCategory(navigationPayload.categoryId);
+    } else if (navigationPayload?.categoryName) {
+      setSelectedCategory(navigationPayload.categoryName);
+    }
+  }, [navigationPayload]);
+
+  const loadCategories = async (force = false) => {
+    try {
+      const data = await homeService.getCategoriesFromSupabase(force);
+      if (data && data.length > 0) {
+        setLiveCategories(data);
+      }
+    } catch {
+      // keep fallback
+    }
+  };
+
+  const loadServices = async (isSilent = false, forceRefresh = false) => {
+    const currentReqId = ++requestIdRef.current;
+    
+    // Check cache first
+    const cached = homeService.getCachedServices();
+    if (cached && liveServices.length === 0) {
+      setLiveServices(cached);
+      setIsLoadingServices(false);
+    } else if (!isSilent && liveServices.length === 0) {
+      setIsLoadingServices(true);
+    }
+    setServicesError(null);
+
+    try {
+      const data = await homeService.getServicesFromSupabase(forceRefresh);
+      if (currentReqId !== requestIdRef.current) return;
+      if (data) {
+        setLiveServices(data);
+      }
+    } catch (err: any) {
+      if (currentReqId !== requestIdRef.current) return;
+      if (liveServices.length === 0) {
+        setServicesError(err?.message || 'Unable to load cleaning services');
+      }
+    } finally {
+      if (currentReqId === requestIdRef.current) {
+        setIsLoadingServices(false);
+      }
+    }
+  };
+
+  useEffect(() => {
+    loadServices();
+    loadCategories();
+
+    const channel = supabase
+      .channel('cleaning_services_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'services' }, () => {
+        loadServices(true);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'service_categories' }, () => {
+        loadServices(true);
+        loadCategories();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   const toggleFavorite = (id: string) => {
     setFavorites(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
+  const categoryChips = useMemo(() => {
+    const allChip: ServiceCategory = {
+      id: 'All',
+      name: 'All',
+      iconName: 'more',
+      bgColor: '#EAF8F1',
+      iconColor: '#168A68',
+      routeCategory: 'all',
+    };
+    return [allChip, ...liveCategories];
+  }, [liveCategories]);
+
   const filteredServices = useMemo(() => {
-    let result = FULL_SERVICES_SEED.filter(srv => {
-      const matchCat = selectedCategory === 'All' || srv.category === selectedCategory;
+    let result = liveServices.filter(srv => {
+      const matchCat =
+        selectedCategory === 'All' ||
+        srv.categoryId === selectedCategory ||
+        (srv.category && srv.category.toLowerCase() === selectedCategory.toLowerCase());
       const matchQuery =
         srv.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         srv.description.toLowerCase().includes(searchQuery.toLowerCase());
@@ -195,10 +271,10 @@ export const CleaningServicesScreen: React.FC<CleaningServicesScreenProps> = ({
     }
 
     return result;
-  }, [selectedCategory, searchQuery, selectedSort]);
+  }, [liveServices, selectedCategory, searchQuery, selectedSort]);
 
   const handleCardPress = (service: Service) => {
-    setCartService(service);
+    addServiceToCart(service, 1);
     if (onSelectService) {
       onSelectService(service);
     } else {
@@ -207,17 +283,16 @@ export const CleaningServicesScreen: React.FC<CleaningServicesScreenProps> = ({
   };
 
   const handleQuickAdd = (service: Service) => {
-    setCartService(service);
-    navigateTo('service-details');
+    addServiceToCart(service, 1);
   };
 
   return (
     <View style={styles.safeContainer}>
       {/* Top Header Sticky Area */}
       <View style={styles.headerContainer}>
-        {/* Row 1: Logo & Tagline on Left, Notification & Cart on Right */}
+        {/* Row 1: "Services" title on Left, Notification & Cart on Right */}
         <View style={styles.headerRow1}>
-          <AppLogo size="sm" showTagline={true} align="left" />
+          <Text style={styles.screenTitle}>Services</Text>
 
           <View style={styles.headerIconsGroup}>
             <TouchableOpacity
@@ -245,27 +320,6 @@ export const CleaningServicesScreen: React.FC<CleaningServicesScreenProps> = ({
                 </View>
               )}
             </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Row 2: Location Single Line Dropdown & "Using current location" */}
-        <View style={styles.headerRow2}>
-          <TouchableOpacity
-            style={styles.locationDropdown}
-            onPress={() => setShowLocationModal(true)}
-            activeOpacity={0.7}
-          >
-            <View style={styles.locationPinBox}>
-              <Navigation size={12} color="#168A68" fill="#168A68" />
-            </View>
-            <Text style={styles.locationAddressText} numberOfLines={1}>
-              {currentLocation}
-            </Text>
-            <ChevronDown size={14} color="#10243A" />
-          </TouchableOpacity>
-
-          <View style={styles.currentLocIndicator}>
-            <Text style={styles.currentLocText}>Using current location</Text>
           </View>
         </View>
 
@@ -298,9 +352,12 @@ export const CleaningServicesScreen: React.FC<CleaningServicesScreenProps> = ({
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.categoryChipsScroll}
         >
-          {CATEGORIES.map(cat => {
-            const isSelected = selectedCategory === cat.id;
-            const Icon = cat.icon;
+          {categoryChips.map(cat => {
+            const isSelected =
+              selectedCategory === cat.id ||
+              (selectedCategory !== 'All' &&
+                (selectedCategory.toLowerCase() === cat.name.toLowerCase() ||
+                 selectedCategory.toLowerCase() === cat.routeCategory?.toLowerCase()));
             return (
               <TouchableOpacity
                 key={cat.id}
@@ -309,10 +366,10 @@ export const CleaningServicesScreen: React.FC<CleaningServicesScreenProps> = ({
                 activeOpacity={0.8}
               >
                 <View style={[styles.catIconBox, isSelected && styles.catIconBoxSelected]}>
-                  <Icon size={16} color={isSelected ? '#FFFFFF' : '#168A68'} />
+                  {renderCategoryIcon(cat.iconName, isSelected ? '#FFFFFF' : '#168A68')}
                 </View>
                 <Text style={[styles.catChipText, isSelected && styles.catChipTextSelected]}>
-                  {cat.label}
+                  {cat.name.replace('\n', ' ')}
                 </Text>
               </TouchableOpacity>
             );
@@ -366,6 +423,9 @@ export const CleaningServicesScreen: React.FC<CleaningServicesScreenProps> = ({
         {/* TWO-COLUMN SERVICES GRID */}
         <TwoColumnServicesGrid
           services={filteredServices}
+          isLoading={isLoadingServices}
+          error={servicesError}
+          onRetry={() => loadServices()}
           onSelectService={handleCardPress}
           onQuickAdd={handleQuickAdd}
           favorites={favorites}
@@ -397,6 +457,9 @@ export const CleaningServicesScreen: React.FC<CleaningServicesScreenProps> = ({
         onSelectAddress={loc => setCurrentLocation(loc)}
         onClose={() => setShowLocationModal(false)}
       />
+
+      {/* Floating Bottom Swiggy-Style Cart Bar */}
+      <FloatingCartBar bottomOffset={16} />
     </View>
   );
 };
@@ -418,7 +481,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
+  },
+  screenTitle: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#10243A',
+    letterSpacing: -0.3,
   },
   headerIconsGroup: {
     flexDirection: 'row',

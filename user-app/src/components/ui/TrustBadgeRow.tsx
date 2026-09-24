@@ -12,8 +12,8 @@ export const TrustBadgeRow: React.FC<TrustBadgeRowProps> = ({ variant = 'splash'
       case 'login':
         return [
           { title: 'Verified', sub: 'Professionals' },
-          { title: 'Safe &', sub: 'Eco-Friendly' },
-          { title: 'Your Happiness', sub: 'Our Priority' },
+          { title: 'Eco-Friendly', sub: 'Products' },
+          { title: 'Customer', sub: 'First' },
         ];
       case 'otp':
         return [
@@ -38,7 +38,7 @@ export const TrustBadgeRow: React.FC<TrustBadgeRowProps> = ({ variant = 'splash'
       {/* Badge 1: Professionals */}
       <View style={styles.badgeItem}>
         <View style={styles.iconCircle}>
-          <ShieldCheck size={18} color="#168A68" strokeWidth={2.2} />
+          <ShieldCheck size={18} color="#123D2A" strokeWidth={2.2} />
         </View>
         <Text style={styles.badgeTitle}>{labels[0].title}</Text>
         <Text style={styles.badgeSub}>{labels[0].sub}</Text>
@@ -47,7 +47,7 @@ export const TrustBadgeRow: React.FC<TrustBadgeRowProps> = ({ variant = 'splash'
       {/* Badge 2: Safe & Eco-friendly */}
       <View style={styles.badgeItem}>
         <View style={styles.iconCircle}>
-          <Leaf size={18} color="#168A68" strokeWidth={2.2} />
+          <Leaf size={18} color="#123D2A" strokeWidth={2.2} />
         </View>
         <Text style={styles.badgeTitle}>{labels[1].title}</Text>
         <Text style={styles.badgeSub}>{labels[1].sub}</Text>
@@ -56,7 +56,7 @@ export const TrustBadgeRow: React.FC<TrustBadgeRowProps> = ({ variant = 'splash'
       {/* Badge 3: Happiness / Homes */}
       <View style={styles.badgeItem}>
         <View style={styles.iconCircle}>
-          <Heart size={18} color="#168A68" strokeWidth={2.2} />
+          <Heart size={18} color="#123D2A" strokeWidth={2.2} />
         </View>
         <Text style={styles.badgeTitle}>{labels[2].title}</Text>
         <Text style={styles.badgeSub}>{labels[2].sub}</Text>
@@ -82,17 +82,17 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: '#EAF8F1',
+    backgroundColor: '#EAF5EC',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 6,
     borderWidth: 1,
-    borderColor: '#C6EEDB',
+    borderColor: '#C6E3CB',
   },
   badgeTitle: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#10243A',
+    color: '#171A18',
     textAlign: 'center',
     lineHeight: 14,
   },

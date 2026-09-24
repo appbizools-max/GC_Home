@@ -1,5 +1,5 @@
-export type UserRole = 'customer' | 'maid' | 'admin';
-export type MaidApplicationStatus = 'none' | 'pending' | 'approved' | 'rejected';
+export type UserRole = 'customer' | 'maid' | 'partner' | 'admin';
+export type MaidApplicationStatus = 'none' | 'pending' | 'approved' | 'rejected' | 'correction_requested';
 
 export interface User {
   uid: string;
@@ -17,10 +17,24 @@ export interface BankDetails {
   accountNumber: string;
   ifscCode: string;
   bankName: string;
+  upiId?: string;
+}
+
+export interface PartnerProvidedService {
+  id: string;
+  serviceId?: string;
+  serviceName: string;
+  category?: string;
+  experienceYears: number;
+  experienceMonths?: number;
+  description?: string;
+  additionalSkills?: string;
+  certificateUrl?: string;
 }
 
 export interface MaidProfile {
   uid: string;
+  maidCode?: string;
   fullName: string;
   phone: string;
   email?: string;
@@ -29,19 +43,31 @@ export interface MaidProfile {
   photoUrl: string;
   idProofUrl: string;
   emergencyContact: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
   address: string;
+  fullAddress?: string;
+  locality?: string;
+  pincode?: string;
   city?: string;
-  bankDetails: BankDetails;
+  district?: string;
+  state?: string;
+  postOffice?: string;
   serviceArea: string;
+  preferredServiceArea?: string;
   serviceRadiusKm: number;
   healthSafetyDecl: boolean;
+  bankDetails: BankDetails;
   status: MaidApplicationStatus;
+  kycStatus?: string;
   rejectionReason?: string;
   isOnline: boolean;
   rating: number;
   totalRatingsCount: number;
   completedJobsCount: number;
   workingDays: string[];
+  workingHours?: string;
+  emergencyJobsAccepted?: boolean;
   appliedAt: string;
   approvedAt?: string;
   aadhaarNumber?: string;
@@ -49,13 +75,24 @@ export interface MaidProfile {
   isDigiLockerVerified?: boolean;
   aadhaarFrontUrl?: string;
   aadhaarBackUrl?: string;
+  panDocUrl?: string;
+  addressProofUrl?: string;
   policeClearanceUrl?: string;
+  otherDocsUrls?: string[];
+  servicesProvided?: PartnerProvidedService[];
+  languagesSpoken?: string[];
+  termsAccepted?: boolean;
+  privacyAccepted?: boolean;
+  accuracyConfirmed?: boolean;
+  correctionRequested?: boolean;
+  adminNotes?: string;
 }
 
 export interface Service {
   serviceId: string;
   name: string;
   category: string;
+  categoryId?: string;
   description: string;
   startingPrice: number;
   pricePerRoom?: number;
@@ -93,15 +130,18 @@ export type PaymentStatus = 'pending' | 'paid' | 'authorized' | 'failed' | 'refu
 
 export interface Address {
   id: string;
+  userId?: string;
   label: string;
+  houseFlat?: string;
   street: string;
   locality: string;
-  city: string;
-  pincode: string;
   landmark?: string;
+  city: string;
+  district?: string;
   state?: string;
-  latitude?: number;
-  longitude?: number;
+  pincode: string;
+  postOffice?: string;
+  isDefault?: boolean;
 }
 
 export interface Booking {
@@ -154,6 +194,18 @@ export interface Booking {
   completedAt?: string;
   rating?: number;
   review?: string;
+  // Slot Confirmation & Reminder Fields
+  slotReminderSentAt?: string;
+  slotConfirmationStatus?: 'none' | 'reminder_sent' | 'customer_confirmed' | 'maid_confirmed' | 'both_confirmed' | 'red_flagged' | 'finalized' | 'admin_resolved';
+  customerConfirmedSlot?: boolean;
+  customerSlotConfirmedAt?: string;
+  maidConfirmedSlot?: boolean;
+  maidSlotConfirmedAt?: string;
+  fiveMinCheckTriggeredAt?: string;
+  adminFinalizedAt?: string;
+  adminResolvedAt?: string;
+  // Assignment tracking (from bookings.assignment_status)
+  assignmentStatus?: 'unassigned' | 'partner_offered' | 'assigned';
 }
 
 export interface JobAssignment {
@@ -265,33 +317,30 @@ export interface ChatConversation {
   createdAt: string;
   updatedAt: string;
 }
-export interface HomeSize {
-  id: string;
-  label: string;
-  roomsCount: number;
-  price: number;
-  originalPrice?: number;
-  subtitle?: string;
-}
-
 export interface AddOnItem {
   id: string;
+  serviceId?: string;
   title: string;
   price: number;
   imageUrl?: any;
   description?: string;
 }
 
-export interface CustomerCart {
+export interface CartItem {
   service: Service;
-  homeSize: HomeSize;
+  quantity: number;
+  itemTotal: number;
+}
+
+export interface CustomerCart {
+  items: CartItem[];
   addOns: AddOnItem[];
   selectedDate: string;
   selectedDateLabel: string;
   selectedSlot: string;
   address?: Address;
   promoCode?: string;
-  basePrice: number;
+  subtotal: number;
   addOnsTotal: number;
   discountAmount: number;
   platformFee: number;
@@ -325,7 +374,7 @@ export interface CustomerBooking {
   serviceName: string;
   serviceCategory: string;
   serviceImage: any;
-  homeSize: HomeSize;
+  items?: CartItem[];
   addOns: AddOnItem[];
   date: string;
   dateLabel: string;
@@ -333,6 +382,7 @@ export interface CustomerBooking {
   address: Address;
   assignedPro?: AssignedProfessional;
   currentStage: TrackingStage;
+  status?: BookingStatus;
   stageHistory: { stage: TrackingStage; timestamp: string; label: string; completed: boolean }[];
   paymentMethod: 'upi' | 'card' | 'netbanking' | 'wallet' | 'cod';
   paymentStatus: 'paid' | 'pending';
@@ -348,4 +398,16 @@ export interface CustomerBooking {
   rating?: number;
   reviewText?: string;
   reviewTags?: string[];
+  // Slot Confirmation & Reminder Fields
+  slotReminderSentAt?: string;
+  slotConfirmationStatus?: 'none' | 'reminder_sent' | 'customer_confirmed' | 'maid_confirmed' | 'both_confirmed' | 'red_flagged' | 'finalized' | 'admin_resolved';
+  customerConfirmedSlot?: boolean;
+  customerSlotConfirmedAt?: string;
+  maidConfirmedSlot?: boolean;
+  maidSlotConfirmedAt?: string;
+  fiveMinCheckTriggeredAt?: string;
+  adminFinalizedAt?: string;
+  adminResolvedAt?: string;
+  // Assignment tracking (from bookings.assignment_status)
+  assignmentStatus?: 'unassigned' | 'partner_offered' | 'assigned';
 }

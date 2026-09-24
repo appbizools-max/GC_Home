@@ -6,8 +6,8 @@ import {
   TouchableOpacity,
   ScrollView,
   Image,
-  Linking,
   Modal,
+  TextInput,
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useBooking } from '../../context/BookingContext';
@@ -25,9 +25,10 @@ import {
   MapPin,
   HelpCircle,
   KeyRound,
-  Sparkles,
-  ChevronRight,
+  ArrowRight,
   ShieldAlert,
+  Eye,
+  EyeOff,
 } from 'lucide-react-native';
 
 const STAGES_CONFIG: { stage: TrackingStage; title: string; subtitle: string }[] = [
@@ -39,10 +40,59 @@ const STAGES_CONFIG: { stage: TrackingStage; title: string; subtitle: string }[]
   { stage: 'completed', title: 'Cleaning Completed', subtitle: 'Service completed with high standard.' },
 ];
 
+/**
+ * Human-readable date formatting (e.g. "Today · 9:00 AM – 11:00 AM" or "Tomorrow · 9:00 AM – 11:00 AM")
+ */
+function formatHumanDate(dateStr?: string): string {
+  if (!dateStr) return 'Today';
+  const cleanDate = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
+  
+  const todayIso = new Date().toISOString().split('T')[0];
+  const tomorrowObj = new Date();
+  tomorrowObj.setDate(tomorrowObj.getDate() + 1);
+  const tomorrowIso = tomorrowObj.toISOString().split('T')[0];
+
+  if (cleanDate === todayIso) return 'Today';
+  if (cleanDate === tomorrowIso) return 'Tomorrow';
+
+  try {
+    const d = new Date(cleanDate);
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    }
+  } catch {
+    return cleanDate;
+  }
+  return cleanDate;
+}
+
+/**
+ * Concise location helper
+ */
+function formatConciseLocation(locality?: string, city?: string, fullAddr?: string) {
+  if (locality && locality.trim()) {
+    const cityStr = city && city.trim() ? `, ${city.trim()}` : '';
+    return `${locality.trim()}${cityStr}`;
+  }
+  if (fullAddr && fullAddr.trim()) {
+    const parts = fullAddr.split(',').map(p => p.trim()).filter(Boolean);
+    if (parts.length >= 2) {
+      return `${parts[parts.length - 2]}, ${parts[parts.length - 1]}`;
+    }
+    return parts[0] || 'Hyderabad';
+  }
+  return city || 'Hyderabad';
+}
+
 export const BookingTrackingScreen: React.FC = () => {
   const { navigateTo, user } = useAuth();
-  const { activeBooking, advanceBookingStage, reportPaymentViolation } = useBooking();
+  const { activeBooking, reportPaymentViolation } = useBooking();
 
+  // OTP Masking Toggle State
+  const [showOtp, setShowOtp] = useState<boolean>(false);
+  const [showFullAddress, setShowFullAddress] = useState<boolean>(false);
+
+  // Modals State
   const [showMessageModal, setShowMessageModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportReason, setReportReason] = useState<'asked_for_cash' | 'unauthorized_amount' | 'payment_outside_app' | 'service_issue' | 'other'>('asked_for_cash');
@@ -50,10 +100,73 @@ export const BookingTrackingScreen: React.FC = () => {
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
 
   const booking = activeBooking;
-  const currentStage = booking?.currentStage || 'on_the_way';
-  const pro = booking?.assignedPro;
 
+  const getStageFromStatus = (status?: string): TrackingStage => {
+    if (!status) return 'confirmed';
+    switch (status) {
+      case 'new':
+      case 'pending':
+      case 'pending_assignment':
+        return 'confirmed';
+      case 'maid_assigned':
+      case 'assigned':
+      case 'searching_partner':
+        return 'assigned';
+      case 'maid_accepted':
+      case 'partner_accepted':
+      case 'partner_en_route':
+      case 'on_the_way':
+      case 'en_route':
+        return 'on_the_way';
+      case 'partner_arrived':
+      case 'arrived':
+        return 'arrived';
+      case 'in_progress':
+      case 'cleaning_started':
+      case 'cleaning':
+      case 'service_in_progress':
+        return 'cleaning';
+      case 'completed':
+      case 'customer_confirmed':
+      case 'completion_submitted':
+        return 'completed';
+      default:
+        return 'confirmed';
+    }
+  };
+
+  const currentStage = booking?.currentStage || getStageFromStatus(booking?.status);
+  const pro = booking?.assignedPro;
   const currentStageIndex = STAGES_CONFIG.findIndex(s => s.stage === currentStage);
+
+  // Dynamic Primary Action CTA based on booking status
+  const getPrimaryActionLabel = (): string => {
+    switch (currentStage) {
+      case 'confirmed':
+        return pro ? 'View Professional →' : 'Track Order Status →';
+      case 'assigned':
+        return 'View Professional →';
+      case 'on_the_way':
+        return 'Track Professional →';
+      case 'arrived':
+      case 'cleaning':
+        return 'View Service Status →';
+      case 'completed':
+        return 'View Service Summary →';
+      default:
+        return 'Track Professional →';
+    }
+  };
+
+  const handlePrimaryAction = () => {
+    if (currentStage === 'completed') {
+      navigateTo('service-completed');
+    } else if (pro) {
+      setShowMessageModal(true);
+    } else {
+      navigateTo('my-bookings');
+    }
+  };
 
   const handleReportSubmit = async () => {
     if (!booking) return;
@@ -71,70 +184,36 @@ export const BookingTrackingScreen: React.FC = () => {
     alert('Report Submitted. Operations Admin has been alerted and will review immediately.');
   };
 
-  const handleSOSAlert = async () => {
-    if (!booking) return;
-    try {
-      const { supabase } = await import('../../config/supabase');
-      await supabase.from('sos_alerts').insert([
-        {
-          booking_id: booking.bookingId,
-          user_id: user?.uid || 'cust_curr',
-          user_role: 'customer',
-          user_name: user?.name || 'Customer',
-          user_phone: user?.phone || '+91 9849201824',
-          latitude: 17.4375,
-          longitude: 78.4482,
-          address_text: (booking.address?.street || 'Road No. 12') + ', ' + (booking.address?.locality || 'Banjara Hills'),
-          status: 'active',
-        }
-      ]);
-      alert('🔴 EMERGENCY SOS SIGNAL DISPATCHED!\n\nGC HOME+ Security Control Room & Emergency Response Team have been alerted with your live location.');
-    } catch (err) {
-      alert('Emergency SOS Dispatched to GC Control Room.');
-    }
-  };
-
-  const handleNextStageSimulation = () => {
-    const nextIdx = currentStageIndex + 1;
-    if (nextIdx < STAGES_CONFIG.length && booking) {
-      const nextStage = STAGES_CONFIG[nextIdx].stage;
-      advanceBookingStage(booking.bookingId, nextStage);
-      if (nextStage === 'completed') {
-        navigateTo('service-completed');
-      }
-    }
-  };
+  const formattedHumanDate = formatHumanDate(booking?.date || booking?.createdAt);
+  const conciseLocation = formatConciseLocation(
+    booking?.address?.locality,
+    booking?.address?.city,
+    booking?.address ? `${booking.address.street || ''}, ${booking.address.locality || ''}, ${booking.address.city || ''}` : undefined
+  );
 
   return (
     <View style={styles.safeContainer}>
-      {/* Header */}
+      {/* 1. HEADER */}
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backBtn}
-          onPress={() => navigateTo('home')}
+          onPress={() => navigateTo('customer_home')}
           activeOpacity={0.7}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
           <ArrowLeft size={20} color="#10243A" />
         </TouchableOpacity>
 
         <AppLogo size="sm" showTagline={true} align="left" />
 
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <TouchableOpacity
-            style={[styles.helpBtn, { backgroundColor: '#FEF2F2', borderColor: '#FECACA' }]}
-            onPress={handleSOSAlert}
-            activeOpacity={0.7}
-          >
-            <ShieldAlert size={18} color="#DC2626" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.helpBtn}
-            onPress={() => navigateTo('help')}
-            activeOpacity={0.7}
-          >
-            <HelpCircle size={20} color="#10243A" />
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity
+          style={styles.helpBtn}
+          onPress={() => navigateTo('help')}
+          activeOpacity={0.7}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <HelpCircle size={20} color="#10243A" />
+        </TouchableOpacity>
       </View>
 
       <ScrollView
@@ -142,32 +221,67 @@ export const BookingTrackingScreen: React.FC = () => {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Top Tracking Card */}
-        <View style={styles.trackingHeaderCard}>
-          <View style={styles.trackingTitleRow}>
-            <View>
-              <Text style={styles.bookingIdText}>Booking #{booking?.bookingId || 'GC-89421'}</Text>
-              <Text style={styles.serviceHeading}>
-                {booking?.serviceName || 'Home Cleaning'} ({booking?.homeSize.label || '1 BHK'})
-              </Text>
-            </View>
+        {/* 2. BOOKING SUMMARY CARD */}
+        <View style={styles.summaryHeaderCard}>
+          <View style={styles.cardTopFlex}>
+            <Text style={styles.bookingIdText}>
+              BOOKING #{booking?.bookingId || 'GC-30937'}
+            </Text>
+            
+            {/* LIVE Badge: Never Clipped, 100% inside container */}
             <View style={styles.liveBadge}>
               <View style={styles.liveDot} />
-              <Text style={styles.liveText}>Live</Text>
+              <Text style={styles.liveBadgeText}>LIVE</Text>
             </View>
           </View>
 
-          {/* Start OTP Safety Pin */}
-          <View style={styles.otpSafetyBanner}>
-            <KeyRound size={16} color="#0E5B47" />
-            <Text style={styles.otpBannerText}>
-              Share Start OTP with cleaner upon arrival:{' '}
-              <Text style={styles.otpDigits}>{booking?.startOtp || '4829'}</Text>
+          <Text style={styles.serviceTitleText} numberOfLines={2}>
+            {booking?.serviceName || 'Overhead Tank Cleaning – 500L'}
+          </Text>
+
+          {/* 3. OTP SECURITY CARD (Initially Masked UX) */}
+          <View style={styles.otpCard}>
+            <View style={styles.otpHeaderRow}>
+              <View style={styles.otpLeftGroup}>
+                <KeyRound size={16} color="#123D2A" strokeWidth={2.2} />
+                <Text style={styles.otpTitleLabel}>START OTP</Text>
+              </View>
+
+              <TouchableOpacity
+                style={styles.showOtpBtn}
+                onPress={() => setShowOtp(!showOtp)}
+                activeOpacity={0.8}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                {showOtp ? (
+                  <>
+                    <EyeOff size={13} color="#123D2A" />
+                    <Text style={styles.showOtpBtnText}>Hide OTP</Text>
+                  </>
+                ) : (
+                  <>
+                    <Eye size={13} color="#123D2A" />
+                    <Text style={styles.showOtpBtnText}>Show OTP</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.otpDisplayRow}>
+              {showOtp ? (
+                <Text style={styles.otpDigitsRevealed}>{booking?.startOtp || '438060'}</Text>
+              ) : (
+                <Text style={styles.otpDigitsMasked}>● ● ● ● ● ●</Text>
+              )}
+            </View>
+
+            <Text style={styles.otpWarningSub}>
+              Share only when the professional arrives.
             </Text>
           </View>
         </View>
 
-        {/* Assigned Cleaner Profile Card */}
+        {/* ASSIGNED PROFESSIONAL CARD (If Assigned) */}
         {pro && (
           <View style={styles.cleanerCard}>
             <Image source={resolveImageSource(pro.photoUrl)} style={styles.cleanerPhoto} />
@@ -175,7 +289,7 @@ export const BookingTrackingScreen: React.FC = () => {
             <View style={styles.cleanerDetails}>
               <View style={styles.cleanerNameRow}>
                 <Text style={styles.cleanerName}>{pro.name}</Text>
-                {pro.isVerified && (
+                {pro.isVerified !== false && (
                   <View style={styles.verifiedTag}>
                     <ShieldCheck size={11} color="#168A68" />
                     <Text style={styles.verifiedText}>Verified Pro</Text>
@@ -185,59 +299,56 @@ export const BookingTrackingScreen: React.FC = () => {
 
               <View style={styles.ratingRow}>
                 <Star size={12} color="#F59E0B" fill="#F59E0B" />
-                <Text style={styles.ratingScore}>{pro.rating}</Text>
-                <Text style={styles.ratingCount}>({pro.reviewCount} reviews)</Text>
+                <Text style={styles.ratingScore}>{pro.rating || '4.9'}</Text>
+                <Text style={styles.ratingCount}>({pro.reviewCount || 0} reviews)</Text>
               </View>
-
-              <Text style={styles.experienceText}>{pro.experience}</Text>
             </View>
 
-            {/* Quick In-App Chat Action */}
-            <View style={styles.contactActions}>
-              <TouchableOpacity
-                style={styles.chatBtn}
-                onPress={() => setShowMessageModal(true)}
-                activeOpacity={0.8}
-              >
-                <MessageSquare size={16} color="#0E5B47" />
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity
+              style={styles.chatBtn}
+              onPress={() => setShowMessageModal(true)}
+              activeOpacity={0.8}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <MessageSquare size={16} color="#123D2A" />
+            </TouchableOpacity>
           </View>
         )}
 
-        {/* 6-Stage Timeline Section */}
+        {/* 4 & 5. SERVICE PROGRESS TIMELINE (Compact Reduced Height) */}
         <View style={styles.timelineCard}>
-          <Text style={styles.timelineSectionTitle}>Service Progress</Text>
+          <Text style={styles.timelineHeaderTitle}>Service Progress</Text>
 
           <View style={styles.timelineList}>
             {STAGES_CONFIG.map((step, idx) => {
               const isPassed = idx <= currentStageIndex;
               const isCurrent = idx === currentStageIndex;
+              const isLast = idx === STAGES_CONFIG.length - 1;
 
               return (
-                <View key={step.stage} style={styles.timelineStepRow}>
-                  {/* Left Indicator & Line */}
+                <View key={step.stage} style={styles.stepContainer}>
                   <View style={styles.indicatorCol}>
-                    {isPassed ? (
-                      <CheckCircle2
-                        size={22}
-                        color="#168A68"
-                        fill={isCurrent ? '#168A68' : '#EAF8F1'}
-                      />
+                    {isCurrent ? (
+                      <View style={styles.currentDotOuter}>
+                        <View style={styles.currentDotInner} />
+                      </View>
+                    ) : isPassed ? (
+                      <CheckCircle2 size={18} color="#168A68" fill="#EAF8F1" strokeWidth={2.2} />
                     ) : (
-                      <Circle size={20} color="#CBD5E1" />
+                      <Circle size={18} color="#CBD5E1" strokeWidth={2} />
                     )}
-                    {idx < STAGES_CONFIG.length - 1 && (
+
+                    {!isLast && (
                       <View
                         style={[
-                          styles.timelineLine,
-                          idx < currentStageIndex && styles.timelineLineActive,
+                          styles.timelineConnector,
+                          isPassed && idx < currentStageIndex && styles.timelineConnectorActive,
                         ]}
                       />
                     )}
                   </View>
 
-                  {/* Step Text Info */}
+                  {/* Step Text: Show Subtitle ONLY for Current Step to reduce height */}
                   <View style={styles.stepTextCol}>
                     <Text
                       style={[
@@ -248,7 +359,11 @@ export const BookingTrackingScreen: React.FC = () => {
                     >
                       {step.title}
                     </Text>
-                    <Text style={styles.stepSubtitle}>{step.subtitle}</Text>
+                    
+                    {/* Subtitle rendered only for active step */}
+                    {isCurrent && (
+                      <Text style={styles.activeStepSubtitle}>{step.subtitle}</Text>
+                    )}
                   </View>
                 </View>
               );
@@ -256,73 +371,105 @@ export const BookingTrackingScreen: React.FC = () => {
           </View>
         </View>
 
-        {/* Schedule & Location Summary */}
-        <View style={styles.summaryCard}>
-          <View style={styles.sumRow}>
-            <Clock size={15} color="#168A68" />
-            <Text style={styles.sumText}>
-              {booking?.dateLabel || 'Today, 26 Apr'} • {booking?.timeSlot || '4:00 PM – 6:00 PM'}
+        {/* 6 & 7. DYNAMIC PRIMARY ACTION CTA */}
+        <TouchableOpacity
+          style={styles.primaryCtaButton}
+          onPress={handlePrimaryAction}
+          activeOpacity={0.85}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Text style={styles.primaryCtaText}>{getPrimaryActionLabel()}</Text>
+        </TouchableOpacity>
+
+        {/* 8 & 9. HUMAN READABLE SCHEDULE & CONCISE LOCATION CARD */}
+        <View style={styles.scheduleLocationCard}>
+          {/* Date & Time Row */}
+          <View style={styles.infoRow}>
+            <Clock size={16} color="#168A68" strokeWidth={2.2} style={styles.infoIcon} />
+            <Text style={styles.infoText}>
+              {formattedHumanDate} · {booking?.timeSlot || '9:00 AM – 11:00 AM'}
             </Text>
           </View>
-          <View style={styles.sumRow}>
-            <MapPin size={15} color="#168A68" />
-            <Text style={styles.sumText} numberOfLines={2}>
-              {booking?.address.street}, {booking?.address.locality}, {booking?.address.city}
-            </Text>
+
+          <View style={styles.infoDivider} />
+
+          {/* Location Row */}
+          <View style={styles.infoRow}>
+            <MapPin size={16} color="#168A68" strokeWidth={2.2} style={styles.infoIcon} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.infoText} numberOfLines={1}>
+                📍 {conciseLocation}
+              </Text>
+              
+              {showFullAddress && booking?.address?.street ? (
+                <Text style={styles.fullAddrSubtext}>
+                  {booking.address.street}, {booking.address.locality}, {booking.address.city} - {booking.address.pincode}
+                </Text>
+              ) : null}
+            </View>
+
+            <TouchableOpacity
+              onPress={() => setShowFullAddress(!showFullAddress)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={styles.viewAddrLink}>
+                {showFullAddress ? 'Hide address' : 'View full address →'}
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
 
-        {/* Security & Cash Handling Safeguard Banner */}
+        {/* 11. CASH HANDLING SAFEGUARD WARNING CARD */}
         <TouchableOpacity
-          style={[styles.summaryCard, { backgroundColor: '#FEF2F2', borderColor: '#FCA5A5' }]}
+          style={styles.cashWarningCard}
           onPress={() => setShowReportModal(true)}
-          activeOpacity={0.8}
+          activeOpacity={0.85}
         >
-          <View style={styles.sumRow}>
-            <ShieldCheck size={15} color="#DC2626" />
-            <Text style={[styles.sumText, { color: '#991B1B', fontWeight: '800' }]}>
-              Report Unauthorized Cash Request
-            </Text>
+          <View style={styles.cashHeaderRow}>
+            <ShieldAlert size={16} color="#DC2626" />
+            <Text style={styles.cashTitle}>Report Unauthorized Cash Request</Text>
           </View>
-          <Text style={{ fontSize: 11, color: '#B91C1C', marginTop: 4 }}>
-            Partners are strictly forbidden from demanding cash payments outside the app. Click here to report.
+          <Text style={styles.cashSubtext}>
+            Partners must not request cash payments outside the app.
           </Text>
-        </TouchableOpacity>
-
-        {/* Interactive Demo Simulation Button */}
-        <TouchableOpacity
-          style={styles.simStageBtn}
-          onPress={handleNextStageSimulation}
-          activeOpacity={0.8}
-        >
-          <Sparkles size={14} color="#0E5B47" />
-          <Text style={styles.simStageText}>
-            {currentStage === 'completed'
-              ? 'View Completed Summary →'
-              : `Advance to next stage (${STAGES_CONFIG[Math.min(currentStageIndex + 1, 5)].title})`}
-          </Text>
+          <Text style={styles.cashReportLink}>Report an issue →</Text>
         </TouchableOpacity>
       </ScrollView>
 
-      {/* Message / Chat Modal */}
-      <Modal visible={showMessageModal} transparent animationType="slide" onRequestClose={() => setShowMessageModal(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.chatSheet}>
-            <View style={styles.chatHeader}>
-              <Text style={styles.chatTitle}>Chat with {pro?.name || 'Partner'}</Text>
-              <TouchableOpacity onPress={() => setShowMessageModal(false)}>
-                <Text style={styles.closeChatText}>Close</Text>
+      {/* Report Modal */}
+      <Modal visible={showReportModal} transparent animationType="fade">
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Report Payment Issue</Text>
+            <Text style={styles.modalSub}>
+              Describe any cash demand outside the GC HOME+ platform.
+            </Text>
+
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Describe issue..."
+              multiline
+              numberOfLines={3}
+              value={reportDescription}
+              onChangeText={setReportDescription}
+            />
+
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setShowReportModal(false)}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
-            </View>
-            <View style={styles.chatBubblePartner}>
-              <Text style={styles.bubbleText}>
-                Namaste! I am on my way to your location. I will arrive around {booking?.timeSlot.split('–')[0]}.
-              </Text>
-            </View>
-            <View style={styles.chatBubbleUser}>
-              <Text style={styles.bubbleTextUser}>
-                Thanks Sunita ji! Please call once you reach the gate.
-              </Text>
+              <TouchableOpacity
+                style={styles.modalSubmitBtn}
+                onPress={handleReportSubmit}
+                disabled={isSubmittingReport}
+              >
+                <Text style={styles.modalSubmitText}>
+                  {isSubmittingReport ? 'Submitting...' : 'Submit Report'}
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
         </View>
@@ -334,18 +481,18 @@ export const BookingTrackingScreen: React.FC = () => {
 const styles = StyleSheet.create({
   safeContainer: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F8FAFC',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 10,
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#F0F4F2',
-    backgroundColor: '#FFFFFF',
   },
   backBtn: {
     padding: 6,
@@ -356,49 +503,57 @@ const styles = StyleSheet.create({
   },
   helpBtn: {
     padding: 6,
+    borderRadius: 12,
+    backgroundColor: '#F5FCF8',
+    borderWidth: 1,
+    borderColor: '#E1E8E5',
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 16,
-    paddingTop: 14,
+    paddingHorizontal: 20,
+    paddingTop: 16,
     paddingBottom: 40,
+    gap: 14,
   },
-  trackingHeaderCard: {
-    backgroundColor: '#F5FCF8',
+  // SUMMARY CARD
+  summaryHeaderCard: {
+    backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    padding: 14,
+    padding: 16,
     borderWidth: 1,
-    borderColor: '#C6EEDB',
-    marginBottom: 12,
+    borderColor: '#EAF1ED',
+    gap: 10,
+    shadowColor: '#0A192F',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
   },
-  trackingTitleRow: {
+  cardTopFlex: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 10,
+    alignItems: 'center',
   },
   bookingIdText: {
     fontSize: 11,
     fontWeight: '800',
-    color: '#168A68',
-    textTransform: 'uppercase',
-  },
-  serviceHeading: {
-    fontSize: 16,
-    fontWeight: '900',
-    color: '#10243A',
-    marginTop: 1,
+    color: '#64748B',
+    letterSpacing: 0.5,
   },
   liveBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#DCFCE7',
+    gap: 5,
+    backgroundColor: '#EAF8F1',
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#C3E6D5',
+    flexShrink: 0,
+    marginLeft: 8,
   },
   liveDot: {
     width: 6,
@@ -406,54 +561,96 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     backgroundColor: '#168A68',
   },
-  liveText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#0E5B47',
-  },
-  otpSafetyBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#EAF8F1',
-    borderRadius: 10,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: '#C6EEDB',
-  },
-  otpBannerText: {
-    flex: 1,
-    fontSize: 11.5,
-    color: '#0E5B47',
-    fontWeight: '600',
-  },
-  otpDigits: {
-    fontSize: 13,
+  liveBadgeText: {
+    fontSize: 10.5,
     fontWeight: '900',
     color: '#0E5B47',
-    letterSpacing: 1,
+    letterSpacing: 0.5,
   },
-  cleanerCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+  serviceTitleText: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#0F172A',
+    lineHeight: 22,
+  },
+  // OTP SECURITY CARD
+  otpCard: {
+    backgroundColor: '#F5FCF8',
+    borderRadius: 12,
     padding: 12,
     borderWidth: 1,
     borderColor: '#E1E8E5',
-    marginBottom: 14,
-    shadowColor: '#10243A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 5,
-    elevation: 2,
+    gap: 6,
+    marginTop: 4,
+  },
+  otpHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  otpLeftGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  otpTitleLabel: {
+    fontSize: 10.5,
+    fontWeight: '900',
+    color: '#123D2A',
+    letterSpacing: 0.5,
+  },
+  showOtpBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#C6E3CB',
+  },
+  showOtpBtnText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#123D2A',
+  },
+  otpDisplayRow: {
+    paddingVertical: 2,
+  },
+  otpDigitsRevealed: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#123D2A',
+    letterSpacing: 3,
+  },
+  otpDigitsMasked: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#64748B',
+    letterSpacing: 4,
+  },
+  otpWarningSub: {
+    fontSize: 10.5,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  // CLEANER CARD
+  cleanerCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderColor: '#EAF1ED',
   },
   cleanerPhoto: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: '#E2E8F0',
-    marginRight: 10,
   },
   cleanerDetails: {
     flex: 1,
@@ -464,214 +661,267 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   cleanerName: {
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: '800',
-    color: '#10243A',
+    color: '#0F172A',
   },
   verifiedTag: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
+    gap: 3,
     backgroundColor: '#EAF8F1',
-    paddingHorizontal: 4,
+    paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
   },
   verifiedText: {
-    fontSize: 8.5,
+    fontSize: 9.5,
     fontWeight: '800',
     color: '#168A68',
   },
   ratingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
+    gap: 4,
     marginTop: 2,
   },
   ratingScore: {
-    fontSize: 11,
+    fontSize: 11.5,
     fontWeight: '800',
-    color: '#10243A',
+    color: '#0F172A',
   },
   ratingCount: {
-    fontSize: 10,
-    color: '#68788C',
-  },
-  experienceText: {
-    fontSize: 10.5,
-    color: '#68788C',
-    marginTop: 2,
-  },
-  contactActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  callBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#168A68',
-    justifyContent: 'center',
-    alignItems: 'center',
+    fontSize: 11,
+    color: '#64748B',
   },
   chatBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
     backgroundColor: '#EAF8F1',
-    borderWidth: 1,
-    borderColor: '#C6EEDB',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#C3E6D5',
   },
+  // TIMELINE CARD (COMPACT)
   timelineCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#E1E8E5',
-    marginBottom: 12,
+    borderColor: '#EAF1ED',
+    gap: 12,
   },
-  timelineSectionTitle: {
+  timelineHeaderTitle: {
     fontSize: 15,
     fontWeight: '900',
-    color: '#10243A',
-    marginBottom: 14,
+    color: '#0F172A',
   },
   timelineList: {
-    paddingLeft: 4,
+    gap: 0,
   },
-  timelineStepRow: {
+  stepContainer: {
     flexDirection: 'row',
-    marginBottom: 16,
+    alignItems: 'flex-start',
   },
   indicatorCol: {
     alignItems: 'center',
-    width: 26,
+    width: 24,
     marginRight: 10,
   },
-  timelineLine: {
-    width: 2,
-    flex: 1,
-    backgroundColor: '#E2E8F0',
-    marginVertical: 4,
+  currentDotOuter: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#EAF5EC',
+    borderWidth: 2,
+    borderColor: '#123D2A',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  timelineLineActive: {
+  currentDotInner: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#123D2A',
+  },
+  timelineConnector: {
+    width: 2,
+    height: 18,
+    backgroundColor: '#E2E8F0',
+    marginVertical: 2,
+  },
+  timelineConnectorActive: {
     backgroundColor: '#168A68',
   },
   stepTextCol: {
     flex: 1,
-    paddingTop: 1,
+    paddingBottom: 6,
   },
   stepTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#68788C',
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#94A3B8',
   },
   stepTitlePassed: {
-    color: '#10243A',
-    fontWeight: '800',
+    color: '#475569',
   },
   stepTitleCurrent: {
-    color: '#0E5B47',
+    fontSize: 13.5,
     fontWeight: '900',
+    color: '#123D2A',
   },
-  stepSubtitle: {
+  activeStepSubtitle: {
     fontSize: 11,
-    color: '#94A3B8',
+    color: '#64748B',
     marginTop: 2,
-    lineHeight: 14,
+    lineHeight: 15,
   },
-  summaryCard: {
-    backgroundColor: '#F5FCF8',
-    borderRadius: 14,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#E1E8E5',
-    gap: 8,
-    marginBottom: 14,
-  },
-  sumRow: {
+  // PRIMARY CTA
+  primaryCtaButton: {
+    backgroundColor: '#123D2A',
+    borderRadius: 24,
+    height: 48,
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  sumText: {
-    flex: 1,
-    fontSize: 11.5,
-    color: '#10243A',
-    fontWeight: '600',
-  },
-  simStageBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    backgroundColor: '#EAF8F1',
-    borderWidth: 1,
-    borderColor: '#C6EEDB',
-    borderRadius: 14,
-    paddingVertical: 11,
-    paddingHorizontal: 14,
-  },
-  simStageText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#0E5B47',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(16, 36, 58, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  chatSheet: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 18,
-  },
-  chatHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 14,
+    gap: 8,
+    shadowColor: '#123D2A',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+    elevation: 3,
   },
-  chatTitle: {
-    fontSize: 15,
-    fontWeight: '900',
-    color: '#10243A',
-  },
-  closeChatText: {
-    fontSize: 13,
+  primaryCtaText: {
+    fontSize: 14.5,
     fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  // SCHEDULE & LOCATION CARD
+  scheduleLocationCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#EAF1ED',
+    gap: 10,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  infoIcon: {
+    marginTop: 1,
+  },
+  infoText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#0F172A',
+    flex: 1,
+  },
+  infoDivider: {
+    height: 1,
+    backgroundColor: '#F1F5F9',
+  },
+  viewAddrLink: {
+    fontSize: 11,
+    fontWeight: '700',
     color: '#168A68',
   },
-  chatBubblePartner: {
-    backgroundColor: '#F5FCF8',
+  fullAddrSubtext: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  // CASH WARNING CARD (COMPACT)
+  cashWarningCard: {
+    backgroundColor: '#FEF2F2',
+    borderRadius: 14,
     padding: 12,
-    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#E1E8E5',
-    marginBottom: 10,
-    maxWidth: '85%',
+    borderColor: '#FCA5A5',
+    gap: 4,
   },
-  bubbleText: {
+  cashHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  cashTitle: {
     fontSize: 12.5,
-    color: '#10243A',
-    lineHeight: 16,
+    fontWeight: '800',
+    color: '#991B1B',
   },
-  chatBubbleUser: {
-    backgroundColor: '#0E5B47',
-    padding: 12,
-    borderRadius: 12,
-    alignSelf: 'flex-end',
-    maxWidth: '85%',
-    marginBottom: 16,
+  cashSubtext: {
+    fontSize: 11,
+    color: '#7F1D1D',
   },
-  bubbleTextUser: {
-    fontSize: 12.5,
+  cashReportLink: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#DC2626',
+    marginTop: 2,
+  },
+  // MODALS
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
+    width: '100%',
+    gap: 12,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#0F172A',
+  },
+  modalSub: {
+    fontSize: 12,
+    color: '#64748B',
+  },
+  modalInput: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 10,
+    padding: 10,
+    fontSize: 12,
+    color: '#0F172A',
+    minHeight: 60,
+  },
+  modalBtnRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+  },
+  modalCancelBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  modalCancelText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  modalSubmitBtn: {
+    backgroundColor: '#DC2626',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  modalSubmitText: {
+    fontSize: 12,
+    fontWeight: '800',
     color: '#FFFFFF',
-    lineHeight: 16,
   },
 });

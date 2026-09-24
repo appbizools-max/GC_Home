@@ -34,11 +34,11 @@ async function runAuthTest() {
     throw new Error('Incorrect OTP');
   }
 
-  const existingRes = verifyOtp('+91 98492 01824', '749216');
-  console.log('✓ Existing user OTP verification:', existingRes.isNewUser === false && existingRes.user.name === 'Rohan Sharma');
+  const existingRes = verifyOtp('+91 98492 01824', '123456');
+  console.log('✓ Existing user OTP 123456 verification:', existingRes.isNewUser === false && existingRes.user.name === 'Rohan Sharma');
 
-  const newUserRes = verifyOtp('+91 99999 88888', '749216');
-  console.log('✓ New user OTP verification:', newUserRes.isNewUser === true);
+  const newUserRes = verifyOtp('+91 99999 88888', '123456');
+  console.log('✓ New user OTP 123456 verification:', newUserRes.isNewUser === true);
 
   try {
     verifyOtp('+91 98492 01824', '000000');

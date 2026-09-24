@@ -11,6 +11,9 @@ import { ChevronRight } from 'lucide-react-native';
 
 interface ServicesNearYouRowProps {
   services: (Service & { isBestseller?: boolean; reviewCount?: string; rating?: number })[];
+  isLoading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
   currentLocationName: string;
   onSelectService: (service: Service) => void;
   onQuickAdd: (service: Service) => void;
@@ -19,6 +22,9 @@ interface ServicesNearYouRowProps {
 
 export const ServicesNearYouRow: React.FC<ServicesNearYouRowProps> = ({
   services,
+  isLoading = false,
+  error = null,
+  onRetry,
   currentLocationName,
   onSelectService,
   onQuickAdd,
@@ -31,9 +37,9 @@ export const ServicesNearYouRow: React.FC<ServicesNearYouRowProps> = ({
       {/* Section Header */}
       <View style={styles.headerRow}>
         <View>
-          <Text style={styles.sectionTitle}>Services near you</Text>
+          <Text style={styles.sectionTitle}>Top Rated Services</Text>
           <Text style={styles.sectionSubtitle}>
-            Top rated cleaning services in {shortLocation}
+            Top-rated featured services curated for you in {shortLocation}
           </Text>
         </View>
 
@@ -46,6 +52,9 @@ export const ServicesNearYouRow: React.FC<ServicesNearYouRowProps> = ({
       {/* Two-Column Services Grid */}
       <TwoColumnServicesGrid
         services={services}
+        isLoading={isLoading}
+        error={error}
+        onRetry={onRetry}
         onSelectService={onSelectService}
         onQuickAdd={onQuickAdd}
       />

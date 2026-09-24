@@ -8,6 +8,7 @@ import {
   Image,
 } from 'react-native';
 import { Service } from '../../types';
+import { resolveImageSource } from '../../utils/imageUtils';
 import { X, Star, Clock, Plus, Minus, ArrowRight, ShieldCheck } from 'lucide-react-native';
 
 interface QuickAddServiceModalProps {
@@ -52,7 +53,7 @@ export const QuickAddServiceModal: React.FC<QuickAddServiceModalProps> = ({
 
           {/* Service Overview Card */}
           <View style={styles.servicePreviewCard}>
-            <Image source={{ uri: service.imageUrl }} style={styles.serviceImg} />
+            <Image source={resolveImageSource(service.imageUrl)} style={styles.serviceImg} />
             <View style={styles.serviceInfo}>
               <Text style={styles.serviceName}>{service.name}</Text>
               <View style={styles.metaRow}>

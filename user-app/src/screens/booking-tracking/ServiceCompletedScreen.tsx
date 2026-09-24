@@ -59,7 +59,7 @@ export const ServiceCompletedScreen: React.FC = () => {
           <View style={styles.serviceRow}>
             <Text style={styles.serviceLabel}>Service</Text>
             <Text style={styles.serviceValue}>
-              {booking?.serviceName || 'Home Cleaning'} ({booking?.homeSize.label || '1 BHK'})
+              {booking?.serviceName || 'Home Cleaning'}
             </Text>
           </View>
 

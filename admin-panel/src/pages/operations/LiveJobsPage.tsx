@@ -62,11 +62,11 @@ export const LiveJobsPage: React.FC = () => {
   };
 
   // KPI Calculations
-  const totalLiveJobs = liveBookings.length || 22;
-  const maidEnRouteCount = liveBookings.filter(b => b.status === 'en_route').length || 6;
-  const maidArrivedCount = liveBookings.filter(b => b.status === 'arrived').length || 8;
-  const cleaningStartedCount = liveBookings.filter(b => b.status === 'cleaning_started' || b.status === 'in_progress').length || 6;
-  const dueSoonCount = 4;
+  const totalLiveJobs = liveBookings.length;
+  const maidEnRouteCount = liveBookings.filter(b => b.status === 'en_route').length;
+  const maidArrivedCount = liveBookings.filter(b => b.status === 'arrived').length;
+  const cleaningStartedCount = liveBookings.filter(b => b.status === 'cleaning_started' || b.status === 'in_progress').length;
+  const dueSoonCount = 0;
 
   // Filtered List
   const filteredJobs = liveBookings.filter(b => {
@@ -142,7 +142,7 @@ export const LiveJobsPage: React.FC = () => {
 
             <button
               onClick={handleRefresh}
-              className="bg-[#043927] hover:bg-emerald-950 text-white font-semibold px-3.5 py-1.5 rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+              className="bg-[#123D2A] hover:bg-emerald-950 text-white font-semibold px-3.5 py-1.5 rounded-xl text-xs flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
             >
               <RefreshCw className={`w-3.5 h-3.5 text-emerald-200 ${isRefreshing ? 'animate-spin' : ''}`} />
               <span>Refresh</span>
@@ -176,7 +176,6 @@ export const LiveJobsPage: React.FC = () => {
               <span className="text-xs font-semibold text-slate-500 block">Total Live Jobs</span>
               <div className="flex items-baseline gap-2 mt-0.5">
                 <span className="text-2xl font-black text-slate-900">{totalLiveJobs}</span>
-                <span className="text-[11px] font-bold text-emerald-600">↑ 12% <span className="text-slate-400 font-normal">vs yesterday</span></span>
               </div>
             </div>
           </div>
@@ -198,7 +197,6 @@ export const LiveJobsPage: React.FC = () => {
               <span className="text-xs font-semibold text-slate-500 block">Maid En Route</span>
               <div className="flex items-baseline gap-2 mt-0.5">
                 <span className="text-2xl font-black text-slate-900">{maidEnRouteCount}</span>
-                <span className="text-[11px] font-bold text-emerald-600">↑ 20% <span className="text-slate-400 font-normal">vs yesterday</span></span>
               </div>
             </div>
           </div>
@@ -220,7 +218,6 @@ export const LiveJobsPage: React.FC = () => {
               <span className="text-xs font-semibold text-slate-500 block">Maid Arrived</span>
               <div className="flex items-baseline gap-2 mt-0.5">
                 <span className="text-2xl font-black text-slate-900">{maidArrivedCount}</span>
-                <span className="text-[11px] font-bold text-emerald-600">↑ 14% <span className="text-slate-400 font-normal">vs yesterday</span></span>
               </div>
             </div>
           </div>
@@ -242,7 +239,6 @@ export const LiveJobsPage: React.FC = () => {
               <span className="text-xs font-semibold text-slate-500 block">Cleaning Started</span>
               <div className="flex items-baseline gap-2 mt-0.5">
                 <span className="text-2xl font-black text-slate-900">{cleaningStartedCount}</span>
-                <span className="text-[11px] font-bold text-emerald-600">↑ 8% <span className="text-slate-400 font-normal">vs yesterday</span></span>
               </div>
             </div>
           </div>
@@ -658,7 +654,7 @@ export const LiveJobsPage: React.FC = () => {
 
               {/* Step 4: Cleaning */}
               <div className="flex flex-col items-center gap-1 z-10">
-                <div className="w-7 h-7 rounded-full bg-[#043927] text-white flex items-center justify-center font-bold text-xs shadow-xs ring-4 ring-emerald-100">
+                <div className="w-7 h-7 rounded-full bg-[#123D2A] text-white flex items-center justify-center font-bold text-xs shadow-xs ring-4 ring-emerald-100">
                   <Sparkles className="w-3.5 h-3.5 text-emerald-300" />
                 </div>
                 <span className="text-[10px] font-black text-emerald-900">Cleaning</span>
@@ -820,7 +816,7 @@ export const LiveJobsPage: React.FC = () => {
                   alert(`Job ${selectedJob.bookingId} marked as completed!`);
                 }
               }}
-              className="flex-1 bg-[#043927] hover:bg-emerald-950 text-white font-bold py-2.5 px-3 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer"
+              className="flex-1 bg-[#123D2A] hover:bg-emerald-950 text-white font-bold py-2.5 px-3 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer"
             >
               <CheckCircle2 className="w-4 h-4 text-emerald-300" />
               <span>Mark as Completed</span>
@@ -878,3 +874,4 @@ export const LiveJobsPage: React.FC = () => {
 };
 
 export default LiveJobsPage;
+

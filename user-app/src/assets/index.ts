@@ -1,5 +1,5 @@
 // Centralized asset exports for GC Home Plus
-import gcLogo from './images/gc_logo.jpg';
+import gcLogo from './branding/gc-home-logo.png';
 import heroLivingRoom from './images/hero_living_room.jpg';
 import promoCleaner from './images/promo_cleaner.jpg';
 import serviceKitchen from './images/service_kitchen.jpg';
@@ -9,6 +9,7 @@ import customerAvatar from './images/customer_avatar.jpg';
 
 export const ASSETS = {
   logo: gcLogo,
+  officialLogo: gcLogo,
   heroLivingRoom,
   promoCleaner,
   serviceKitchen,

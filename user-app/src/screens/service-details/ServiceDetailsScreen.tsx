@@ -8,7 +8,7 @@ import {
   Image,
   Dimensions,
   Modal,
-  Share,
+  ActivityIndicator,
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useCart } from '../../context/CartContext';
@@ -20,126 +20,128 @@ import {
   AvailableDate,
   AvailableSlot,
 } from '../../services/dateTimeEngine';
-import { HomeSize, AddOnItem } from '../../types';
-import { ASSETS } from '../../assets/index';
+import { AddOnItem, Service } from '../../types';
+import { supabase } from '../../config/supabase';
 import {
   ArrowLeft,
-  Heart,
-  Share2,
-  Star,
-  Clock,
-  ShieldCheck,
-  Home,
+  ShoppingCart,
+  Plus,
+  Minus,
+  Trash2,
+  Sparkles,
   Check,
   Calendar as CalendarIcon,
-  Info,
-  ChevronUp,
-  ChevronDown,
-  ShoppingCart,
+  Clock,
   ArrowRight,
-  Leaf,
-  Sparkles,
-  Award,
-  Smile,
+  ShieldCheck,
   X,
-  MapPin,
 } from 'lucide-react-native';
 
 const { width } = Dimensions.get('window');
 
-const HOME_SIZES: HomeSize[] = [
-  { id: '1bhk', label: '1 BHK', roomsCount: 1, price: 699, subtitle: '1 Bedroom + 1 Hall + 1 Kitchen' },
-  { id: '2bhk', label: '2 BHK', roomsCount: 2, price: 999, subtitle: '2 Bedrooms + 1 Hall + 1 Kitchen' },
-  { id: '3bhk', label: '3 BHK', roomsCount: 3, price: 1299, subtitle: '3 Bedrooms + 1 Hall + 1 Kitchen' },
-  { id: '4bhk', label: '4 BHK', roomsCount: 4, price: 1599, subtitle: '4 Bedrooms + 1 Hall + 1 Kitchen' },
-];
-
-const ADD_ON_SERVICES: AddOnItem[] = [
-  {
-    id: 'addon_fridge',
-    title: 'Refrigerator Cleaning',
-    price: 199,
-    imageUrl: ASSETS.serviceKitchen,
-    description: 'Internal shelves wipe, freezer defrost wash & deodorizing',
-  },
-  {
-    id: 'addon_microwave',
-    title: 'Microwave Cleaning',
-    price: 149,
-    imageUrl: ASSETS.serviceKitchen,
-    description: 'Grease removal, turntable sanitize & interior polish',
-  },
-  {
-    id: 'addon_balcony',
-    title: 'Balcony Cleaning',
-    price: 199,
-    imageUrl: ASSETS.heroLivingRoom,
-    description: 'Railing wash, floor scrubbing & pigeon net wipe',
-  },
-  {
-    id: 'addon_window',
-    title: 'Window Cleaning',
-    price: 249,
-    imageUrl: ASSETS.serviceBathroom,
-    description: 'Glass descaling, mesh vacuum & track cleaning',
-  },
-];
-
 export const ServiceDetailsScreen: React.FC = () => {
-  const { navigateTo } = useAuth();
+  const { navigateTo, goBack } = useAuth();
   const {
     cart,
-    setHomeSize,
+    removeServiceFromCart,
+    updateItemQuantity,
     toggleAddOn,
     setBookingSchedule,
+    clearCart,
     cartItemsCount,
   } = useCart();
 
-  // Selected State
-  const [selectedSize, setSelectedSize] = useState<HomeSize>(cart?.homeSize || HOME_SIZES[0]);
-  const [selectedAddOns, setSelectedAddOns] = useState<AddOnItem[]>(cart?.addOns || [ADD_ON_SERVICES[1]]); // Microwave selected by default
-  const [isFavorite, setIsFavorite] = useState(false);
+  // Dynamic Add-ons State
+  const [suggestedAddOns, setSuggestedAddOns] = useState<AddOnItem[]>([]);
+  const [isLoadingAddOns, setIsLoadingAddOns] = useState(false);
 
-  // Dynamic Date & Slot System
+  // Date & Slot Selection State
   const [availableDates, setAvailableDates] = useState<AvailableDate[]>([]);
   const [selectedDate, setSelectedDate] = useState<AvailableDate | null>(null);
-  const [slots, setSlots] = useState<AvailableSlot[]>([]);
+  const [availableSlots, setAvailableSlots] = useState<AvailableSlot[]>([]);
   const [selectedSlot, setSelectedSlot] = useState<AvailableSlot | null>(null);
 
-  // Modals
-  const [showSizeGuide, setShowSizeGuide] = useState(false);
-  const [showFullCalendar, setShowFullCalendar] = useState(false);
-  const [showPriceBreakdown, setShowPriceBreakdown] = useState(false);
+  // Modals Visibility
+  const [showDateModal, setShowDateModal] = useState(false);
+  const [showSlotModal, setShowSlotModal] = useState(false);
 
   // Initialize Dates & Slots
   useEffect(() => {
-    const dates = generateAvailableDates(7);
+    const dates = generateAvailableDates(14);
     setAvailableDates(dates);
+
     const initialDate = dates[0];
     setSelectedDate(initialDate);
 
     const initialSlots = getAvailableSlotsForDate(initialDate.dateString);
-    setSlots(initialSlots);
+    setAvailableSlots(initialSlots);
 
-    // Pick first available slot or 4:00 PM slot
     const defaultSlot =
       initialSlots.find(s => s.slotId === 'slot_16_18' && s.isAvailable) ||
       initialSlots.find(s => s.isAvailable) ||
       initialSlots[0];
+
     setSelectedSlot(defaultSlot);
 
-    setBookingSchedule(
-      initialDate.dateString,
-      initialDate.displayLabel.replace('\n', ', '),
-      defaultSlot?.displayRange || '4:00 PM – 6:00 PM'
-    );
+    if (initialDate && defaultSlot) {
+      setBookingSchedule(
+        initialDate.dateString,
+        initialDate.displayLabel.replace('\n', ', '),
+        defaultSlot.displayRange
+      );
+    }
   }, []);
 
+  // Fetch Live Suggested Add-ons from Supabase matching Cart Services
+  const cartServiceIds = (cart?.items || []).map(i => i.service.serviceId).filter(Boolean);
+
+  useEffect(() => {
+    const fetchSuggestedAddOns = async () => {
+      setIsLoadingAddOns(true);
+      try {
+        if (cartServiceIds.length === 0) {
+          setSuggestedAddOns([]);
+          setIsLoadingAddOns(false);
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from('service_addons')
+          .select('*')
+          .or(`service_id.in.(${cartServiceIds.join(',')}),service_id.is.null`)
+          .eq('is_active', true);
+
+        if (!error && data) {
+          const mapped: AddOnItem[] = data.map((row: any) => ({
+            id: row.id,
+            serviceId: row.service_id,
+            title: row.name || row.title,
+            price: Number(row.price || 0),
+            description: row.description || '',
+            imageUrl: row.image_url || undefined,
+          }));
+          setSuggestedAddOns(mapped);
+        } else {
+          setSuggestedAddOns([]);
+        }
+      } catch (err) {
+        console.warn('Error loading suggested add-ons:', err);
+        setSuggestedAddOns([]);
+      } finally {
+        setIsLoadingAddOns(false);
+      }
+    };
+
+    fetchSuggestedAddOns();
+  }, [cartServiceIds.join(',')]);
+
+  // Handle Date Selection Change
   const handleSelectDate = (date: AvailableDate) => {
     setSelectedDate(date);
     const dateSlots = getAvailableSlotsForDate(date.dateString);
-    setSlots(dateSlots);
+    setAvailableSlots(dateSlots);
 
+    // If currently selected slot is available for new date, keep it; else select first valid
     const validSlot =
       dateSlots.find(s => s.slotId === selectedSlot?.slotId && s.isAvailable) ||
       dateSlots.find(s => s.isAvailable) ||
@@ -154,8 +156,11 @@ export const ServiceDetailsScreen: React.FC = () => {
         validSlot.displayRange
       );
     }
+
+    setShowDateModal(false);
   };
 
+  // Handle Slot Selection Change
   const handleSelectSlot = (slot: AvailableSlot) => {
     if (!slot.isAvailable) return;
     setSelectedSlot(slot);
@@ -166,35 +171,11 @@ export const ServiceDetailsScreen: React.FC = () => {
         slot.displayRange
       );
     }
+    setShowSlotModal(false);
   };
-
-  const handleSizeChange = (size: HomeSize) => {
-    setSelectedSize(size);
-    setHomeSize(size);
-  };
-
-  const handleToggleAddOn = (addon: AddOnItem) => {
-    toggleAddOn(addon);
-    setSelectedAddOns(prev => {
-      const exists = prev.some(a => a.id === addon.id);
-      return exists ? prev.filter(a => a.id !== addon.id) : [...prev, addon];
-    });
-  };
-
-  const handleShare = async () => {
-    try {
-      await Share.share({
-        message: 'Check out GC Home Plus - Professional Home Cleaning with Genuine Care! https://gchomeplus.com',
-      });
-    } catch {}
-  };
-
-  // Calculations
-  const basePrice = selectedSize.price;
-  const addOnsTotal = selectedAddOns.reduce((sum, a) => sum + a.price, 0);
-  const totalAmount = basePrice + addOnsTotal;
 
   const handleProceedToAddress = () => {
+    if (!cart?.items || cart.items.length === 0) return;
     if (selectedDate && selectedSlot) {
       setBookingSchedule(
         selectedDate.dateString,
@@ -207,39 +188,33 @@ export const ServiceDetailsScreen: React.FC = () => {
 
   return (
     <View style={styles.safeContainer}>
-      {/* Top Header */}
+      {/* Top Sticky Header */}
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backBtn}
-          onPress={() => navigateTo('services-listing')}
+          onPress={() => {
+            const popped = goBack();
+            if (!popped) navigateTo('services-listing');
+          }}
           activeOpacity={0.7}
         >
           <ArrowLeft size={20} color="#10243A" />
         </TouchableOpacity>
 
-        <AppLogo size="sm" showTagline={true} align="left" />
-
-        <View style={styles.headerRightActions}>
-          <TouchableOpacity
-            style={styles.actionIconBtn}
-            onPress={() => setIsFavorite(!isFavorite)}
-            activeOpacity={0.7}
-          >
-            <Heart
-              size={20}
-              color={isFavorite ? '#EF4444' : '#10243A'}
-              fill={isFavorite ? '#EF4444' : 'transparent'}
-            />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.actionIconBtn}
-            onPress={handleShare}
-            activeOpacity={0.7}
-          >
-            <Share2 size={20} color="#10243A" />
-          </TouchableOpacity>
+        <View style={styles.headerTitleCol}>
+          <Text style={styles.headerTitle}>View Cart</Text>
+          <Text style={styles.headerSub}>
+            {cartItemsCount} {cartItemsCount === 1 ? 'item' : 'items'} selected
+          </Text>
         </View>
+
+        {cartItemsCount > 0 ? (
+          <TouchableOpacity style={styles.clearCartBtn} onPress={clearCart} activeOpacity={0.7}>
+            <Text style={styles.clearCartText}>Clear All</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={{ width: 44 }} />
+        )}
       </View>
 
       <ScrollView
@@ -247,390 +222,358 @@ export const ServiceDetailsScreen: React.FC = () => {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Hero Visual Card with Overlaid Badges */}
-        <View style={styles.heroContainer}>
-          <Image
-            source={resolveImageSource(cart?.service?.imageUrl || ASSETS.heroLivingRoom)}
-            style={styles.heroImage}
-            resizeMode="cover"
-          />
-
-          {/* Bestseller Badge */}
-          <View style={styles.bestsellerTag}>
-            <Sparkles size={12} color="#FFFFFF" />
-            <Text style={styles.bestsellerText}>Bestseller</Text>
-          </View>
-
-          {/* Image Pagination Dots Overlay */}
-          <View style={styles.heroDotsContainer}>
-            <View style={[styles.heroDot, styles.heroDotActive]} />
-            <View style={styles.heroDot} />
-            <View style={styles.heroDot} />
-          </View>
-
-          {/* 1/5 Image Counter */}
-          <View style={styles.photoCountBadge}>
-            <Text style={styles.photoCountText}>1 / 5</Text>
-          </View>
-
-          {/* Overlaid Trust Feature Tags Box */}
-          <View style={styles.trustFeaturesOverlay}>
-            <View style={styles.trustFeatureItem}>
-              <Award size={14} color="#168A68" />
-              <Text style={styles.trustFeatureText}>Trained Professionals</Text>
-            </View>
-            <View style={styles.trustFeatureItem}>
-              <Leaf size={14} color="#168A68" />
-              <Text style={styles.trustFeatureText}>Safe & Eco-Friendly</Text>
-            </View>
-            <View style={styles.trustFeatureItem}>
-              <ShieldCheck size={14} color="#168A68" />
-              <Text style={styles.trustFeatureText}>Quality Assured</Text>
-            </View>
-            <View style={styles.trustFeatureItem}>
-              <Smile size={14} color="#168A68" />
-              <Text style={styles.trustFeatureText}>100% Satisfaction</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Service Main Title & Subtitle */}
-        <View style={styles.serviceMetaHeader}>
-          <Text style={styles.serviceName}>{cart?.service?.name || 'Home Cleaning'}</Text>
-          <Text style={styles.serviceTagline}>
-            Complete home cleaning for a fresh and healthy living space.
-          </Text>
-
-          {/* Rating, Duration & Starts At */}
-          <View style={styles.specificationsRow}>
-            <View style={styles.specGroup}>
-              <Star size={14} color="#F59E0B" fill="#F59E0B" />
-              <Text style={styles.specValue}>4.8</Text>
-              <Text style={styles.specSub}>(2.1K reviews)</Text>
-            </View>
-
-            <View style={styles.specDivider} />
-
-            <View style={styles.specGroup}>
-              <Clock size={14} color="#168A68" />
-              <Text style={styles.specValue}>2 - 4 hrs</Text>
-            </View>
-
-            <View style={styles.specDivider} />
-
-            <View style={styles.specGroup}>
-              <ShieldCheck size={14} color="#168A68" />
-              <Text style={styles.specValue}>Verified Pros</Text>
-            </View>
-          </View>
-
-          <Text style={styles.startsAtHeading}>
-            Starts at <Text style={styles.startsAtNumber}>₹ {cart?.service?.startingPrice || 699}</Text>
-          </Text>
-        </View>
-
-        {/* SECTION 1: SELECT HOME SIZE */}
-        <View style={styles.sectionContainer}>
+        {/* ── SECTION 1: SELECTED SERVICES LIST ── */}
+        <View style={styles.sectionCard}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Select Home Size</Text>
-            <TouchableOpacity
-              style={styles.sizeGuideBtn}
-              onPress={() => setShowSizeGuide(true)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.sizeGuideText}>Size Guide</Text>
-              <Info size={14} color="#168A68" />
-            </TouchableOpacity>
+            <ShoppingCart size={18} color="#168A68" />
+            <Text style={styles.sectionTitle}>
+              Selected Services ({cart?.items.length || 0})
+            </Text>
           </View>
 
-          {/* 4 BHK Horizontal Row */}
-          <View style={styles.homeSizesGrid}>
-            {HOME_SIZES.map(item => {
-              const isSelected = selectedSize.id === item.id;
-              return (
-                <TouchableOpacity
-                  key={item.id}
-                  style={[styles.homeSizeCard, isSelected && styles.homeSizeCardSelected]}
-                  onPress={() => handleSizeChange(item)}
-                  activeOpacity={0.88}
-                >
-                  <Home size={22} color={isSelected ? '#168A68' : '#68788C'} />
-                  <Text style={[styles.homeSizeLabel, isSelected && styles.homeSizeLabelSelected]}>
-                    {item.label}
+          {(!cart?.items || cart.items.length === 0) ? (
+            <View style={styles.emptyCartBox}>
+              <View style={styles.emptyIconCircle}>
+                <ShoppingCart size={32} color="#94A3B8" />
+              </View>
+              <Text style={styles.emptyCartTitle}>Your cart is empty</Text>
+              <Text style={styles.emptyCartSub}>
+                Add cleaning services from Home or Services page to continue
+              </Text>
+              <TouchableOpacity
+                style={styles.browseServicesBtn}
+                onPress={() => navigateTo('services-listing')}
+                activeOpacity={0.88}
+              >
+                <Text style={styles.browseServicesText}>Browse Services</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            cart.items.map((item, idx) => (
+              <View
+                key={item.service.serviceId || idx}
+                style={[
+                  styles.serviceCartRow,
+                  idx < cart.items.length - 1 && styles.serviceCartRowBorder,
+                ]}
+              >
+                <Image
+                  source={resolveImageSource(item.service.imageUrl)}
+                  style={styles.serviceCartThumb}
+                />
+
+                <View style={styles.serviceCartMeta}>
+                  <Text style={styles.serviceCartName}>{item.service.name}</Text>
+                  <Text style={styles.serviceCartUnitPrice}>
+                    ₹ {item.service.startingPrice} per unit
                   </Text>
-                  <Text style={[styles.homeSizePrice, isSelected && styles.homeSizePriceSelected]}>
-                    ₹ {item.price}
+                  <Text style={styles.serviceCartSubtotal}>
+                    Subtotal: <Text style={styles.boldPrice}>₹ {item.itemTotal}</Text>
                   </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
+                </View>
 
-        {/* SECTION 2: ADD-ON SERVICES */}
-        <View style={styles.sectionContainer}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Add On Services (Optional)</Text>
-            <TouchableOpacity activeOpacity={0.7}>
-              <Text style={styles.seeAllText}>See All</Text>
-            </TouchableOpacity>
-          </View>
+                <View style={styles.serviceCartActions}>
+                  {/* Stepper Pill [- Qty +] */}
+                  <View style={styles.cartStepper}>
+                    <TouchableOpacity
+                      style={styles.cartStepperBtn}
+                      onPress={() => {
+                        if (item.quantity <= 1) {
+                          removeServiceFromCart(item.service.serviceId);
+                        } else {
+                          updateItemQuantity(item.service.serviceId, item.quantity - 1);
+                        }
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      {item.quantity <= 1 ? (
+                        <Trash2 size={11} color="#FFFFFF" strokeWidth={2.5} />
+                      ) : (
+                        <Minus size={11} color="#FFFFFF" strokeWidth={2.5} />
+                      )}
+                    </TouchableOpacity>
 
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.addOnsScroll}>
-            {ADD_ON_SERVICES.map(addon => {
-              const isChecked = selectedAddOns.some(a => a.id === addon.id);
-              return (
-                <TouchableOpacity
-                  key={addon.id}
-                  style={[styles.addonCard, isChecked && styles.addonCardChecked]}
-                  onPress={() => handleToggleAddOn(addon)}
-                  activeOpacity={0.88}
-                >
-                  {/* Card Thumbnail */}
-                  <View style={styles.addonImageWrapper}>
-                    <Image source={resolveImageSource(addon.imageUrl)} style={styles.addonImg} />
-                    {/* Checkbox */}
-                    <View style={[styles.addonCheckbox, isChecked && styles.addonCheckboxActive]}>
-                      {isChecked && <Check size={12} color="#FFFFFF" strokeWidth={3} />}
-                    </View>
+                    <Text style={styles.cartStepperCount}>{item.quantity}</Text>
+
+                    <TouchableOpacity
+                      style={styles.cartStepperBtn}
+                      onPress={() => updateItemQuantity(item.service.serviceId, item.quantity + 1)}
+                      activeOpacity={0.7}
+                    >
+                      <Plus size={11} color="#FFFFFF" strokeWidth={2.5} />
+                    </TouchableOpacity>
                   </View>
 
-                  <Text style={styles.addonTitle} numberOfLines={2}>
-                    {addon.title}
-                  </Text>
-                  <Text style={styles.addonPrice}>₹ {addon.price}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
+                  {/* Explicit Remove Button */}
+                  <TouchableOpacity
+                    style={styles.removeTextBtn}
+                    onPress={() => removeServiceFromCart(item.service.serviceId)}
+                    activeOpacity={0.7}
+                  >
+                    <Trash2 size={12} color="#EF4444" />
+                    <Text style={styles.removeText}>Remove</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))
+          )}
         </View>
 
-        {/* SECTION 3: SELECT DATE & TIME */}
-        <View style={styles.sectionContainer}>
-          <View style={styles.dateTimeHeaderRow}>
-            <View>
-              <Text style={styles.sectionTitle}>Select Date & Time</Text>
-              <Text style={styles.sectionSubtitle}>
-                Choose your preferred date and time slot (Based on your location time)
-              </Text>
+        {/* ── SECTION 2: SUGGESTED ADD-ONS ── */}
+        {cart && cart.items.length > 0 && (
+          <View style={styles.sectionCard}>
+            <View style={styles.sectionHeaderRow}>
+              <Sparkles size={18} color="#168A68" />
+              <Text style={styles.sectionTitle}>Suggested Add-ons</Text>
             </View>
 
-            {/* Timezone Badge */}
-            <View style={styles.timezoneBadge}>
-              <MapPin size={12} color="#168A68" />
-              <View>
-                <Text style={styles.timezoneLoc}>HSR Layout, Bengaluru</Text>
-                <Text style={styles.timezoneIst}>IST (GMT+5:30)</Text>
+            {isLoadingAddOns ? (
+              <View style={styles.loadingBox}>
+                <ActivityIndicator size="small" color="#168A68" />
+                <Text style={styles.loadingText}>Fetching suggested add-ons...</Text>
               </View>
-            </View>
-          </View>
-
-          {/* Calendar Date Pills */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.datePillsScroll}>
-            {availableDates.map(date => {
-              const isSelected = selectedDate?.dateString === date.dateString;
-              return (
-                <TouchableOpacity
-                  key={date.dateString}
-                  style={[styles.datePill, isSelected && styles.datePillSelected]}
-                  onPress={() => handleSelectDate(date)}
-                  activeOpacity={0.85}
-                >
-                  <Text style={[styles.dateDayText, isSelected && styles.dateTextSelected]}>
-                    {date.dayName}
-                  </Text>
-                  <Text style={[styles.dateNumText, isSelected && styles.dateTextSelected]}>
-                    {date.dayNumber} {date.monthName}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-
-            {/* View Full Calendar Button */}
-            <TouchableOpacity
-              style={styles.viewCalendarBtn}
-              onPress={() => setShowFullCalendar(true)}
-              activeOpacity={0.8}
-            >
-              <CalendarIcon size={18} color="#168A68" />
-              <Text style={styles.viewCalendarText}>View Calendar</Text>
-            </TouchableOpacity>
-          </ScrollView>
-
-          {/* Time Slots Section */}
-          <View style={styles.timeSlotsHeader}>
-            <View style={styles.slotHintRow}>
-              <Clock size={13} color="#168A68" />
-              <Text style={styles.slotHintText}>
-                Showing available slots for{' '}
-                <Text style={styles.slotHintHighlight}>
-                  {selectedDate?.isToday ? 'Today' : selectedDate?.dayName}, {selectedDate?.dayNumber} {selectedDate?.monthName}
+            ) : suggestedAddOns.length === 0 ? (
+              <View style={styles.noAddonsBox}>
+                <ShieldCheck size={18} color="#168A68" />
+                <Text style={styles.noAddonsText}>
+                  Your selected services are complete and fully covered!
                 </Text>
-              </Text>
-            </View>
-            <Text style={styles.allTimesText}>All times in IST</Text>
-          </View>
-
-          {/* Time Slot Cards Grid */}
-          <View style={styles.slotsGrid}>
-            {slots.map(slot => {
-              const isSelected = selectedSlot?.slotId === slot.slotId && slot.isAvailable;
-              const isUnavailable = !slot.isAvailable;
-
-              return (
-                <TouchableOpacity
-                  key={slot.slotId}
-                  style={[
-                    styles.slotCard,
-                    isSelected && styles.slotCardSelected,
-                    isUnavailable && styles.slotCardUnavailable,
-                  ]}
-                  onPress={() => handleSelectSlot(slot)}
-                  disabled={isUnavailable}
-                  activeOpacity={0.85}
-                >
-                  <Clock
-                    size={14}
-                    color={isSelected ? '#168A68' : isUnavailable ? '#94A3B8' : '#10243A'}
-                  />
-                  <Text
+              </View>
+            ) : (
+              suggestedAddOns.map((addon, idx) => {
+                const isSelected = (cart.addOns || []).some(a => a.id === addon.id);
+                return (
+                  <View
+                    key={addon.id}
                     style={[
-                      styles.slotTimeText,
-                      isSelected && styles.slotTimeSelected,
-                      isUnavailable && styles.slotTimeUnavailable,
+                      styles.addonRow,
+                      isSelected && styles.addonRowSelected,
+                      idx < suggestedAddOns.length - 1 && styles.addonRowBorder,
                     ]}
                   >
-                    {slot.displayRange}
-                  </Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.addonTitle}>{addon.title}</Text>
+                      {Boolean(addon.description) && (
+                        <Text style={styles.addonDesc}>{addon.description}</Text>
+                      )}
+                      <Text style={styles.addonPrice}>+ ₹ {addon.price}</Text>
+                    </View>
 
-                  {isUnavailable && (
-                    <Text style={styles.unavailableLabel}>
-                      {slot.isPast || slot.cutoffPassed ? 'Unavailable' : 'Full'}
-                    </Text>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-
-        {/* Eco-Friendly Trust Banner Card */}
-        <View style={styles.ecoBanner}>
-          <View style={styles.ecoIconBox}>
-            <Leaf size={22} color="#168A68" />
-          </View>
-          <View style={styles.ecoTextCol}>
-            <Text style={styles.ecoTitle}>
-              We use eco-friendly and safe cleaning products for a healthier home and a greener planet.
-            </Text>
-            <Text style={styles.ecoTag}>Cleaner Homes, Happier Lives 💚</Text>
-          </View>
-        </View>
-      </ScrollView>
-
-      {/* STICKY BOTTOM BOOKING BAR */}
-      <View style={styles.stickyBottomBar}>
-        {/* Left Total Info */}
-        <TouchableOpacity
-          style={styles.bottomPriceCol}
-          onPress={() => setShowPriceBreakdown(!showPriceBreakdown)}
-          activeOpacity={0.7}
-        >
-          <View style={styles.priceDropdownRow}>
-            <Text style={styles.bottomTotalPrice}>₹ {totalAmount}</Text>
-            {showPriceBreakdown ? (
-              <ChevronDown size={18} color="#10243A" />
-            ) : (
-              <ChevronUp size={18} color="#10243A" />
+                    <TouchableOpacity
+                      style={[
+                        styles.addonAddBtn,
+                        isSelected && styles.addonAddBtnSelected,
+                      ]}
+                      onPress={() => toggleAddOn(addon)}
+                      activeOpacity={0.8}
+                    >
+                      {isSelected ? (
+                        <>
+                          <Check size={12} color="#FFFFFF" strokeWidth={3} />
+                          <Text style={styles.addonAddTextSelected}>Added</Text>
+                        </>
+                      ) : (
+                        <>
+                          <Plus size={12} color="#168A68" strokeWidth={2.5} />
+                          <Text style={styles.addonAddText}>Add</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                );
+              })
             )}
           </View>
-          <Text style={styles.bottomSummaryText} numberOfLines={1}>
-            {selectedSize.label} • {selectedAddOns.length} Add-on
-          </Text>
-          <Text style={styles.bottomScheduleText} numberOfLines={1}>
-            {selectedDate?.isToday ? 'Today' : selectedDate?.dayName}, {selectedSlot?.displayRange}
-          </Text>
-        </TouchableOpacity>
+        )}
 
-        {/* Right Action Buttons */}
-        <View style={styles.bottomBtnsGroup}>
-          <TouchableOpacity
-            style={styles.addCartBtn}
-            onPress={() => {
-              handleProceedToAddress();
-            }}
-            activeOpacity={0.8}
-          >
-            <ShoppingCart size={16} color="#0E5B47" />
-            <Text style={styles.addCartBtnText}>Add to Cart</Text>
-          </TouchableOpacity>
+        {/* ── SECTION 3: DATE & TIME SELECTION DIRECTLY IN CART ── */}
+        {cart && cart.items.length > 0 && (
+          <View style={styles.sectionCard}>
+            <View style={styles.sectionHeaderRow}>
+              <CalendarIcon size={18} color="#168A68" />
+              <Text style={styles.sectionTitle}>Service Schedule</Text>
+            </View>
 
-          <TouchableOpacity
-            style={styles.bookNowBtn}
-            onPress={handleProceedToAddress}
-            activeOpacity={0.88}
-          >
-            <Text style={styles.bookNowBtnText}>Book Now</Text>
-            <ArrowRight size={16} color="#FFFFFF" strokeWidth={2.4} />
-          </TouchableOpacity>
+            {/* Date Row */}
+            <View style={styles.scheduleRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.scheduleLabel}>SELECTED DATE</Text>
+                <Text style={styles.scheduleValue}>
+                  {selectedDate?.displayLabel.replace('\n', ', ') || cart.selectedDateLabel || 'Today'}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.changeBtn}
+                onPress={() => setShowDateModal(true)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.changeBtnText}>Change Date</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.divider} />
+
+            {/* Time Slot Row */}
+            <View style={styles.scheduleRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.scheduleLabel}>SELECTED TIME SLOT</Text>
+                <Text style={styles.scheduleValue}>
+                  {selectedSlot?.displayRange || cart.selectedSlot || 'Select Slot'}
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.changeBtn}
+                onPress={() => setShowSlotModal(true)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.changeBtnText}>Change Time</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* ── SECTION 4: BILL DETAILS ── */}
+        {cart && cart.items.length > 0 && (
+          <View style={styles.sectionCard}>
+            <Text style={styles.sectionTitle}>Bill Details</Text>
+
+            <View style={styles.billRow}>
+              <Text style={styles.billLabel}>Services Subtotal</Text>
+              <Text style={styles.billVal}>₹ {cart.subtotal - cart.addOnsTotal}</Text>
+            </View>
+
+            {cart.addOnsTotal > 0 && (
+              <View style={styles.billRow}>
+                <Text style={styles.billLabel}>Selected Add-ons</Text>
+                <Text style={styles.billVal}>+ ₹ {cart.addOnsTotal}</Text>
+              </View>
+            )}
+
+            <View style={styles.billRow}>
+              <Text style={styles.billLabel}>Platform & Safety Fee</Text>
+              <Text style={styles.billVal}>₹ {cart.platformFee}</Text>
+            </View>
+
+            <View style={styles.billRow}>
+              <Text style={styles.billLabel}>Taxes & GST (18%)</Text>
+              <Text style={styles.billVal}>₹ {cart.taxes}</Text>
+            </View>
+
+            {cart.discountAmount > 0 && (
+              <View style={styles.billRow}>
+                <Text style={[styles.billLabel, { color: '#168A68', fontWeight: '700' }]}>
+                  Coupon Discount ({cart.promoCode})
+                </Text>
+                <Text style={[styles.billVal, { color: '#168A68', fontWeight: '800' }]}>
+                  - ₹ {cart.discountAmount}
+                </Text>
+              </View>
+            )}
+
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>Total Payable</Text>
+              <Text style={styles.totalVal}>₹ {cart.totalAmount}</Text>
+            </View>
+          </View>
+        )}
+      </ScrollView>
+
+      {/* STICKY BOTTOM PROCEED BAR */}
+      <View style={styles.bottomBar}>
+        <View style={styles.bottomPriceInfo}>
+          <Text style={styles.bottomPriceLabel}>Total Amount</Text>
+          <Text style={styles.bottomPriceVal}>₹ {cart?.totalAmount || 0}</Text>
         </View>
+
+        <TouchableOpacity
+          style={[
+            styles.proceedBtn,
+            (!cart?.items || cart.items.length === 0) && styles.proceedBtnDisabled,
+          ]}
+          onPress={handleProceedToAddress}
+          disabled={!cart?.items || cart.items.length === 0}
+          activeOpacity={0.88}
+        >
+          <Text style={styles.proceedBtnText}>Proceed to Address</Text>
+          <ArrowRight size={18} color="#FFFFFF" strokeWidth={2.4} />
+        </TouchableOpacity>
       </View>
 
-      {/* Size Guide Modal */}
-      <Modal visible={showSizeGuide} transparent animationType="fade" onRequestClose={() => setShowSizeGuide(false)}>
+      {/* MODAL: FULL CALENDAR / DATE PICKER */}
+      <Modal visible={showDateModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <View style={styles.guideCard}>
-            <View style={styles.guideHeader}>
-              <Text style={styles.guideTitle}>Home Size Guide</Text>
-              <TouchableOpacity onPress={() => setShowSizeGuide(false)}>
-                <X size={20} color="#10243A" />
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.guideSub}>Recommended estimated cleaning times & coverage</Text>
-
-            {HOME_SIZES.map(sz => (
-              <View key={sz.id} style={styles.guideRow}>
-                <Text style={styles.guideSizeName}>{sz.label}</Text>
-                <Text style={styles.guideDesc}>{sz.subtitle}</Text>
-                <Text style={styles.guidePrice}>₹ {sz.price}</Text>
-              </View>
-            ))}
-
-            <TouchableOpacity style={styles.guideCloseBtn} onPress={() => setShowSizeGuide(false)}>
-              <Text style={styles.guideCloseBtnText}>Got it</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Full Calendar Modal */}
-      <Modal visible={showFullCalendar} transparent animationType="slide" onRequestClose={() => setShowFullCalendar(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.calendarModalSheet}>
-            <View style={styles.guideHeader}>
-              <Text style={styles.guideTitle}>Choose Booking Date</Text>
-              <TouchableOpacity onPress={() => setShowFullCalendar(false)}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Service Date</Text>
+              <TouchableOpacity onPress={() => setShowDateModal(false)} style={styles.modalCloseBtn}>
                 <X size={20} color="#10243A" />
               </TouchableOpacity>
             </View>
 
-            <View style={styles.calendarGrid}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.datePickerScroll}>
               {availableDates.map(date => {
                 const isSelected = selectedDate?.dateString === date.dateString;
                 return (
                   <TouchableOpacity
                     key={date.dateString}
-                    style={[styles.calendarCell, isSelected && styles.calendarCellSelected]}
-                    onPress={() => {
-                      handleSelectDate(date);
-                      setShowFullCalendar(false);
-                    }}
+                    style={[styles.dateChip, isSelected && styles.dateChipSelected]}
+                    onPress={() => handleSelectDate(date)}
+                    activeOpacity={0.8}
                   >
-                    <Text style={[styles.calCellDay, isSelected && styles.calCellSelectedText]}>
+                    <Text style={[styles.dayNameText, isSelected && styles.dateTextSelected]}>
                       {date.dayName}
                     </Text>
-                    <Text style={[styles.calCellNum, isSelected && styles.calCellSelectedText]}>
-                      {date.dayNumber} {date.monthName}
+                    <Text style={[styles.dayNumText, isSelected && styles.dateTextSelected]}>
+                      {date.dayNumber}
+                    </Text>
+                    <Text style={[styles.monthText, isSelected && styles.dateTextSelected]}>
+                      {date.monthName}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL: TIME SLOT SELECTION */}
+      <Modal visible={showSlotModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Time Slot</Text>
+              <TouchableOpacity onPress={() => setShowSlotModal(false)} style={styles.modalCloseBtn}>
+                <X size={20} color="#10243A" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.slotsGrid}>
+              {availableSlots.map(slot => {
+                const isSelected = selectedSlot?.slotId === slot.slotId;
+                const isDisabled = !slot.isAvailable;
+
+                return (
+                  <TouchableOpacity
+                    key={slot.slotId}
+                    style={[
+                      styles.slotChip,
+                      isSelected && styles.slotChipSelected,
+                      isDisabled && styles.slotChipDisabled,
+                    ]}
+                    onPress={() => handleSelectSlot(slot)}
+                    disabled={isDisabled}
+                    activeOpacity={0.8}
+                  >
+                    <Clock size={14} color={isSelected ? '#FFFFFF' : isDisabled ? '#94A3B8' : '#168A68'} />
+                    <Text
+                      style={[
+                        styles.slotChipText,
+                        isSelected && styles.slotChipTextSelected,
+                        isDisabled && styles.slotChipTextDisabled,
+                      ]}
+                    >
+                      {slot.displayRange}
                     </Text>
                   </TouchableOpacity>
                 );
@@ -666,171 +609,56 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E1E8E5',
   },
-  headerRightActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  headerTitleCol: {
+    flex: 1,
+    marginLeft: 12,
   },
-  actionIconBtn: {
-    padding: 7,
-    borderRadius: 12,
-    backgroundColor: '#F5FCF8',
-    borderWidth: 1,
-    borderColor: '#E1E8E5',
+  headerTitle: {
+    fontSize: 17,
+    fontWeight: '900',
+    color: '#10243A',
+  },
+  headerSub: {
+    fontSize: 11,
+    color: '#68788C',
+    marginTop: 1,
+  },
+  clearCartBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: '#FEF2F2',
+  },
+  clearCartText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#EF4444',
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
+    paddingHorizontal: 16,
+    paddingTop: 14,
     paddingBottom: 100,
   },
-  heroContainer: {
-    width: '100%',
-    height: 220,
-    backgroundColor: '#E2E8F0',
-    position: 'relative',
-  },
-  heroImage: {
-    width: '100%',
-    height: '100%',
-  },
-  bestsellerTag: {
-    position: 'absolute',
-    top: 12,
-    left: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#0E5B47',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-  },
-  bestsellerText: {
-    fontSize: 11,
-    fontWeight: '900',
-    color: '#FFFFFF',
-  },
-  heroDotsContainer: {
-    position: 'absolute',
-    bottom: 12,
-    alignSelf: 'center',
-    flexDirection: 'row',
-    gap: 6,
-  },
-  heroDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: 'rgba(255, 255, 255, 0.6)',
-  },
-  heroDotActive: {
-    width: 16,
+  sectionCard: {
     backgroundColor: '#FFFFFF',
-  },
-  photoCountBadge: {
-    position: 'absolute',
-    top: 12,
-    right: 14,
-    backgroundColor: 'rgba(16, 36, 58, 0.65)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  photoCountText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  trustFeaturesOverlay: {
-    position: 'absolute',
-    right: 12,
-    bottom: 24,
-    backgroundColor: 'rgba(255, 255, 255, 0.94)',
-    padding: 8,
-    borderRadius: 12,
-    gap: 4,
+    borderRadius: 16,
+    padding: 14,
     borderWidth: 1,
-    borderColor: '#C6EEDB',
-    shadowColor: '#000',
+    borderColor: '#E1E8E5',
+    marginBottom: 14,
+    shadowColor: '#10243A',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  trustFeatureItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  trustFeatureText: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#0E5B47',
-  },
-  serviceMetaHeader: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F4F2',
-  },
-  serviceName: {
-    fontSize: 21,
-    fontWeight: '900',
-    color: '#10243A',
-  },
-  serviceTagline: {
-    fontSize: 12.5,
-    color: '#68788C',
-    marginTop: 2,
-    marginBottom: 10,
-  },
-  specificationsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 10,
-  },
-  specGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  specValue: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#10243A',
-  },
-  specSub: {
-    fontSize: 10.5,
-    color: '#68788C',
-  },
-  specDivider: {
-    width: 1,
-    height: 12,
-    backgroundColor: '#CBD5E1',
-  },
-  startsAtHeading: {
-    fontSize: 13,
-    color: '#168A68',
-    fontWeight: '700',
-  },
-  startsAtNumber: {
-    fontSize: 19,
-    fontWeight: '900',
-    color: '#0E5B47',
-  },
-  sectionContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F4F2',
+    shadowOpacity: 0.04,
+    shadowRadius: 5,
+    elevation: 2,
   },
   sectionHeaderRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
     marginBottom: 12,
   },
   sectionTitle: {
@@ -838,296 +666,270 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#10243A',
   },
-  sectionSubtitle: {
+  emptyCartBox: {
+    paddingVertical: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyIconCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#F5FCF8',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E1E8E5',
+  },
+  emptyCartTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#10243A',
+    marginBottom: 4,
+  },
+  emptyCartSub: {
+    fontSize: 12,
+    color: '#68788C',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  browseServicesBtn: {
+    backgroundColor: '#0E5B47',
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  browseServicesText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  serviceCartRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+  },
+  serviceCartRowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F4F2',
+  },
+  serviceCartThumb: {
+    width: 56,
+    height: 56,
+    borderRadius: 12,
+    backgroundColor: '#E2E8F0',
+  },
+  serviceCartMeta: {
+    flex: 1,
+  },
+  serviceCartName: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#10243A',
+  },
+  serviceCartUnitPrice: {
     fontSize: 11,
     color: '#68788C',
     marginTop: 1,
   },
-  sizeGuideBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  sizeGuideText: {
+  serviceCartSubtotal: {
     fontSize: 12,
-    fontWeight: '800',
-    color: '#168A68',
-  },
-  seeAllText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#168A68',
-  },
-  homeSizesGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
-  homeSizeCard: {
-    flex: 1,
-    backgroundColor: '#F5FCF8',
-    borderRadius: 14,
-    paddingVertical: 12,
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: '#E1E8E5',
-    gap: 4,
-  },
-  homeSizeCardSelected: {
-    borderColor: '#168A68',
-    backgroundColor: '#EAF8F1',
-  },
-  homeSizeLabel: {
-    fontSize: 12,
-    fontWeight: '800',
     color: '#10243A',
+    marginTop: 2,
   },
-  homeSizeLabelSelected: {
-    color: '#0E5B47',
-  },
-  homeSizePrice: {
-    fontSize: 13,
+  boldPrice: {
     fontWeight: '900',
-    color: '#68788C',
-  },
-  homeSizePriceSelected: {
     color: '#0E5B47',
   },
-  addOnsScroll: {
-    gap: 10,
-    paddingVertical: 2,
+  serviceCartActions: {
+    alignItems: 'flex-end',
+    gap: 6,
   },
-  addonCard: {
-    width: 110,
-    backgroundColor: '#F5FCF8',
-    borderRadius: 14,
-    padding: 8,
-    borderWidth: 1,
-    borderColor: '#E1E8E5',
+  cartStepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0E5B47',
+    borderRadius: 12,
+    paddingHorizontal: 4,
+    paddingVertical: 3,
+    gap: 6,
   },
-  addonCardChecked: {
-    borderColor: '#168A68',
-    backgroundColor: '#EAF8F1',
-  },
-  addonImageWrapper: {
-    width: '100%',
-    height: 64,
-    borderRadius: 10,
-    overflow: 'hidden',
-    position: 'relative',
-    marginBottom: 6,
-  },
-  addonImg: {
-    width: '100%',
-    height: '100%',
-  },
-  addonCheckbox: {
-    position: 'absolute',
-    top: 4,
-    right: 4,
-    width: 18,
-    height: 18,
-    borderRadius: 4,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1.5,
-    borderColor: '#CBD5E1',
+  cartStepperBtn: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  addonCheckboxActive: {
-    backgroundColor: '#168A68',
-    borderColor: '#168A68',
+  cartStepperCount: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    minWidth: 12,
+    textAlign: 'center',
+  },
+  removeTextBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingVertical: 2,
+  },
+  removeText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#EF4444',
+  },
+  loadingBox: {
+    paddingVertical: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  loadingText: {
+    fontSize: 12,
+    color: '#68788C',
+  },
+  noAddonsBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#EAF8F1',
+    padding: 10,
+    borderRadius: 10,
+  },
+  noAddonsText: {
+    fontSize: 11.5,
+    color: '#0E5B47',
+    fontWeight: '600',
+    flex: 1,
+  },
+  addonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    gap: 10,
+  },
+  addonRowBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F4F2',
+  },
+  addonRowSelected: {
+    backgroundColor: '#F5FCF8',
+    borderRadius: 10,
+    paddingHorizontal: 8,
   },
   addonTitle: {
-    fontSize: 10.5,
+    fontSize: 13,
     fontWeight: '800',
     color: '#10243A',
-    lineHeight: 13,
-    height: 26,
+  },
+  addonDesc: {
+    fontSize: 11,
+    color: '#68788C',
+    marginTop: 1,
   },
   addonPrice: {
     fontSize: 12,
-    fontWeight: '900',
-    color: '#0E5B47',
+    fontWeight: '800',
+    color: '#168A68',
     marginTop: 2,
   },
-  dateTimeHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 10,
-  },
-  timezoneBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#EAF8F1',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    borderWidth: 0.5,
-    borderColor: '#C6EEDB',
-  },
-  timezoneLoc: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#0E5B47',
-  },
-  timezoneIst: {
-    fontSize: 8,
-    color: '#168A68',
-    fontWeight: '600',
-  },
-  datePillsScroll: {
-    gap: 8,
-    paddingVertical: 6,
-  },
-  datePill: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-    backgroundColor: '#F5FCF8',
-    borderWidth: 1,
-    borderColor: '#E1E8E5',
-    alignItems: 'center',
-    minWidth: 64,
-  },
-  datePillSelected: {
-    backgroundColor: '#0E5B47',
-    borderColor: '#0E5B47',
-  },
-  dateDayText: {
-    fontSize: 10.5,
-    fontWeight: '800',
-    color: '#68788C',
-  },
-  dateNumText: {
-    fontSize: 11,
-    fontWeight: '900',
-    color: '#10243A',
-  },
-  dateTextSelected: {
-    color: '#FFFFFF',
-  },
-  viewCalendarBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 12,
-    backgroundColor: '#EAF8F1',
-    borderWidth: 1,
-    borderColor: '#C6EEDB',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 2,
-  },
-  viewCalendarText: {
-    fontSize: 9.5,
-    fontWeight: '800',
-    color: '#168A68',
-  },
-  timeSlotsHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 12,
-    marginBottom: 8,
-  },
-  slotHintRow: {
+  addonAddBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#168A68',
+    backgroundColor: '#FFFFFF',
   },
-  slotHintText: {
-    fontSize: 11,
-    color: '#68788C',
+  addonAddBtnSelected: {
+    backgroundColor: '#168A68',
   },
-  slotHintHighlight: {
+  addonAddText: {
+    fontSize: 11.5,
     fontWeight: '800',
-    color: '#10243A',
+    color: '#168A68',
   },
-  allTimesText: {
-    fontSize: 10,
-    color: '#94A3B8',
-    fontWeight: '600',
+  addonAddTextSelected: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
-  slotsGrid: {
-    gap: 8,
-  },
-  slotCard: {
+  scheduleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    borderWidth: 1,
-    borderColor: '#E1E8E5',
+    paddingVertical: 6,
   },
-  slotCardSelected: {
-    borderColor: '#168A68',
-    backgroundColor: '#EAF8F1',
-    borderWidth: 1.5,
+  scheduleLabel: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#68788C',
+    letterSpacing: 0.5,
   },
-  slotCardUnavailable: {
-    backgroundColor: '#F8FAFC',
-    borderColor: '#E2E8F0',
-    opacity: 0.7,
-  },
-  slotTimeText: {
-    flex: 1,
-    marginLeft: 10,
-    fontSize: 12.5,
+  scheduleValue: {
+    fontSize: 13.5,
     fontWeight: '800',
     color: '#10243A',
-  },
-  slotTimeSelected: {
-    color: '#0E5B47',
-  },
-  slotTimeUnavailable: {
-    color: '#94A3B8',
-  },
-  unavailableLabel: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#94A3B8',
-  },
-  ecoBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginHorizontal: 16,
-    marginTop: 14,
-    backgroundColor: '#EAF8F1',
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#C6EEDB',
-  },
-  ecoIconBox: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#FFFFFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  ecoTextCol: {
-    flex: 1,
-  },
-  ecoTitle: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: '#0E5B47',
-    lineHeight: 15,
-  },
-  ecoTag: {
-    fontSize: 10.5,
-    fontWeight: '800',
-    color: '#168A68',
     marginTop: 2,
   },
-  stickyBottomBar: {
+  changeBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: '#EAF8F1',
+  },
+  changeBtnText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#168A68',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#F0F4F2',
+    marginVertical: 6,
+  },
+  billRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 5,
+  },
+  billLabel: {
+    fontSize: 12.5,
+    color: '#68788C',
+  },
+  billVal: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#10243A',
+  },
+  totalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: '#F0F4F2',
+    paddingTop: 10,
+    marginTop: 6,
+  },
+  totalLabel: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: '#10243A',
+  },
+  totalVal: {
+    fontSize: 17,
+    fontWeight: '900',
+    color: '#0E5B47',
+  },
+  bottomBar: {
     position: 'absolute',
     bottom: 0,
     left: 0,
@@ -1136,178 +938,140 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#F0F4F2',
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 12,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -3 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 8,
   },
-  bottomPriceCol: {
+  bottomPriceInfo: {
     flex: 1,
   },
-  priceDropdownRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  bottomTotalPrice: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: '#10243A',
-  },
-  bottomSummaryText: {
+  bottomPriceLabel: {
     fontSize: 11,
     color: '#68788C',
     fontWeight: '600',
   },
-  bottomScheduleText: {
-    fontSize: 10,
-    color: '#168A68',
-    fontWeight: '700',
-  },
-  bottomBtnsGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  addCartBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 11,
-    borderRadius: 22,
-    backgroundColor: '#EAF8F1',
-    borderWidth: 1,
-    borderColor: '#C6EEDB',
-  },
-  addCartBtnText: {
-    fontSize: 12,
-    fontWeight: '800',
+  bottomPriceVal: {
+    fontSize: 18,
+    fontWeight: '900',
     color: '#0E5B47',
   },
-  bookNowBtn: {
+  proceedBtn: {
+    backgroundColor: '#0E5B47',
+    borderRadius: 24,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 11,
-    borderRadius: 22,
-    backgroundColor: '#0E5B47',
     shadowColor: '#0E5B47',
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.25,
     shadowRadius: 4,
     elevation: 3,
   },
-  bookNowBtnText: {
-    fontSize: 13,
+  proceedBtnDisabled: {
+    backgroundColor: '#94A3B8',
+    shadowOpacity: 0,
+  },
+  proceedBtnText: {
+    fontSize: 14,
     fontWeight: '800',
     color: '#FFFFFF',
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(16, 36, 58, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
   },
-  guideCard: {
-    width: '100%',
+  modalCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 20,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     padding: 20,
+    maxHeight: 400,
   },
-  guideHeader: {
+  modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
-  },
-  guideTitle: {
-    fontSize: 17,
-    fontWeight: '900',
-    color: '#10243A',
-  },
-  guideSub: {
-    fontSize: 12,
-    color: '#68788C',
     marginBottom: 16,
   },
-  guideRow: {
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F4F2',
-  },
-  guideSizeName: {
-    fontSize: 13.5,
-    fontWeight: '800',
-    color: '#0E5B47',
-  },
-  guideDesc: {
-    fontSize: 11.5,
-    color: '#68788C',
-    marginTop: 2,
-  },
-  guidePrice: {
-    fontSize: 13,
+  modalTitle: {
+    fontSize: 16,
     fontWeight: '900',
     color: '#10243A',
-    marginTop: 2,
   },
-  guideCloseBtn: {
-    marginTop: 16,
-    backgroundColor: '#0E5B47',
-    borderRadius: 14,
-    paddingVertical: 12,
+  modalCloseBtn: {
+    padding: 4,
+  },
+  datePickerScroll: {
+    gap: 10,
+    paddingVertical: 10,
+  },
+  dateChip: {
     alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: '#F5FCF8',
+    borderWidth: 1,
+    borderColor: '#E1E8E5',
+    minWidth: 70,
   },
-  guideCloseBtnText: {
-    fontSize: 13.5,
-    fontWeight: '800',
+  dateChipSelected: {
+    backgroundColor: '#168A68',
+    borderColor: '#168A68',
+  },
+  dayNameText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#68788C',
+  },
+  dayNumText: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#10243A',
+    marginVertical: 2,
+  },
+  monthText: {
+    fontSize: 10,
+    color: '#68788C',
+  },
+  dateTextSelected: {
     color: '#FFFFFF',
   },
-  calendarModalSheet: {
-    width: '100%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 20,
-  },
-  calendarGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  slotsGrid: {
     gap: 10,
-    marginTop: 12,
   },
-  calendarCell: {
-    width: (width - 80) / 3,
+  slotChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
     paddingVertical: 12,
     borderRadius: 12,
     backgroundColor: '#F5FCF8',
     borderWidth: 1,
     borderColor: '#E1E8E5',
-    alignItems: 'center',
   },
-  calendarCellSelected: {
-    backgroundColor: '#0E5B47',
-    borderColor: '#0E5B47',
+  slotChipSelected: {
+    backgroundColor: '#168A68',
+    borderColor: '#168A68',
   },
-  calCellDay: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#68788C',
+  slotChipDisabled: {
+    backgroundColor: '#F1F5F9',
+    borderColor: '#E2E8F0',
   },
-  calCellNum: {
-    fontSize: 12,
-    fontWeight: '900',
+  slotChipText: {
+    fontSize: 13,
+    fontWeight: '700',
     color: '#10243A',
-    marginTop: 2,
   },
-  calCellSelectedText: {
+  slotChipTextSelected: {
     color: '#FFFFFF',
+  },
+  slotChipTextDisabled: {
+    color: '#94A3B8',
   },
 });

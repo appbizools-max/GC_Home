@@ -17,30 +17,7 @@ interface PaymentReportItem {
 }
 
 export const PaymentReportsPage: React.FC = () => {
-  const [reports, setReports] = useState<PaymentReportItem[]>([
-    {
-      id: 'rep_001',
-      booking_id: 'GC-89421',
-      reporter_id: 'cust_hyder_90',
-      reported_partner_id: 'maid_sunita_01',
-      report_type: 'asked_for_cash',
-      description: 'Partner demanded ₹150 extra cash at door claiming cleaning supplies fee, despite online payment.',
-      amount_requested: 150,
-      status: 'pending',
-      created_at: new Date(Date.now() - 3600000).toISOString(),
-    },
-    {
-      id: 'rep_002',
-      booking_id: 'GC-77120',
-      reporter_id: 'cust_warangal_12',
-      reported_partner_id: 'maid_ramesh_04',
-      report_type: 'unauthorized_amount',
-      description: 'Partner refused OTP entry unless ₹200 tip was paid in advance.',
-      amount_requested: 200,
-      status: 'under_review',
-      created_at: new Date(Date.now() - 86400000).toISOString(),
-    },
-  ]);
+  const [reports, setReports] = useState<PaymentReportItem[]>([]);
 
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -53,7 +30,7 @@ export const PaymentReportsPage: React.FC = () => {
           .select('*')
           .order('created_at', { ascending: false });
 
-        if (!error && data && data.length > 0) {
+        if (!error && data) {
           setReports(data);
         }
       } catch (err) {

@@ -63,8 +63,12 @@ export class SmsProviderService {
     const cleanPhone = phone.replace(/[^0-9+]/g, '');
     const expected = this.activeOtps.get(cleanPhone);
 
-    // Development backdoor: default universal test code '1234'
-    if (enteredCode.trim() === '1234' || (expected && enteredCode.trim() === expected)) {
+    // Development backdoor: default universal test code '123456' or '1234'
+    if (
+      enteredCode.trim() === '123456' ||
+      enteredCode.trim() === '1234' ||
+      (expected && enteredCode.trim() === expected)
+    ) {
       this.activeOtps.delete(cleanPhone);
       return {
         success: true,

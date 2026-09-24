@@ -21,8 +21,10 @@ import {
   NEARBY_SERVICES_SEED,
   PROMO_OFFER_SEED,
   NOTIFICATIONS_SEED,
+  normalizeLocationString,
 } from '../../services/homeService';
 import { Service } from '../../types';
+import { supabase } from '../../config/supabase';
 
 // Subcomponents
 import { GCHeader } from '../../components/home/GCHeader';
@@ -30,7 +32,6 @@ import { LocationSelectionModal } from '../../components/home/LocationSelectionM
 import { SearchServicesModal } from '../../components/home/SearchServicesModal';
 import { HeroBannerCarousel } from '../../components/home/HeroBannerCarousel';
 import { ServiceCategoryRow } from '../../components/home/ServiceCategoryRow';
-import { PromotionalOfferBanner } from '../../components/home/PromotionalOfferBanner';
 import { ServicesNearYouRow } from '../../components/home/ServicesNearYouRow';
 import { QuickAddServiceModal } from '../../components/home/QuickAddServiceModal';
 import { WhyChooseSection } from '../../components/home/WhyChooseSection';
@@ -40,32 +41,55 @@ import { OffersModal } from '../../components/home/OffersModal';
 import { AboutGCModal } from '../../components/home/AboutGCModal';
 import { AddressInputModal } from '../../components/ui/AddressInputModal';
 import { DashboardSkeleton } from '../../components/home/DashboardSkeleton';
+import { FloatingCartBar } from '../../components/common/FloatingCartBar';
+import { SlotConfirmationModal } from '../../components/booking/SlotConfirmationModal';
+import { BecomePartnerBanner } from '../../components/home/BecomePartnerBanner';
 
 // Icons
-import { Search, Sparkles, UserCheck, ChevronRight } from 'lucide-react-native';
+import { Search, Sparkles, ChevronRight, Briefcase } from 'lucide-react-native';
 
 export const CustomerHomeScreen: React.FC = () => {
-  const { user, services, savedAddresses, navigateTo } = useAuth();
-  const { setCartService } = useCart();
+  const { user, services, savedAddresses, navigateTo, isMaidPartner, switchUserMode, bookings, confirmCustomerSlot } = useAuth();
+  const { addServiceToCart, toggleServiceInCart, cart } = useCart();
 
-  // Selected Location State
-  const defaultLocation =
+  const [dismissedSlotReminderId, setDismissedSlotReminderId] = useState<string | null>(null);
+
+  const slotReminderBooking = React.useMemo(() => {
+    return (
+      bookings.find(
+        b =>
+          b.customerId === user?.uid &&
+          b.slotReminderSentAt &&
+          !b.customerConfirmedSlot &&
+          b.bookingId !== dismissedSlotReminderId &&
+          b.slotConfirmationStatus !== 'finalized' &&
+          b.slotConfirmationStatus !== 'admin_resolved'
+      ) || null
+    );
+  }, [bookings, user?.uid, dismissedSlotReminderId]);
+
+  // Selected Location State (Normalized)
+  const defaultLocation = normalizeLocationString(
     savedAddresses && savedAddresses.length > 0
       ? `${savedAddresses[0].locality || savedAddresses[0].street}, ${savedAddresses[0].city} ${savedAddresses[0].pincode}`
-      : 'HSR Layout, Bengaluru, Karnataka 560102';
+      : 'Collectorate Road, Karimnagar, Telangana 505001'
+  );
 
   const [currentLocation, setCurrentLocation] = useState<string>(defaultLocation);
   const [refreshing, setRefreshing] = useState<boolean>(false);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(!homeService.getCachedDashboard());
+  const [servicesError, setServicesError] = useState<string | null>(null);
+  const requestIdRef = React.useRef<number>(0);
 
-  // Dynamic Content State
-  const [banners, setBanners] = useState<HeroBanner[]>(HERO_BANNERS_SEED);
-  const [categories, setCategories] = useState<ServiceCategory[]>(SERVICE_CATEGORIES_SEED);
+  // Dynamic Content State (Instant cache-first initialization)
+  const initialCache = homeService.getCachedDashboard();
+  const [banners, setBanners] = useState<HeroBanner[]>(initialCache?.banners || []);
+  const [categories, setCategories] = useState<ServiceCategory[]>(initialCache?.categories || []);
   const [nearbyServices, setNearbyServices] = useState<
     (Service & { isBestseller?: boolean; reviewCount?: string; rating?: number })[]
-  >(NEARBY_SERVICES_SEED);
+  >(initialCache?.services || []);
   const [promoOffer, setPromoOffer] = useState<PromoOffer>(PROMO_OFFER_SEED);
-  const [notifications, setNotifications] = useState<NotificationItem[]>(NOTIFICATIONS_SEED);
+  const [notifications, setNotifications] = useState<NotificationItem[]>(initialCache?.notifications || []);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Modals Visibility
@@ -79,23 +103,75 @@ export const CustomerHomeScreen: React.FC = () => {
   // Quick Add State
   const [selectedQuickAddService, setSelectedQuickAddService] = useState<Service | null>(null);
 
-  // Load Dashboard Data
-  const loadDashboard = async () => {
+  // Load Dashboard Data with Instant Cache Delivery & Race Condition Safety
+  const loadDashboard = async (isSilentRefresh = false, forceRefresh = false) => {
+    const currentReqId = ++requestIdRef.current;
+    const cached = homeService.getCachedDashboard();
+
+    if (cached && nearbyServices.length === 0) {
+      setBanners(cached.banners);
+      setCategories(cached.categories);
+      setNearbyServices(cached.services);
+      setNotifications(cached.notifications);
+      setIsLoading(false);
+    } else if (!isSilentRefresh && nearbyServices.length === 0) {
+      setIsLoading(true);
+    }
+    setServicesError(null);
+
     try {
-      const data = await homeService.getDashboardData(currentLocation);
+      const data = await homeService.getDashboardData(currentLocation, user?.uid, forceRefresh);
+      if (currentReqId !== requestIdRef.current) return;
+
       setBanners(data.banners);
       setCategories(data.categories);
       setNearbyServices(data.services);
       setPromoOffer(data.promoOffer);
       setNotifications(data.notifications);
-    } catch {
-      // Fallbacks are already set in state
+    } catch (err: any) {
+      if (currentReqId !== requestIdRef.current) return;
+      if (nearbyServices.length === 0) {
+        setServicesError(err?.message || 'Unable to connect to services database');
+      }
+    } finally {
+      if (currentReqId === requestIdRef.current) {
+        setIsLoading(false);
+      }
     }
   };
 
+  useEffect(() => {
+    loadDashboard();
+
+    const channel = supabase
+      .channel('customer_home_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'service_categories' }, () => {
+        loadDashboard(true);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'services' }, () => {
+        loadDashboard(true);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'homepage_banners' }, () => {
+        loadDashboard(true);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'offers' }, () => {
+        loadDashboard(true);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  // Refresh services automatically when location changes
+  useEffect(() => {
+    loadDashboard(true);
+  }, [currentLocation]);
+
   const handleRefresh = async () => {
     setRefreshing(true);
-    await loadDashboard();
+    await loadDashboard(true);
     setRefreshing(false);
   };
 
@@ -106,13 +182,9 @@ export const CustomerHomeScreen: React.FC = () => {
 
   // Quick Booking Handler from QuickAdd Modal
   const handleProceedToBooking = (service: Service, roomCount: number, totalPrice: number) => {
-    navigateTo('booking_screen', {
-      service: {
-        ...service,
-        startingPrice: totalPrice,
-      },
-      roomCount,
-    });
+    // Set the service in cart context and navigate to service details
+    addServiceToCart({ ...service, startingPrice: totalPrice }, 1);
+    navigateTo('service-details');
   };
 
   const unreadCount = notifications.filter(n => !n.read).length;
@@ -147,7 +219,7 @@ export const CustomerHomeScreen: React.FC = () => {
           <DashboardSkeleton />
         ) : (
           <>
-            {/* ── Search Bar Trigger ── */}
+            {/* ── Search Bar Trigger with Conditional Partner Mode Toggle ── */}
             <View style={styles.searchSection}>
               <TouchableOpacity
                 style={styles.searchBarButton}
@@ -155,20 +227,33 @@ export const CustomerHomeScreen: React.FC = () => {
                 activeOpacity={0.85}
                 accessibilityLabel="Search for cleaning services"
               >
-                <Search size={18} color="#168A68" />
+                <Search size={16} color="#168A68" />
                 <Text style={styles.searchPlaceholderText} numberOfLines={1}>
-                  Search for cleaning services, e.g. home cleaning...
+                  {isMaidPartner ? 'Search services...' : 'Search for cleaning services, e.g. home cleaning...'}
                 </Text>
               </TouchableOpacity>
+
+              {isMaidPartner && (
+                <TouchableOpacity
+                  style={styles.modeTogglePill}
+                  onPress={() => switchUserMode('maid')}
+                  activeOpacity={0.85}
+                  accessibilityLabel="Switch to Maid Partner Mode"
+                >
+                  <View style={styles.partnerDot} />
+                  <Briefcase size={14} color="#0E5B47" strokeWidth={2.5} />
+                  <Text style={styles.modeToggleText} numberOfLines={1}>
+                    Partner Mode
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
 
             {/* ── 1. Hero Banner Carousel ── */}
             <HeroBannerCarousel
               banners={banners}
-              onPressBanner={banner => {
-                const targetService = nearbyServices.find(s => s.serviceId === banner.serviceId) || nearbyServices[0];
-                setCartService(targetService);
-                navigateTo('service-details');
+              onPressBanner={() => {
+                navigateTo('services-listing');
               }}
             />
 
@@ -176,65 +261,28 @@ export const CustomerHomeScreen: React.FC = () => {
             <ServiceCategoryRow
               categories={categories}
               onSelectCategory={cat => {
-                navigateTo('services-listing');
+                navigateTo('services-listing', { categoryId: cat.id, categoryName: cat.name });
               }}
             />
 
-            {/* ── 3. Promotional Offer Banner ── */}
-            <PromotionalOfferBanner
-              offer={promoOffer}
-              onApplyOffer={code => {
-                showToast(`Promo code '${code}' copied! Apply at checkout.`);
-              }}
-            />
-
-            {/* ── Become a Maid Partner Banner ── */}
-            <TouchableOpacity
-              onPress={() => navigateTo('become_maid_info')}
-              style={{
-                backgroundColor: '#043927',
-                borderRadius: 16,
-                padding: 16,
-                marginHorizontal: 16,
-                marginVertical: 10,
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                elevation: 3,
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.15,
-                shadowRadius: 6,
-              }}
-              activeOpacity={0.88}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
-                <View style={{ width: 42, height: 42, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center' }}>
-                  <UserCheck size={22} color="#FFFFFF" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '800', color: '#FFFFFF' }}>
-                    Become a GC Maid Partner
-                  </Text>
-                  <Text style={{ fontSize: 11, color: '#A7F3D0', marginTop: 2 }}>
-                    Earn up to ₹35,000/mo • Weekly payouts • Flexible hours
-                  </Text>
-                </View>
-              </View>
-              <ChevronRight size={20} color="#FFFFFF" />
-            </TouchableOpacity>
+            {/* ── 3. Become a GC Maid Partner Banner (Ultra-Premium Redesign) ── */}
+            <BecomePartnerBanner onPress={() => navigateTo('become_maid_info')} />
 
             {/* ── 4. Services Near You (Horizontal Cards with Quick Add) ── */}
             <ServicesNearYouRow
               services={nearbyServices}
+              isLoading={isLoading}
+              error={servicesError}
+              onRetry={() => loadDashboard()}
               currentLocationName={currentLocation}
               onSelectService={service => {
-                setCartService(service);
+                addServiceToCart(service, 1);
                 navigateTo('service-details');
               }}
               onQuickAdd={service => {
-                setCartService(service);
-                navigateTo('service-details');
+                const isInCart = cart?.items.some(i => i.service.serviceId === service.serviceId);
+                toggleServiceInCart(service);
+                showToast(isInCart ? `${service.name} removed from cart` : `${service.name} added to cart!`);
               }}
               onViewAll={() => {
                 navigateTo('services-listing');
@@ -276,7 +324,7 @@ export const CustomerHomeScreen: React.FC = () => {
 
       <SearchServicesModal
         visible={showSearchModal}
-        services={services && services.length > 0 ? services : nearbyServices}
+        services={nearbyServices}
         onSelectService={service => {
           setShowSearchModal(false);
           navigateTo('service_details', { service });
@@ -315,16 +363,27 @@ export const CustomerHomeScreen: React.FC = () => {
         onClose={() => setShowAboutModal(false)}
       />
 
+      <SlotConfirmationModal
+        visible={Boolean(slotReminderBooking)}
+        booking={slotReminderBooking}
+        role="customer"
+        onConfirm={confirmCustomerSlot}
+        onClose={() => setDismissedSlotReminderId(slotReminderBooking?.bookingId || null)}
+      />
+
       <AddressInputModal
         visible={showAddAddressModal}
         currentAddress={currentLocation}
-        selectedCity="Bengaluru, Karnataka"
+        selectedCity="Karimnagar, Telangana"
         onSave={newAddr => {
           setCurrentLocation(newAddr);
           showToast('New address saved!');
         }}
         onClose={() => setShowAddAddressModal(false)}
       />
+
+      {/* Floating Bottom Cart Bar */}
+      <FloatingCartBar bottomOffset={16} />
     </View>
   );
 };
@@ -341,20 +400,24 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
   },
   searchSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 16,
     paddingTop: 6,
     paddingBottom: 14,
+    gap: 8,
   },
   searchBarButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F5FCF8',
     borderRadius: 14,
     borderWidth: 1,
     borderColor: '#E1E8E5',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    gap: 8,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.03,
@@ -363,9 +426,31 @@ const styles = StyleSheet.create({
   },
   searchPlaceholderText: {
     flex: 1,
-    fontSize: 13,
+    fontSize: 12.5,
     color: '#68788C',
     fontWeight: '500',
+  },
+  modeTogglePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EAF8F1',
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#A7F3D0',
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    gap: 5,
+  },
+  partnerDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
+  },
+  modeToggleText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: '#0E5B47',
   },
   toastCard: {
     position: 'absolute',

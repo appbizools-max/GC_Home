@@ -6,14 +6,15 @@ import {
   CheckCircle2,
   PlayCircle,
   Plus,
-  ArrowUpRight,
   ChevronRight,
-  Users,
   MapPin,
   Sparkles,
   Phone,
   Eye,
 } from 'lucide-react';
+import { RedFlagAlertsBanner } from '../../components/RedFlagAlertsBanner';
+import { QuickAccessPanel } from '../../components/QuickAccessPanel';
+import { StatusBadge } from '../../components/StatusBadge';
 
 export const DashboardPage: React.FC = () => {
   const {
@@ -26,6 +27,8 @@ export const DashboardPage: React.FC = () => {
     setCreateBookingModalOpen,
     exportBookingsToCSV,
     selectedTimezone,
+    finalizeSlotAdmin,
+    resolveRedFlagAdmin,
   } = useAdmin();
 
   const [now, setNow] = useState<Date>(new Date());
@@ -86,34 +89,45 @@ export const DashboardPage: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-6 font-sans text-slate-800 select-none pb-8">
-      {/* Top Banner & Dynamic Timezone Greeting Row */}
+      {/* Top Banner & Header Row */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl sm:text-3xl font-black text-[#0A192F] tracking-tight">
-            {getGreeting()}
+            Admin Operations Dashboard
           </h1>
           <p className="text-xs text-slate-500 font-medium mt-1">
-            Here's what's happening with GC HOME+ today.
+            Monitor platform performance, bookings, dispatch, and partner network.
           </p>
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Quote Pill */}
           <div className="hidden lg:flex items-center gap-2 bg-emerald-50/80 border border-emerald-100 rounded-full px-4 py-2 text-xs text-emerald-900 font-medium shadow-sm">
             <span className="italic">“A cleaner home makes a happier tomorrow.”</span>
             <span className="text-[10px] text-emerald-700 font-bold">— GC HOME+</span>
           </div>
 
-          {/* New Booking Button */}
           <button
             onClick={() => setCreateBookingModalOpen(true)}
-            className="bg-[#043927] hover:bg-[#064e3b] text-white font-extrabold px-4 py-2.5 rounded-xl text-xs flex items-center gap-2 shadow-md cursor-pointer transition-all active:scale-[0.99]"
+            className="bg-[#123D2A] hover:bg-[#184a34] text-white font-extrabold px-4 py-2.5 rounded-xl text-xs flex items-center gap-2 shadow-md cursor-pointer transition-all active:scale-[0.99]"
           >
             <Plus className="w-4 h-4" />
             <span>New Booking</span>
           </button>
         </div>
       </div>
+
+      {/* ── CONSOLIDATED QUICK ACCESS PANEL ── */}
+      <QuickAccessPanel
+        onNewBooking={() => setCreateBookingModalOpen(true)}
+        onNavigateTab={setCurrentTab}
+      />
+
+      {/* ── PRE-SERVICE SLOT CONFIRMATION & RED FLAG ALERTS BANNER ── */}
+      <RedFlagAlertsBanner
+        bookings={bookings}
+        onFinalizeSlot={finalizeSlotAdmin}
+        onResolveRedFlag={resolveRedFlagAdmin}
+      />
 
       {/* 4 KPI Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -123,12 +137,9 @@ export const DashboardPage: React.FC = () => {
           className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-md transition-all cursor-pointer group"
         >
           <div className="flex items-center justify-between">
-            <div className="w-11 h-11 rounded-full bg-[#E8F5E9] text-[#043927] flex items-center justify-center">
+            <div className="w-11 h-11 rounded-full bg-[#E8F5E9] text-[#123D2A] flex items-center justify-center">
               <Calendar className="w-5 h-5" />
             </div>
-            <span className="text-xs font-bold text-emerald-600 flex items-center gap-0.5">
-              <ArrowUpRight className="w-3.5 h-3.5" /> Live
-            </span>
           </div>
           <div className="mt-4">
             <span className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">
@@ -149,9 +160,6 @@ export const DashboardPage: React.FC = () => {
             <div className="w-11 h-11 rounded-full bg-sky-50 text-sky-600 flex items-center justify-center">
               <PlayCircle className="w-5 h-5" />
             </div>
-            <span className="text-xs font-bold text-sky-600 flex items-center gap-0.5">
-              <ArrowUpRight className="w-3.5 h-3.5" /> Active
-            </span>
           </div>
           <div className="mt-4">
             <span className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">
@@ -172,9 +180,6 @@ export const DashboardPage: React.FC = () => {
             <div className="w-11 h-11 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center">
               <Clock className="w-5 h-5" />
             </div>
-            <span className="text-xs font-bold text-amber-600 flex items-center gap-0.5">
-              <ArrowUpRight className="w-3.5 h-3.5" /> Needs Action
-            </span>
           </div>
           <div className="mt-4">
             <span className="text-xs font-extrabold text-amber-700 uppercase tracking-wider">
@@ -186,7 +191,7 @@ export const DashboardPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Completed Today */}
+        {/* Completed Jobs */}
         <div
           onClick={() => setCurrentTab('completed-bookings')}
           className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-md transition-all cursor-pointer group"
@@ -195,9 +200,6 @@ export const DashboardPage: React.FC = () => {
             <div className="w-11 h-11 rounded-full bg-purple-50 text-purple-600 flex items-center justify-center">
               <CheckCircle2 className="w-5 h-5" />
             </div>
-            <span className="text-xs font-bold text-purple-600 flex items-center gap-0.5">
-              <ArrowUpRight className="w-3.5 h-3.5" /> {metrics.todayBookings}
-            </span>
           </div>
           <div className="mt-4">
             <span className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">
@@ -220,7 +222,7 @@ export const DashboardPage: React.FC = () => {
               <h3 className="text-base font-extrabold text-[#0A192F]">Recent Bookings</h3>
               <button
                 onClick={() => setCurrentTab('all-bookings')}
-                className="text-xs font-bold text-[#043927] hover:underline flex items-center gap-1 cursor-pointer"
+                className="text-xs font-bold text-[#123D2A] hover:underline flex items-center gap-1 cursor-pointer"
               >
                 <span>View All</span>
                 <ChevronRight className="w-4 h-4" />
@@ -237,7 +239,7 @@ export const DashboardPage: React.FC = () => {
                   <p className="text-xs text-slate-400 mt-1">Create a new booking to get started</p>
                   <button
                     onClick={() => setCreateBookingModalOpen(true)}
-                    className="mt-4 bg-[#043927] hover:bg-[#064e3b] text-white font-bold px-4 py-2 rounded-lg text-xs inline-flex items-center gap-2"
+                    className="mt-4 bg-[#123D2A] hover:bg-[#184a34] text-white font-bold px-4 py-2 rounded-lg text-xs inline-flex items-center gap-2"
                   >
                     <Plus className="w-4 h-4" />
                     <span>Create Booking</span>
@@ -260,7 +262,7 @@ export const DashboardPage: React.FC = () => {
                     {recentBookings.map((b, idx) => (
                       <tr key={b.bookingId} className="hover:bg-slate-50/80 transition-colors">
                         <td className="py-3 px-3 font-semibold text-slate-400">{idx + 1}</td>
-                        <td className="py-3 px-3 font-extrabold text-[#043927]">{b.bookingId}</td>
+                        <td className="py-3 px-3 font-extrabold text-[#123D2A]">{b.bookingId}</td>
                         <td className="py-3 px-3">
                           <div className="flex items-center gap-2">
                             {b.customerAvatar && (
@@ -325,128 +327,116 @@ export const DashboardPage: React.FC = () => {
           </div>
 
           {/* Ongoing & Completed Cards Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            {/* Ongoing Bookings List */}
-            <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-extrabold text-[#0A192F]">Ongoing Bookings</h3>
-                <button
-                  onClick={() => setCurrentTab('ongoing-bookings')}
-                  className="text-xs font-bold text-[#043927] hover:underline flex items-center gap-0.5 cursor-pointer"
-                >
-                  <span>View All</span>
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
-
-              <div className="flex flex-col gap-3">
-                {ongoingBookings.length === 0 ? (
-                  <div className="text-center py-8">
-                    <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-2">
-                      <PlayCircle className="w-6 h-6" />
-                    </div>
-                    <p className="text-xs font-bold text-slate-400">No ongoing bookings</p>
-                  </div>
-                ) : (
-                  ongoingBookings.slice(0, 3).map(b => (
-                    <div
-                      key={b.bookingId}
-                      className="p-3 bg-slate-50 border border-slate-200/60 rounded-xl flex items-center justify-between"
+          {(ongoingBookings.length > 0 || completedBookings.length > 0) && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              {/* Ongoing Bookings List */}
+              {ongoingBookings.length > 0 && (
+                <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-extrabold text-[#0A192F]">Ongoing Bookings</h3>
+                    <button
+                      onClick={() => setCurrentTab('ongoing-bookings')}
+                      className="text-xs font-bold text-[#123D2A] hover:underline flex items-center gap-0.5 cursor-pointer"
                     >
-                      <div className="flex items-center gap-3">
-                        {b.customerAvatar && (
-                          <img
-                            src={b.customerAvatar}
-                            alt={b.customerName}
-                            className="w-10 h-10 rounded-full object-cover"
-                          />
-                        )}
-                        <div>
-                          <div className="text-xs font-extrabold text-slate-900">
-                            {b.customerName}
-                          </div>
-                          <div className="text-[11px] text-slate-500 font-medium">
-                            {b.serviceName}
-                          </div>
-                          <div className="text-[10px] text-emerald-700 font-bold flex items-center gap-1 mt-0.5">
-                            <MapPin className="w-3 h-3" />
-                            <span>{b.address?.locality || 'Location'}</span>
-                          </div>
-                        </div>
-                      </div>
+                      <span>View All</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
 
-                      <button
-                        onClick={() => openBookingDetails(b.bookingId)}
-                        className="bg-emerald-50 hover:bg-emerald-100 text-[#043927] border border-emerald-200 px-3 py-1.5 rounded-lg text-xs font-extrabold cursor-pointer"
+                  <div className="flex flex-col gap-3">
+                    {ongoingBookings.slice(0, 3).map(b => (
+                      <div
+                        key={b.bookingId}
+                        className="p-3 bg-slate-50 border border-slate-200/60 rounded-xl flex items-center justify-between"
                       >
-                        Track
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-
-            {/* Completed Bookings List */}
-            <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-extrabold text-[#0A192F]">Completed Bookings</h3>
-                <button
-                  onClick={() => setCurrentTab('completed-bookings')}
-                  className="text-xs font-bold text-[#043927] hover:underline flex items-center gap-0.5 cursor-pointer"
-                >
-                  <span>View All</span>
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
-
-              <div className="flex flex-col gap-3">
-                {completedBookings.length === 0 ? (
-                  <div className="text-center py-8">
-                    <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-2">
-                      <CheckCircle2 className="w-6 h-6" />
-                    </div>
-                    <p className="text-xs font-bold text-slate-400">No completed bookings</p>
-                  </div>
-                ) : (
-                  completedBookings.slice(0, 3).map(b => (
-                    <div
-                      key={b.bookingId}
-                      className="p-3 bg-slate-50 border border-slate-200/60 rounded-xl flex items-center justify-between"
-                    >
-                      <div className="flex items-center gap-3">
-                        {b.customerAvatar && (
-                          <img
-                            src={b.customerAvatar}
-                            alt={b.customerName}
-                            className="w-10 h-10 rounded-full object-cover"
-                          />
-                        )}
-                        <div>
-                          <div className="text-xs font-extrabold text-slate-900">
-                            {b.customerName}
-                          </div>
-                          <div className="text-[11px] text-slate-500 font-medium">
-                            {b.serviceName}
-                          </div>
-                          <div className="text-[10px] text-slate-400 font-medium mt-0.5">
-                            {b.completedAt ? new Date(b.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Completed'}
+                        <div className="flex items-center gap-3">
+                          {b.customerAvatar && (
+                            <img
+                              src={b.customerAvatar}
+                              alt={b.customerName}
+                              className="w-10 h-10 rounded-full object-cover"
+                            />
+                          )}
+                          <div>
+                            <div className="text-xs font-extrabold text-slate-900">
+                              {b.customerName}
+                            </div>
+                            <div className="text-[11px] text-slate-500 font-medium">
+                              {b.serviceName}
+                            </div>
+                            <div className="text-[10px] text-emerald-700 font-bold flex items-center gap-1 mt-0.5">
+                              <MapPin className="w-3 h-3" />
+                              <span>{b.address?.locality || 'Location'}</span>
+                            </div>
                           </div>
                         </div>
-                      </div>
 
-                      <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
-                        <CheckCircle2 className="w-4 h-4" />
+                        <button
+                          onClick={() => openBookingDetails(b.bookingId)}
+                          className="bg-emerald-50 hover:bg-emerald-100 text-[#123D2A] border border-emerald-200 px-3 py-1.5 rounded-lg text-xs font-extrabold cursor-pointer"
+                        >
+                          Track
+                        </button>
                       </div>
-                    </div>
-                  ))
-                )}
-              </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Completed Bookings List */}
+              {completedBookings.length > 0 && (
+                <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-extrabold text-[#0A192F]">Completed Bookings</h3>
+                    <button
+                      onClick={() => setCurrentTab('completed-bookings')}
+                      className="text-xs font-bold text-[#123D2A] hover:underline flex items-center gap-0.5 cursor-pointer"
+                    >
+                      <span>View All</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="flex flex-col gap-3">
+                    {completedBookings.slice(0, 3).map(b => (
+                      <div
+                        key={b.bookingId}
+                        className="p-3 bg-slate-50 border border-slate-200/60 rounded-xl flex items-center justify-between"
+                      >
+                        <div className="flex items-center gap-3">
+                          {b.customerAvatar && (
+                            <img
+                              src={b.customerAvatar}
+                              alt={b.customerName}
+                              className="w-10 h-10 rounded-full object-cover"
+                            />
+                          )}
+                          <div>
+                            <div className="text-xs font-extrabold text-slate-900">
+                              {b.customerName}
+                            </div>
+                            <div className="text-[11px] text-slate-500 font-medium">
+                              {b.serviceName}
+                            </div>
+                            <div className="text-[10px] text-slate-400 font-medium mt-0.5">
+                              {b.completedAt ? new Date(b.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Completed'}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
+                          <CheckCircle2 className="w-4 h-4" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
+          )}
         </div>
 
-        {/* Right Side (Today's Schedule + Quick Actions) */}
+        {/* Right Side (Today's Schedule) */}
         <div className="lg:col-span-4 flex flex-col gap-6">
           {/* Today's Schedule Card */}
           <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
@@ -454,7 +444,7 @@ export const DashboardPage: React.FC = () => {
               <h3 className="text-base font-extrabold text-[#0A192F]">Today's Schedule</h3>
               <button
                 onClick={() => setCurrentTab('all-bookings')}
-                className="text-xs font-bold text-[#043927] hover:underline flex items-center gap-0.5 cursor-pointer"
+                className="text-xs font-bold text-[#123D2A] hover:underline flex items-center gap-0.5 cursor-pointer"
               >
                 <span>View Calendar</span>
                 <ChevronRight className="w-3.5 h-3.5" />
@@ -503,39 +493,10 @@ export const DashboardPage: React.FC = () => {
               )}
             </div>
           </div>
-
-          {/* Quick Actions Panel */}
-          <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
-            <h3 className="text-base font-extrabold text-[#0A192F] mb-4">Quick Actions</h3>
-
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => setCreateBookingModalOpen(true)}
-                className="p-4 bg-slate-50 hover:bg-emerald-50/80 border border-slate-200 hover:border-emerald-200 rounded-xl flex flex-col items-center justify-center text-center gap-2 transition-all cursor-pointer group shadow-2xs hover:shadow-sm"
-              >
-                <div className="w-10 h-10 rounded-xl bg-emerald-100 text-[#043927] flex items-center justify-center font-bold group-hover:scale-105 transition-transform">
-                  <Plus className="w-5 h-5" />
-                </div>
-                <span className="text-xs font-extrabold text-slate-800 group-hover:text-[#043927]">
-                  New Booking
-                </span>
-              </button>
-
-              <button
-                onClick={() => setCurrentTab('maids')}
-                className="p-4 bg-slate-50 hover:bg-emerald-50/80 border border-slate-200 hover:border-emerald-200 rounded-xl flex flex-col items-center justify-center text-center gap-2 transition-all cursor-pointer group shadow-2xs hover:shadow-sm"
-              >
-                <div className="w-10 h-10 rounded-xl bg-emerald-100 text-[#043927] flex items-center justify-center font-bold group-hover:scale-105 transition-transform">
-                  <Users className="w-5 h-5" />
-                </div>
-                <span className="text-xs font-extrabold text-slate-800 group-hover:text-[#043927]">
-                  Manage Maids
-                </span>
-              </button>
-            </div>
-          </div>
         </div>
       </div>
     </div>
   );
 };
+
+

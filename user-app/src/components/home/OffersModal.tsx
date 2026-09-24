@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,53 +7,50 @@ import {
   TouchableOpacity,
   FlatList,
   Clipboard,
+  ActivityIndicator,
 } from 'react-native';
-import { Tag, X, Check, Copy, Sparkles } from 'lucide-react-native';
+import { Tag, X, Check, Copy, Sparkles, Percent } from 'lucide-react-native';
+import { homeService, SupabaseOffer } from '../../services/homeService';
 
 interface OffersModalProps {
   visible: boolean;
   onApplyOffer: (code: string) => void;
   onClose: () => void;
+  subtotal?: number;
+  appliedCode?: string;
 }
-
-const AVAILABLE_OFFERS = [
-  {
-    code: 'GCHOME20',
-    title: '20% OFF First Clean',
-    description: 'Valid for new customers on all regular and deep home services.',
-    discount: '20% OFF',
-    validUntil: '31 Dec 2026',
-  },
-  {
-    code: 'DEEP300',
-    title: '₹300 Flat OFF on Deep Cleaning',
-    description: 'Applicable on bookings above ₹1,299.',
-    discount: '₹300 OFF',
-    validUntil: '31 Dec 2026',
-  },
-  {
-    code: 'KITCHEN50',
-    title: '₹150 OFF Kitchen Degreasing',
-    description: 'Complete degreasing & appliance sanitization package.',
-    discount: '₹150 OFF',
-    validUntil: '15 Oct 2026',
-  },
-];
 
 export const OffersModal: React.FC<OffersModalProps> = ({
   visible,
   onApplyOffer,
   onClose,
+  subtotal,
+  appliedCode,
 }) => {
+  const [offers, setOffers] = useState<SupabaseOffer[]>([]);
+  const [loading, setLoading] = useState(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
-  const handleCopy = (code: string) => {
+  useEffect(() => {
+    if (visible) {
+      setLoading(true);
+      homeService.getOffersFromSupabase()
+        .then(data => setOffers(data.filter(o => o.isActive !== false)))
+        .catch(err => console.error('Error fetching offers for modal:', err))
+        .finally(() => setLoading(false));
+    }
+  }, [visible]);
+
+  const handleApply = (code: string) => {
     try {
       Clipboard.setString(code);
     } catch {}
     setCopiedCode(code);
     onApplyOffer(code);
-    setTimeout(() => setCopiedCode(null), 2500);
+    setTimeout(() => {
+      setCopiedCode(null);
+      onClose();
+    }, 400);
   };
 
   return (
@@ -70,38 +67,82 @@ export const OffersModal: React.FC<OffersModalProps> = ({
             </TouchableOpacity>
           </View>
 
-          <FlatList
-            data={AVAILABLE_OFFERS}
-            keyExtractor={item => item.code}
-            showsVerticalScrollIndicator={false}
-            renderItem={({ item }) => {
-              const isCopied = copiedCode === item.code;
-              return (
-                <View style={styles.couponCard}>
-                  <View style={styles.couponLeft}>
-                    <View style={styles.discountBadge}>
-                      <Tag size={13} color="#0E5B47" />
-                      <Text style={styles.discountBadgeText}>{item.discount}</Text>
-                    </View>
-                    <Text style={styles.couponTitle}>{item.title}</Text>
-                    <Text style={styles.couponDesc}>{item.description}</Text>
-                    <Text style={styles.couponValidity}>Valid till: {item.validUntil}</Text>
-                  </View>
+          {loading ? (
+            <View style={{ padding: 40, alignItems: 'center' }}>
+              <ActivityIndicator size="small" color="#168A68" />
+              <Text style={{ marginTop: 10, fontSize: 12, color: '#68788C' }}>Loading active offers...</Text>
+            </View>
+          ) : offers.length === 0 ? (
+            <View style={{ padding: 40, alignItems: 'center' }}>
+              <Percent size={28} color="#94A3B8" />
+              <Text style={{ marginTop: 10, fontSize: 14, fontWeight: '700', color: '#64748B' }}>
+                No active coupons available right now
+              </Text>
+            </View>
+          ) : (
+            <FlatList
+              data={offers}
+              keyExtractor={item => item.id || item.code}
+              showsVerticalScrollIndicator={false}
+              renderItem={({ item }) => {
+                const isCurrentlyApplied = appliedCode && appliedCode.toUpperCase() === item.code.toUpperCase();
+                const isCopied = copiedCode === item.code || isCurrentlyApplied;
+                const isUnderMin = subtotal !== undefined && item.minBookingAmount > 0 && subtotal < item.minBookingAmount;
+                const discountLabel = item.discountType === 'percentage'
+                  ? `${item.discountValue}% OFF`
+                  : `₹${item.discountValue} OFF`;
+                const validDate = item.validUntil
+                  ? new Date(item.validUntil).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+                  : 'Limited Time';
 
-                  <TouchableOpacity
-                    style={[styles.applyButton, isCopied && styles.applyButtonCopied]}
-                    onPress={() => handleCopy(item.code)}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.codeText}>{item.code}</Text>
-                    <Text style={styles.applyActionText}>
-                      {isCopied ? 'Copied!' : 'Apply Code'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              );
-            }}
-          />
+                return (
+                  <View style={[styles.couponCard, isUnderMin ? { opacity: 0.65 } : undefined]}>
+                    <View style={styles.couponLeft}>
+                      <View style={styles.discountBadge}>
+                        <Tag size={13} color="#0E5B47" />
+                        <Text style={styles.discountBadgeText}>{discountLabel}</Text>
+                        {item.maxDiscount ? (
+                          <Text style={{ fontSize: 9.5, color: '#0E5B47', marginLeft: 4 }}>
+                            (Up to ₹{item.maxDiscount})
+                          </Text>
+                        ) : null}
+                      </View>
+                      <Text style={styles.couponTitle}>{item.title}</Text>
+                      {item.description ? (
+                        <Text style={styles.couponDesc}>{item.description}</Text>
+                      ) : null}
+                      {item.minBookingAmount > 0 ? (
+                        <Text style={[styles.couponValidity, isUnderMin ? { color: '#E65100', fontWeight: '700' } : undefined]}>
+                          {isUnderMin
+                            ? `Min. order ₹${item.minBookingAmount} (Add ₹${item.minBookingAmount - subtotal} more)`
+                            : `Min. order amount: ₹${item.minBookingAmount}`}
+                        </Text>
+                      ) : null}
+                      <Text style={styles.couponValidity}>Valid till: {validDate}</Text>
+                    </View>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.applyButton,
+                        isCopied ? styles.applyButtonCopied : undefined,
+                        isUnderMin ? { borderColor: '#CBD5E1', backgroundColor: '#F1F5F9' } : undefined,
+                      ]}
+                      onPress={() => !isUnderMin && handleApply(item.code)}
+                      disabled={isUnderMin}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={[styles.codeText, isUnderMin && { color: '#94A3B8' }]}>
+                        {item.code}
+                      </Text>
+                      <Text style={[styles.applyActionText, isUnderMin && { color: '#94A3B8' }]}>
+                        {isCurrentlyApplied ? 'Applied ✓' : isCopied ? 'Applied!' : isUnderMin ? 'Locked' : 'Apply Code'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              }}
+            />
+          )}
         </View>
       </View>
     </Modal>

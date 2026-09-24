@@ -23,26 +23,31 @@ import {
 } from 'lucide-react';
 
 export const ActiveMaidsTab: React.FC = () => {
-  const { maids, toggleMaidOnlineStatus } = useAdmin();
+  const { maids, bookings, toggleMaidOnlineStatus } = useAdmin();
 
   const [selectedAvailability, setSelectedAvailability] = useState<string>('All');
   const [selectedLocation, setSelectedLocation] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
-
   const [activeDrawerMaid, setActiveDrawerMaid] = useState<MaidProfile | null>(null);
 
+  // Active online or available roster
   const activeRoster = maids.filter(m => m.status === 'approved');
 
-  const filtered = activeRoster.filter(m => {
+  const filteredMaids = activeRoster.filter(m => {
     if (selectedAvailability !== 'All') {
-      if (selectedAvailability === 'Online' && !m.isOnline) return false;
+      if (selectedAvailability === 'Available' && m.currentStatus !== 'available' && !m.isOnline) return false;
       if (selectedAvailability === 'Busy' && m.currentStatus !== 'busy') return false;
-      if (selectedAvailability === 'Available' && (m.currentStatus !== 'available' && !m.isOnline)) return false;
+      if (selectedAvailability === 'Offline' && m.isOnline) return false;
     }
-    if (selectedLocation !== 'All' && !m.serviceArea.toLowerCase().includes(selectedLocation.toLowerCase())) return false;
-    if (searchQuery.trim()) {
+    if (selectedLocation !== 'All' && !m.serviceArea.toLowerCase().includes(selectedLocation.toLowerCase())) {
+      return false;
+    }
+    if (searchQuery.trim() !== '') {
       const q = searchQuery.toLowerCase();
-      if (!m.fullName.toLowerCase().includes(q) && !m.phone.includes(q) && !(m.maidId || m.uid).toLowerCase().includes(q)) return false;
+      const matchName = m.fullName.toLowerCase().includes(q);
+      const matchPhone = m.phone.includes(q);
+      const matchArea = m.serviceArea.toLowerCase().includes(q);
+      if (!matchName && !matchPhone && !matchArea) return false;
     }
     return true;
   });
@@ -51,7 +56,8 @@ export const ActiveMaidsTab: React.FC = () => {
   const onlineCount = activeRoster.filter(m => m.isOnline).length;
   const busyCount = activeRoster.filter(m => m.currentStatus === 'busy').length;
   const availableCount = activeRoster.filter(m => m.currentStatus === 'available' || (m.isOnline && m.currentStatus !== 'busy')).length;
-  const jobsTodayCount = 124;
+  const today = new Date().toISOString().split('T')[0];
+  const jobsTodayCount = bookings.filter(b => b.date === today || (b.createdAt && b.createdAt.startsWith(today))).length;
 
   const resetFilters = () => {
     setSelectedAvailability('All');
@@ -63,12 +69,11 @@ export const ActiveMaidsTab: React.FC = () => {
     <div className="flex flex-col gap-5 font-sans">
       {/* 5 KPI Cards matching Screenshot 5 */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-        <div className="bg-[#043927] text-white p-4.5 rounded-2xl shadow-md flex items-center justify-between">
+        <div className="bg-[#123D2A] text-white p-4.5 rounded-2xl shadow-md flex items-center justify-between">
           <div>
             <span className="text-xs font-bold text-emerald-200 uppercase tracking-wider block mb-1">Active Maids</span>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-black">{totalActive}</span>
-              <span className="text-[10px] font-bold text-emerald-300 bg-emerald-800/80 px-1.5 py-0.5 rounded-md">↑ 18% vs last month</span>
             </div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-emerald-800/60 flex items-center justify-center font-bold">
@@ -111,7 +116,6 @@ export const ActiveMaidsTab: React.FC = () => {
             <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">Jobs Today</span>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-black text-slate-900">{jobsTodayCount}</span>
-              <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md">↑ 22% vs yesterday</span>
             </div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center font-bold">
@@ -186,7 +190,7 @@ export const ActiveMaidsTab: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
-              {filtered.map((m, idx) => {
+              {filteredMaids.map((m: MaidProfile, idx: number) => {
                 const statusBadge = m.currentStatus === 'busy'
                   ? { bg: 'bg-amber-100 text-amber-800', label: 'Busy' }
                   : m.currentStatus === 'available' || m.isOnline
@@ -207,7 +211,7 @@ export const ActiveMaidsTab: React.FC = () => {
                     <td className="py-3.5 px-4 font-semibold text-slate-800">{m.serviceArea}</td>
                     <td className="py-3.5 px-4">
                       <div className="flex flex-wrap gap-1">
-                        {(m.skills || ['Home', 'Office']).slice(0, 2).map((s, i) => (
+                        {(m.skills || ['Home', 'Office']).slice(0, 2).map((s: string, i: number) => (
                           <span key={i} className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded-md text-[10px] font-bold">
                             {s}
                           </span>
@@ -230,7 +234,7 @@ export const ActiveMaidsTab: React.FC = () => {
                     <td className="py-3.5 px-4 text-right">
                       <button
                         onClick={() => setActiveDrawerMaid(m)}
-                        className="px-3.5 py-1.5 bg-[#043927] hover:bg-[#064e3b] text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-sm"
+                        className="px-3.5 py-1.5 bg-[#123D2A] hover:bg-[#184a34] text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-sm"
                       >
                         View
                       </button>
@@ -311,7 +315,7 @@ export const ActiveMaidsTab: React.FC = () => {
                   </div>
                   <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
                     <span className="text-[11px] font-semibold text-slate-500 block">Total Earnings</span>
-                    <span className="text-lg font-black text-emerald-800">₹{(activeDrawerMaid.totalEarnings || 56200).toLocaleString()}</span>
+                    <span className="text-lg font-black text-emerald-800">₹{(activeDrawerMaid.totalEarnings || 0).toLocaleString()}</span>
                   </div>
                 </div>
 
@@ -342,7 +346,7 @@ export const ActiveMaidsTab: React.FC = () => {
               >
                 View Full Profile
               </button>
-              <button className="flex-1 py-2.5 bg-[#043927] hover:bg-[#064e3b] text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-md">
+              <button className="flex-1 py-2.5 bg-[#123D2A] hover:bg-[#184a34] text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-md">
                 Assign Job
               </button>
             </div>
@@ -352,3 +356,4 @@ export const ActiveMaidsTab: React.FC = () => {
     </div>
   );
 };
+

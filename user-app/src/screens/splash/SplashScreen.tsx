@@ -1,135 +1,252 @@
 import React, { useEffect, useRef } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
-  Image,
   Animated,
   Dimensions,
+  Easing,
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
-import { AppLogo } from '../../components/ui/AppLogo';
-import { TrustBadgeRow } from '../../components/ui/TrustBadgeRow';
-import { BottomWaveDecoration } from '../../components/ui/BottomWaveDecoration';
-import { Heart } from 'lucide-react-native';
+import { GCLogo } from '../../components/common/GCLogo';
 
-import { ASSETS } from '../../assets/index';
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-const { width } = Dimensions.get('window');
+// ─── Logo size ────────────────────────────────────────────────────────────────
+const LOGO_SIZE = Math.min(SCREEN_WIDTH * 0.58, 240);
+const GLOW_SIZE = LOGO_SIZE + 48;
 
 export const SplashScreen: React.FC = () => {
   const { checkExistingSession } = useAuth();
 
-  // Animations
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(0.92)).current;
-  const progressAnim = useRef(new Animated.Value(0)).current;
+  // ── Background ────────────────────────────────────────────────────────────
+  const bgFade = useRef(new Animated.Value(0)).current;
+
+  // ── Logo reveal ───────────────────────────────────────────────────────────
+  const logoOpacity  = useRef(new Animated.Value(0)).current;
+  const logoScale    = useRef(new Animated.Value(0.78)).current;
+  const logoTranslateY = useRef(new Animated.Value(18)).current;
+
+  // ── Gold shimmer sweep ────────────────────────────────────────────────────
+  const shimmerX     = useRef(new Animated.Value(-LOGO_SIZE)).current;
+  const shimmerOpacity = useRef(new Animated.Value(0)).current;
+
+  // ── Glow pulse ────────────────────────────────────────────────────────────
+  const glowOpacity  = useRef(new Animated.Value(0)).current;
+  const glowScale    = useRef(new Animated.Value(0.88)).current;
+
+  // ── Exit ──────────────────────────────────────────────────────────────────
+  const exitOpacity  = useRef(new Animated.Value(1)).current;
+  const exitScale    = useRef(new Animated.Value(1)).current;
+
+  // Timer ref so we can clean up
+  const sessionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    // Entrance animations
+    // ── 1. Background fade-in (0–250ms) ────────────────────────────────────
+    Animated.timing(bgFade, {
+      toValue: 1,
+      duration: 250,
+      useNativeDriver: true,
+      easing: Easing.out(Easing.quad),
+    }).start();
+
+    // ── 2. Logo reveal (200–800ms) ─────────────────────────────────────────
+    //    Opacity: 0 → 1
+    //    Scale:   0.78 → 1.08 → 1.0  (overshoot settle)
+    //    TranslateY: 18 → 0
+    const logoReveal = Animated.parallel([
+      Animated.timing(logoOpacity, {
+        toValue: 1,
+        duration: 480,
+        delay: 200,
+        useNativeDriver: true,
+        easing: Easing.out(Easing.cubic),
+      }),
+      Animated.sequence([
+        Animated.timing(logoScale, {
+          toValue: 1.08,
+          duration: 520,
+          delay: 200,
+          useNativeDriver: true,
+          easing: Easing.out(Easing.cubic),
+        }),
+        Animated.timing(logoScale, {
+          toValue: 1.0,
+          duration: 180,
+          useNativeDriver: true,
+          easing: Easing.in(Easing.quad),
+        }),
+      ]),
+      Animated.timing(logoTranslateY, {
+        toValue: 0,
+        duration: 560,
+        delay: 200,
+        useNativeDriver: true,
+        easing: Easing.out(Easing.cubic),
+      }),
+    ]);
+
+    // ── 3. Gold shimmer sweep (650–1050ms, fires once) ─────────────────────
+    const shimmerReveal = Animated.sequence([
+      Animated.timing(shimmerOpacity, {
+        toValue: 0.55,
+        duration: 80,
+        delay: 650,
+        useNativeDriver: true,
+      }),
+      Animated.timing(shimmerX, {
+        toValue: LOGO_SIZE * 1.2,
+        duration: 400,
+        useNativeDriver: true,
+        easing: Easing.inOut(Easing.quad),
+      }),
+      Animated.timing(shimmerOpacity, {
+        toValue: 0,
+        duration: 120,
+        useNativeDriver: true,
+      }),
+    ]);
+
+    // ── 4. Green/gold glow pulse (900–1350ms, fires once) ──────────────────
+    const glowPulse = Animated.sequence([
+      Animated.parallel([
+        Animated.timing(glowOpacity, {
+          toValue: 0.55,
+          duration: 280,
+          delay: 900,
+          useNativeDriver: true,
+          easing: Easing.out(Easing.quad),
+        }),
+        Animated.timing(glowScale, {
+          toValue: 1.0,
+          duration: 280,
+          delay: 900,
+          useNativeDriver: true,
+          easing: Easing.out(Easing.quad),
+        }),
+      ]),
+      Animated.parallel([
+        Animated.timing(glowOpacity, {
+          toValue: 0,
+          duration: 380,
+          useNativeDriver: true,
+          easing: Easing.in(Easing.quad),
+        }),
+        Animated.timing(glowScale, {
+          toValue: 1.12,
+          duration: 380,
+          useNativeDriver: true,
+          easing: Easing.in(Easing.quad),
+        }),
+      ]),
+    ]);
+
+    // ── 5. Logo hold (1200–1500ms) ─────────────────────────────────────────
+    // (naturally handled by the timer gap before exit)
+
+    // ── 6. Cinematic exit (1500–1900ms) ────────────────────────────────────
+    const exitAnim = Animated.parallel([
+      Animated.timing(exitOpacity, {
+        toValue: 0,
+        duration: 420,
+        delay: 1500,
+        useNativeDriver: true,
+        easing: Easing.in(Easing.cubic),
+      }),
+      Animated.timing(exitScale, {
+        toValue: 0.92,
+        duration: 420,
+        delay: 1500,
+        useNativeDriver: true,
+        easing: Easing.in(Easing.quad),
+      }),
+    ]);
+
+    // Run all in parallel — timing naturally staggers them via delays
     Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        friction: 6,
-        tension: 40,
-        useNativeDriver: true,
-      }),
-      Animated.timing(progressAnim, {
-        toValue: 1,
-        duration: 1800,
-        useNativeDriver: false,
-      }),
+      logoReveal,
+      shimmerReveal,
+      glowPulse,
+      exitAnim,
     ]).start();
 
-    // Check session after 1.8 seconds
-    const timer = setTimeout(() => {
+    // ── 7. Session check fires at 1.9s ─────────────────────────────────────
+    sessionTimer.current = setTimeout(() => {
       checkExistingSession();
     }, 1900);
 
-    return () => clearTimeout(timer);
+    return () => {
+      if (sessionTimer.current) clearTimeout(sessionTimer.current);
+    };
   }, []);
 
-  const progressWidth = progressAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0%', '100%'],
-  });
-
   return (
-    <View style={styles.container}>
-      {/* Top Right Subtle Badge */}
-      <View style={styles.topBadgeWrapper}>
-        <View style={styles.topBadge}>
-          <Text style={styles.topBadgeText}>Clean Spaces</Text>
-          <Text style={styles.topBadgeText}>Brighter Lives</Text>
-          <Heart size={10} color="#168A68" fill="#168A68" style={{ marginTop: 2 }} />
-        </View>
-      </View>
+    <Animated.View style={[styles.container, { opacity: exitOpacity }]}>
+      {/* ── Soft green radial background ── */}
+      <Animated.View style={[styles.bgLayer, { opacity: bgFade }]}>
+        {/* Outer very light green wash */}
+        <View style={styles.bgBase} />
+        {/* Soft center glow — green */}
+        <View style={styles.bgCenterGlow} />
+        {/* Top corner accent — gold tint */}
+        <View style={styles.bgTopAccent} />
+      </Animated.View>
 
+      {/* ── Center content ── */}
       <Animated.View
         style={[
-          styles.mainContent,
+          styles.centerContent,
           {
-            opacity: fadeAnim,
-            transform: [{ scale: scaleAnim }],
+            transform: [{ scale: exitScale }],
           },
         ]}
       >
-        {/* Brand Logo & Name */}
-        <View style={styles.logoSection}>
-          <AppLogo size="lg" showTagline={true} align="center" />
-        </View>
+        {/* Glow ring behind logo */}
+        <Animated.View
+          style={[
+            styles.glowRing,
+            {
+              width: GLOW_SIZE,
+              height: GLOW_SIZE,
+              borderRadius: GLOW_SIZE / 2,
+              opacity: glowOpacity,
+              transform: [{ scale: glowScale }],
+            },
+          ]}
+        />
 
-        {/* Hero Slogan */}
-        <View style={styles.sloganSection}>
-          <Text style={styles.heroSloganPart1}>A Cleaner Home</Text>
-          <Text style={styles.heroSloganPart2}>for a Happier You</Text>
-        </View>
+        {/* Logo container with shimmer clip */}
+        <Animated.View
+          style={[
+            styles.logoWrapper,
+            {
+              width: LOGO_SIZE,
+              height: LOGO_SIZE,
+              opacity: logoOpacity,
+              transform: [
+                { scale: logoScale },
+                { translateY: logoTranslateY },
+              ],
+            },
+          ]}
+        >
+          {/* The actual GC HOME+ circular logo */}
+          <GCLogo size={LOGO_SIZE} />
 
-        {/* Hero Visual Banner with Living Room Image & Decorative Tag */}
-        <View style={styles.heroImageWrapper}>
-          <Image
-            source={typeof ASSETS.heroLivingRoom === 'string' ? { uri: ASSETS.heroLivingRoom } : ASSETS.heroLivingRoom}
-            style={styles.heroImage}
-            resizeMode="cover"
+          {/* Gold shimmer sweep overlay — clipped to logo bounds */}
+          <Animated.View
+            style={[
+              styles.shimmerStrip,
+              {
+                opacity: shimmerOpacity,
+                transform: [{ translateX: shimmerX }],
+              },
+            ]}
+            pointerEvents="none"
           />
-
-          {/* Book Accent Tag */}
-          <View style={styles.bookTag}>
-            <Text style={styles.bookTagTitle}>Good Homes</Text>
-            <Text style={styles.bookTagSub}>Happier People</Text>
-          </View>
-
-          {/* Handwritten Style Side Accent */}
-          <View style={styles.sideAccent}>
-            <Text style={styles.sideAccentText}>More</Text>
-            <Text style={styles.sideAccentText}>Than Cleaning</Text>
-            <Text style={styles.sideAccentSub}>— It's Care</Text>
-            <Text style={styles.sideAccentHeart}>♡</Text>
-          </View>
-        </View>
-
-        {/* 3 Trust Badges */}
-        <View style={styles.trustSection}>
-          <TrustBadgeRow variant="splash" />
-        </View>
-
-        {/* Sleek Loading Bar */}
-        <View style={styles.loadingSection}>
-          <View style={styles.progressBarTrack}>
-            <Animated.View style={[styles.progressBarFill, { width: progressWidth }]} />
-          </View>
-          <Text style={styles.loadingText}>Getting things ready...</Text>
-        </View>
+        </Animated.View>
       </Animated.View>
-
-      {/* Organic Bottom Mint Wave */}
-      <BottomWaveDecoration slogan="A Cleaner Home for a Happier You" />
-    </View>
+    </Animated.View>
   );
 };
 
@@ -137,148 +254,74 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    justifyContent: 'space-between',
-    position: 'relative',
-  },
-  topBadgeWrapper: {
-    position: 'absolute',
-    top: 14,
-    right: 16,
-    zIndex: 10,
-  },
-  topBadge: {
-    backgroundColor: '#EAF8F1',
-    borderRadius: 14,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#C6EEDB',
-  },
-  topBadgeText: {
-    fontSize: 9.5,
-    fontWeight: '800',
-    color: '#0E5B47',
-    lineHeight: 12,
-  },
-  mainContent: {
-    flex: 1,
-    alignItems: 'center',
-    paddingHorizontal: 18,
-    paddingTop: 36,
     justifyContent: 'center',
-  },
-  logoSection: {
     alignItems: 'center',
-    marginBottom: 12,
   },
-  sloganSection: {
-    alignItems: 'center',
-    marginBottom: 14,
+
+  // ── Background layers ──────────────────────────────────────────────────────
+  bgLayer: {
+    ...StyleSheet.absoluteFillObject,
   },
-  heroSloganPart1: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#10243A',
-    letterSpacing: -0.2,
+  bgBase: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#F6FBF7',
   },
-  heroSloganPart2: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: '#168A68',
-    letterSpacing: -0.2,
-  },
-  heroImageWrapper: {
-    width: '100%',
-    height: 170,
-    borderRadius: 20,
-    overflow: 'hidden',
-    position: 'relative',
-    marginBottom: 16,
-    shadowColor: '#10243A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  heroImage: {
-    width: '100%',
-    height: '100%',
-  },
-  bookTag: {
+  bgCenterGlow: {
     position: 'absolute',
-    bottom: 12,
-    left: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.92)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#E1E8E5',
+    width: SCREEN_WIDTH * 1.2,
+    height: SCREEN_WIDTH * 1.2,
+    borderRadius: SCREEN_WIDTH * 0.6,
+    backgroundColor: 'rgba(111, 175, 114, 0.10)',
+    top: SCREEN_HEIGHT / 2 - SCREEN_WIDTH * 0.6,
+    left: -SCREEN_WIDTH * 0.1,
   },
-  bookTagTitle: {
-    fontSize: 8.5,
-    fontWeight: '800',
-    color: '#10243A',
-  },
-  bookTagSub: {
-    fontSize: 7.5,
-    fontWeight: '700',
-    color: '#168A68',
-  },
-  sideAccent: {
+  bgTopAccent: {
     position: 'absolute',
-    right: 12,
-    bottom: 16,
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    backgroundColor: 'rgba(201, 162, 39, 0.05)',
+    top: -60,
+    right: -40,
+  },
+
+  // ── Center content ─────────────────────────────────────────────────────────
+  centerContent: {
+    justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.88)',
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderRadius: 10,
   },
-  sideAccentText: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: '#10243A',
-    lineHeight: 11,
+
+  // ── Glow ring ──────────────────────────────────────────────────────────────
+  glowRing: {
+    position: 'absolute',
+    backgroundColor: 'transparent',
+    // Soft layered shadow simulates the glow
+    shadowColor: '#6FAF72',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 28,
+    elevation: 0,
+    borderWidth: 2,
+    borderColor: 'rgba(111, 175, 114, 0.35)',
   },
-  sideAccentSub: {
-    fontSize: 8.5,
-    fontWeight: '800',
-    color: '#168A68',
-    marginTop: 2,
-  },
-  sideAccentHeart: {
-    fontSize: 10,
-    color: '#168A68',
-    marginTop: 1,
-  },
-  trustSection: {
-    width: '100%',
-    marginBottom: 16,
-  },
-  loadingSection: {
-    alignItems: 'center',
-    width: '100%',
-    paddingHorizontal: 30,
-    marginBottom: 10,
-  },
-  progressBarTrack: {
-    width: 140,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: '#EAF8F1',
+
+  // ── Logo ───────────────────────────────────────────────────────────────────
+  logoWrapper: {
     overflow: 'hidden',
-    marginBottom: 8,
+    borderRadius: 9999,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  progressBarFill: {
-    height: '100%',
-    backgroundColor: '#168A68',
-    borderRadius: 3,
-  },
-  loadingText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#68788C',
+
+  // ── Gold shimmer strip ─────────────────────────────────────────────────────
+  shimmerStrip: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: LOGO_SIZE * 0.38,
+    height: LOGO_SIZE,
+    // Diagonal-ish gold-white gradient effect via rotation
+    backgroundColor: 'rgba(255, 235, 170, 0.72)',
+    transform: [{ skewX: '-18deg' }],
   },
 });

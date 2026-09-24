@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import { Customer } from '../../types';
 import { supabase } from '../../config/supabase';
+import { PaginationControls } from '../../components/PaginationControls';
+import { exportCustomersToCSV as triggerExportCustomers } from '../../utils/exportUtils';
 import {
   Users,
   Crown,
@@ -28,10 +30,15 @@ interface CustomerWithDetails extends Customer {
   avgRating: number;
   totalRatingsGiven: number;
   preferredServices: string[];
+  isPartner?: boolean;
+  partnerStatus?: string;
+  partnerProfile?: any;
+  partnerJobsCount?: number;
+  customerBookingsCount?: number;
 }
 
 export const CustomersPage: React.FC = () => {
-  const { customers: contextCustomers, bookings, ratings } = useAdmin();
+  const { customers: contextCustomers, bookings, ratings, setCurrentTab } = useAdmin();
 
   const [customers, setCustomers] = useState<CustomerWithDetails[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
@@ -42,18 +49,27 @@ export const CustomersPage: React.FC = () => {
   useEffect(() => {
     const enrichCustomers = async () => {
       try {
-        // Fetch all user addresses
+        // Fetch all user addresses from saved_addresses
         const { data: addressesData } = await supabase
-          .from('user_addresses')
+          .from('saved_addresses')
           .select('*')
-          .order('is_primary', { ascending: false });
+          .order('is_default', { ascending: false });
 
         const addressesByUser = new Map<string, any[]>();
         (addressesData || []).forEach(addr => {
           if (!addressesByUser.has(addr.user_id)) {
             addressesByUser.set(addr.user_id, []);
           }
-          addressesByUser.get(addr.user_id)!.push(addr);
+          addressesByUser.get(addr.user_id)!.push({
+            id: addr.id,
+            user_id: addr.user_id,
+            label: addr.label || 'Home',
+            street: addr.street_address || addr.street || '',
+            locality: addr.locality || '',
+            city: addr.city || 'Hyderabad',
+            pincode: addr.pincode || '500081',
+            is_primary: addr.is_default,
+          });
         });
 
         // Enrich each customer with full details
@@ -161,15 +177,20 @@ export const CustomersPage: React.FC = () => {
     }
   }, [contextCustomers, bookings, ratings]);
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 10;
+
   const filteredCustomers = customers.filter(c => {
     if (selectedCategory !== 'All' && c.customerType !== selectedCategory) return false;
-    if (selectedLocality !== 'All' && !c.locality.toLowerCase().includes(selectedLocality.toLowerCase())) return false;
+    if (selectedLocality !== 'All' && !(c.locality || '').toLowerCase().includes(selectedLocality.toLowerCase())) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      if (!c.name.toLowerCase().includes(q) && !c.phone.includes(q) && !c.email.toLowerCase().includes(q) && !c.locality.toLowerCase().includes(q)) return false;
+      if (!(c.name || '').toLowerCase().includes(q) && !(c.phone || '').includes(q) && !(c.email || '').toLowerCase().includes(q) && !(c.locality || '').toLowerCase().includes(q)) return false;
     }
     return true;
   });
+
+  const paginatedCustomers = filteredCustomers.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const totalCustomers = customers.length;
   const vipCount = customers.filter(c => c.customerType === 'VIP Member').length;
@@ -192,27 +213,7 @@ export const CustomersPage: React.FC = () => {
   };
 
   const exportCustomersToCSV = () => {
-    const headers = ['Customer ID', 'Name', 'Phone', 'Email', 'Type', 'Locality', 'Total Bookings', 'Total Spent', 'Avg Rating', 'Joined Date'];
-    const rows = filteredCustomers.map(c => [
-      c.id,
-      c.name,
-      c.phone,
-      c.email,
-      c.customerType,
-      c.locality,
-      c.totalBookings,
-      c.totalSpent,
-      c.avgRating.toFixed(1),
-      c.joinedDate
-    ]);
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `GC_Home_Customers_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    triggerExportCustomers(filteredCustomers);
   };
 
   return (
@@ -236,7 +237,6 @@ export const CustomersPage: React.FC = () => {
             <span className="text-xs font-bold text-slate-400 block mb-1">Total Customers</span>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-black text-slate-900">{totalCustomers}</span>
-              <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md">↑ 14% vs last month</span>
             </div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold">
@@ -249,7 +249,6 @@ export const CustomersPage: React.FC = () => {
             <span className="text-xs font-bold text-slate-400 block mb-1">Active VIP Members</span>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-black text-slate-900">{vipCount}</span>
-              <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-md">13% of total</span>
             </div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
@@ -262,9 +261,6 @@ export const CustomersPage: React.FC = () => {
             <span className="text-xs font-bold text-slate-400 block mb-1">Avg Lifetime Value</span>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-black text-emerald-950">₹{avgLtv.toLocaleString()}</span>
-              {totalCustomers > 0 && (
-                <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md">Live</span>
-              )}
             </div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold">
@@ -277,9 +273,6 @@ export const CustomersPage: React.FC = () => {
             <span className="text-xs font-bold text-slate-400 block mb-1">Satisfaction Score</span>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-black text-slate-900">{avgRating} ★</span>
-              {totalRatingsCount > 0 && (
-                <span className="text-[10px] font-bold text-slate-500">Based on {totalRatingsCount} ratings</span>
-              )}
             </div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-500 flex items-center justify-center font-bold">
@@ -334,7 +327,7 @@ export const CustomersPage: React.FC = () => {
 
         <button
           onClick={exportCustomersToCSV}
-          className="px-4 py-2 bg-emerald-50 hover:bg-emerald-100 text-[#043927] border border-emerald-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+          className="px-4 py-2 bg-emerald-50 hover:bg-emerald-100 text-[#123D2A] border border-emerald-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
         >
           <Download className="w-4 h-4 text-emerald-700" /> Export CSV
         </button>
@@ -358,8 +351,8 @@ export const CustomersPage: React.FC = () => {
                 <th className="py-3.5 px-4 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
-              {filteredCustomers.map((c, idx) => {
+            <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+              {paginatedCustomers.map((c, idx) => {
                 const typeBadge = c.customerType === 'VIP Member'
                   ? 'bg-amber-100 text-amber-900 border border-amber-300'
                   : c.customerType === 'First-time Customer'
@@ -368,25 +361,55 @@ export const CustomersPage: React.FC = () => {
 
                 return (
                   <tr key={c.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="py-3.5 px-4 text-center text-slate-400 font-bold">{idx + 1}</td>
+                    <td className="py-3.5 px-4 text-center text-slate-400 font-bold">{(currentPage - 1) * pageSize + idx + 1}</td>
                     <td className="py-3.5 px-4">
                       <div className="flex items-center gap-3">
-                        <img src={c.avatarUrl} alt={c.name} className="w-9 h-9 rounded-full object-cover border border-slate-200" />
+                        <img src={c.avatarUrl} alt={c.name} className="w-10 h-10 rounded-full object-cover border border-slate-200" />
                         <div>
                           <strong className="text-slate-900 font-bold block text-sm">{c.name}</strong>
-                          <span className="text-[11px] text-slate-500 font-medium">{c.email}</span>
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-900 border border-emerald-300">
+                              CUSTOMER
+                            </span>
+                            {c.isPartner && (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-purple-100 text-purple-900 border border-purple-300">
+                                PARTNER
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[11px] text-slate-500 font-medium block mt-0.5">{c.email || c.phone}</span>
                         </div>
                       </div>
                     </td>
                     <td className="py-3.5 px-4 font-semibold text-slate-800">{c.phone}</td>
                     <td className="py-3.5 px-4">
-                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${typeBadge}`}>
-                        {c.customerType}
-                      </span>
+                      {c.isPartner ? (
+                        <div className="flex flex-col gap-1 items-start">
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-black tracking-wide bg-gradient-to-r from-emerald-100 via-teal-100 to-purple-100 text-slate-900 border border-purple-200">
+                            Customer + Partner
+                          </span>
+                          <span className="text-[9px] font-bold text-slate-400 capitalize">
+                            KYC: {c.partnerStatus || 'Pending'}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${typeBadge}`}>
+                          {c.customerType}
+                        </span>
+                      )}
                     </td>
                     <td className="py-3.5 px-4 font-semibold text-slate-800">{c.locality}</td>
-                    <td className="py-3.5 px-4 font-bold text-slate-900">{c.totalBookings}</td>
-                    <td className="py-3.5 px-4 font-black text-[#043927]">₹{c.totalSpent.toLocaleString()}</td>
+                    <td className="py-3.5 px-4">
+                      <div className="flex flex-col">
+                        <span className="font-bold text-slate-900">{c.totalBookings} booked</span>
+                        {c.isPartner && (
+                          <span className="text-[10px] font-extrabold text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-100 mt-0.5 w-fit">
+                            {c.partnerJobsCount || 0} partner jobs
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="py-3.5 px-4 font-black text-[#123D2A]">₹{c.totalSpent.toLocaleString()}</td>
                     <td className="py-3.5 px-4 text-slate-500">{c.lastBookingDate}</td>
                     <td className="py-3.5 px-4 font-extrabold text-slate-900 flex items-center gap-1">
                       {c.avgRating > 0 ? (
@@ -401,7 +424,7 @@ export const CustomersPage: React.FC = () => {
                     <td className="py-3.5 px-4 text-right">
                       <button
                         onClick={() => setActiveDrawerCustomer(c)}
-                        className="px-3.5 py-1.5 bg-[#043927] hover:bg-[#064e3b] text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-sm"
+                        className="px-3.5 py-1.5 bg-[#123D2A] hover:bg-[#184a34] text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-sm"
                       >
                         View Profile
                       </button>
@@ -414,12 +437,24 @@ export const CustomersPage: React.FC = () => {
                 <tr>
                   <td colSpan={10} className="py-12 text-center text-slate-400">
                     <Users className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                    <p className="text-sm font-semibold">No customers found matching filter criteria.</p>
+                    <p className="text-sm font-semibold">
+                      {totalCustomers === 0 ? 'No customers registered yet.' : 'No customers found matching filter criteria.'}
+                    </p>
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Pagination Controls */}
+        <div className="p-4 bg-slate-50 border-t border-slate-200/80">
+          <PaginationControls
+            currentPage={currentPage}
+            totalItems={filteredCustomers.length}
+            pageSize={pageSize}
+            onPageChange={setCurrentPage}
+          />
         </div>
       </div>
 
@@ -499,11 +534,66 @@ export const CustomersPage: React.FC = () => {
                   <span className="text-slate-500">Phone</span>
                   <strong className="text-slate-900 font-bold">{activeDrawerCustomer.phone}</strong>
                 </div>
-                <div className="flex justify-between py-1">
+                <div className="flex justify-between py-1 border-b border-slate-200">
                   <span className="text-slate-500">Email</span>
-                  <strong className="text-slate-900 font-bold">{activeDrawerCustomer.email}</strong>
+                  <strong className="text-slate-900 font-bold">{activeDrawerCustomer.email || 'Not provided'}</strong>
+                </div>
+                <div className="flex justify-between py-1">
+                  <span className="text-slate-500">Account Type</span>
+                  <span className="font-extrabold text-emerald-800">
+                    {activeDrawerCustomer.isPartner ? 'Customer + Partner (Dual-Role)' : 'Customer Only'}
+                  </span>
                 </div>
               </div>
+
+              {/* Dual-Role Partner Profile & KYC Section */}
+              {activeDrawerCustomer.isPartner && (
+                <div className="mb-6 p-4 rounded-2xl bg-gradient-to-br from-purple-50 via-slate-50 to-emerald-50 border border-purple-200">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-purple-600 animate-pulse"></span>
+                      <h4 className="text-xs font-black text-purple-950 uppercase tracking-wider">
+                        Partner Profile & KYC
+                      </h4>
+                    </div>
+                    <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-purple-100 text-purple-800 border border-purple-300">
+                      Status: {activeDrawerCustomer.partnerStatus || 'Pending'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs mb-3">
+                    <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                      <span className="text-[10px] text-slate-400 font-bold block">Partner Jobs Completed</span>
+                      <strong className="text-slate-900 font-black text-sm">{activeDrawerCustomer.partnerJobsCount || 0} jobs</strong>
+                    </div>
+                    <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                      <span className="text-[10px] text-slate-400 font-bold block">Service Area</span>
+                      <strong className="text-slate-900 font-bold text-xs truncate block">
+                        {activeDrawerCustomer.partnerProfile?.service_area || activeDrawerCustomer.locality || 'Karimnagar'}
+                      </strong>
+                    </div>
+                  </div>
+
+                  {activeDrawerCustomer.partnerProfile?.bank_account_name && (
+                    <div className="bg-white p-2.5 rounded-xl border border-slate-200 text-[11px] mb-3">
+                      <span className="text-[10px] text-slate-400 font-bold block mb-1">Bank Payout Info</span>
+                      <div className="text-slate-700">
+                        {activeDrawerCustomer.partnerProfile.bank_name} • A/C: {activeDrawerCustomer.partnerProfile.bank_account_number ? '••••' + activeDrawerCustomer.partnerProfile.bank_account_number.slice(-4) : 'Provided'}
+                      </div>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => {
+                      setActiveDrawerCustomer(null);
+                      setCurrentTab('maids');
+                    }}
+                    className="w-full py-2 bg-purple-700 hover:bg-purple-800 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+                  >
+                    Open in Partner Management →
+                  </button>
+                </div>
+              )}
 
               {/* Saved Addresses */}
               <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
@@ -619,7 +709,7 @@ export const CustomersPage: React.FC = () => {
             <div className="p-6 border-t border-slate-200 bg-slate-50 flex items-center gap-3 mt-auto">
               <button
                 onClick={() => window.open(`tel:${activeDrawerCustomer.phone}`)}
-                className="flex-1 py-2.5 bg-[#043927] hover:bg-[#064e3b] text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-md flex items-center justify-center gap-1.5"
+                className="flex-1 py-2.5 bg-[#123D2A] hover:bg-[#184a34] text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-md flex items-center justify-center gap-1.5"
               >
                 <Phone className="w-3.5 h-3.5" /> Call Customer
               </button>
@@ -636,3 +726,4 @@ export const CustomersPage: React.FC = () => {
     </div>
   );
 };
+

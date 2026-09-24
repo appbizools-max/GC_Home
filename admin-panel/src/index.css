@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 @import "tailwindcss/base";
 @import "tailwindcss/components";
@@ -11,17 +11,24 @@
   --admin-bg: #F8FAFC;
 }
 
-* {
+html, body, #root, * {
   box-sizing: border-box;
-  font-family: 'Inter', 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
 body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   background-color: var(--admin-bg);
   color: #0F172A;
   margin: 0;
   padding: 0;
   min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button, input, optgroup, select, textarea {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
 /* Custom Table Styling */
@@ -63,3 +70,74 @@ tr:last-child td {
 tr:hover td {
   background-color: #F8FAFC;
 }
+
+/* ==========================================================================
+   GLOBAL SCROLLBAR UI CLEANUP (PRESERVING 100% SCROLLING FUNCTIONALITY)
+   - Completely removes visible scrollbars (thumb, track, buttons, corner)
+   - Works across WebKit (Chrome, Safari, Edge), Firefox, and IE
+   - Applies universally across the entire application:
+     * html, body, root, main, aside, nav, table containers,
+     * all modals, drawers, dropdowns, popovers, chat feeds, cards, and forms
+   - Preserves 100% of native scrolling capabilities:
+     * Mouse wheel
+     * Trackpad / Touchpad (vertical & horizontal)
+     * Touch swiping & drag
+     * Keyboard navigation (Arrow keys, Page Up/Down, Home/End, Space)
+     * Programmatic scrolling (scrollIntoView, scrollTop)
+   ========================================================================== */
+
+/* Universal selector: hide scrollbars on all elements in Firefox & legacy IE/Edge */
+*,
+*::before,
+*::after {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+
+/* Universal selector: hide scrollbar chrome in WebKit browsers (Chrome, Safari, Edge, Opera) */
+*::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
+}
+
+*::-webkit-scrollbar-thumb,
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner,
+*::-webkit-scrollbar-button {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
+}
+
+/* Ensure root containers also never show scrollbars */
+html,
+body,
+#root {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+#root::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
+}
+
+/* Utility class for explicit cases */
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+

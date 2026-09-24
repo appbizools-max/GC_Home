@@ -18,7 +18,8 @@ import {
   Calendar,
   Clock,
   Plus,
-  Edit2
+  Edit2,
+  AlertCircle
 } from 'lucide-react';
 
 export const UnapprovedMaidsTab: React.FC = () => {
@@ -33,18 +34,23 @@ export const UnapprovedMaidsTab: React.FC = () => {
   const [activeDrawerMaid, setActiveDrawerMaid] = useState<any | null>(null);
   const [drawerTab, setDrawerTab] = useState<string>('overview');
 
-  const unapprovedMaidsList = [
-    { id: 'MD029', name: 'Rani S.', phone: '+91 98765 22334', submitted: '14 Sep 2026', reason: 'Invalid Documents', rejectedBy: 'Admin', rejectedDate: '16 Sep 2026', status: 'Rejected', photo: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=200', location: 'Bachupally, Hyderabad', exp: '2 Years', lang: 'Telugu, Hindi', dob: '12 Mar 1996 (30 years)' },
-    { id: 'MD031', name: 'Shilpa K.', phone: '+91 91234 66788', submitted: '13 Sep 2026', reason: 'Incomplete Details', rejectedBy: 'Admin', rejectedDate: '15 Sep 2026', status: 'Rejected', photo: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=200', location: 'Kondapur, Hyderabad', exp: '1 Year', lang: 'Telugu', dob: '20 Jul 1998 (28 years)' },
-    { id: 'MD033', name: 'Divya M.', phone: '+91 99876 44556', submitted: '12 Sep 2026', reason: 'Invalid Address Proof', rejectedBy: 'Admin', rejectedDate: '14 Sep 2026', status: 'Rejected', photo: 'https://images.unsplash.com/photo-1567532939604-b6b5b0db2604?auto=format&fit=crop&q=80&w=200', location: 'Gachibowli, Hyderabad', exp: '3 Years', lang: 'Telugu, English', dob: '05 Jan 1995 (31 years)' },
-    { id: 'MD035', name: 'Meena R.', phone: '+91 90123 99887', submitted: '12 Sep 2026', reason: 'KYC Not Valid', rejectedBy: 'Admin', rejectedDate: '14 Sep 2026', status: 'Rejected', photo: 'https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?auto=format&fit=crop&q=80&w=200', location: 'Miyapur, Hyderabad', exp: '4 Years', lang: 'Telugu', dob: '18 Nov 1994 (31 years)' },
-    { id: 'MD037', name: 'Pooja K.', phone: '+91 93456 77890', submitted: '11 Sep 2026', reason: 'Police Verification Pending', rejectedBy: 'Admin', rejectedDate: '13 Sep 2026', status: 'Awaiting Correction', photo: 'https://images.unsplash.com/photo-1548142813-c348350df52b?auto=format&fit=crop&q=80&w=200', location: 'KPHB, Hyderabad', exp: '2 Years', lang: 'Telugu, Hindi', dob: '14 Feb 1997 (29 years)' },
-    { id: 'MD041', name: 'Kalpana T.', phone: '+91 98765 11223', submitted: '10 Sep 2026', reason: 'Photo Not Clear', rejectedBy: 'Admin', rejectedDate: '12 Sep 2026', status: 'Rejected', photo: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&q=80&w=200', location: 'Ameenpur, Hyderabad', exp: '5 Years', lang: 'Telugu', dob: '08 Aug 1993 (33 years)' },
-    { id: 'MD043', name: 'Saroja L.', phone: '+91 91234 33445', submitted: '09 Sep 2026', reason: 'Bank Details Mismatch', rejectedBy: 'Admin', rejectedDate: '11 Sep 2026', status: 'Rejected', photo: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200', location: 'Madhapur, Hyderabad', exp: '2 Years', lang: 'Telugu, English', dob: '25 Oct 1996 (29 years)' },
-    { id: 'MD045', name: 'Sunitha V.', phone: '+91 99876 55678', submitted: '08 Sep 2026', reason: 'Experience Proof Missing', rejectedBy: 'Admin', rejectedDate: '10 Sep 2026', status: 'Awaiting Correction', photo: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=200', location: 'Bachupally, Hyderabad', exp: '3 Years', lang: 'Telugu', dob: '11 Jun 1995 (31 years)' },
-    { id: 'MD048', name: 'Latha P.', phone: '+91 90123 66778', submitted: '07 Sep 2026', reason: 'Age Not Valid', rejectedBy: 'Admin', rejectedDate: '09 Sep 2026', status: 'Rejected', photo: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&q=80&w=200', location: 'Kondapur, Hyderabad', exp: '1 Year', lang: 'Telugu', dob: '02 Apr 2007 (19 years)' },
-    { id: 'MD051', name: 'Kavitha R.', phone: '+91 93456 99000', submitted: '06 Sep 2026', reason: 'Duplicate Application', rejectedBy: 'Admin', rejectedDate: '08 Sep 2026', status: 'Rejected', photo: 'https://images.unsplash.com/photo-1567532939604-b6b5b0db2604?auto=format&fit=crop&q=80&w=200', location: 'Miyapur, Hyderabad', exp: '4 Years', lang: 'Telugu', dob: '30 Sep 1994 (31 years)' }
-  ];
+  const unapprovedMaids = maids.filter(m => m.status === 'rejected');
+
+  const unapprovedMaidsList = unapprovedMaids.map(m => ({
+    id: m.maidId || m.uid,
+    name: m.fullName,
+    phone: m.phone,
+    submitted: m.appliedAt || 'Recently',
+    reason: m.rejectionReason || 'Application Rejected',
+    rejectedBy: m.rejectedBy || 'Admin',
+    rejectedDate: m.rejectedAt || m.appliedAt || 'Recently',
+    status: 'Rejected',
+    photo: m.photoUrl,
+    location: m.serviceArea,
+    exp: m.experience || '1+ Years',
+    lang: (m.languages || ['Telugu']).join(', '),
+    dob: m.dob || 'N/A'
+  }));
 
   const filtered = unapprovedMaidsList.filter(m => {
     if (selectedReason !== 'All' && !m.reason.toLowerCase().includes(selectedReason.toLowerCase())) return false;
@@ -55,6 +61,12 @@ export const UnapprovedMaidsTab: React.FC = () => {
     }
     return true;
   });
+
+  const totalUnapproved = unapprovedMaids.length;
+  const kycRejected = unapprovedMaids.filter(m => (m.rejectionReason || '').toLowerCase().includes('doc') || (m.rejectionReason || '').toLowerCase().includes('kyc')).length;
+  const detailsRejected = unapprovedMaids.filter(m => (m.rejectionReason || '').toLowerCase().includes('detail') || (m.rejectionReason || '').toLowerCase().includes('address')).length;
+  const awaitingCorrection = unapprovedMaids.filter(m => m.kycStatus === 'incomplete' || (m.rejectionReason || '').toLowerCase().includes('correct')).length;
+  const otherReasons = Math.max(0, totalUnapproved - kycRejected - detailsRejected);
 
   const resetFilters = () => {
     setSelectedReason('All');
@@ -72,8 +84,7 @@ export const UnapprovedMaidsTab: React.FC = () => {
           <div>
             <span className="text-xs font-bold text-rose-800 uppercase tracking-wider block mb-1">Total Unapproved</span>
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-black text-rose-950">19</span>
-              <span className="text-[10px] font-bold text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded-md">↑ 8% vs last month</span>
+              <span className="text-2xl font-black text-rose-950">{totalUnapproved}</span>
             </div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-rose-600 text-white flex items-center justify-center font-bold">
@@ -85,8 +96,7 @@ export const UnapprovedMaidsTab: React.FC = () => {
           <div>
             <span className="text-xs font-bold text-slate-400 block mb-1">KYC Rejected</span>
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-black text-slate-900">8</span>
-              <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded-md">42% of total</span>
+              <span className="text-2xl font-black text-slate-900">{kycRejected}</span>
             </div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center font-bold">
@@ -98,38 +108,35 @@ export const UnapprovedMaidsTab: React.FC = () => {
           <div>
             <span className="text-xs font-bold text-slate-400 block mb-1">Details Rejected</span>
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-black text-slate-900">6</span>
-              <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-md">32% of total</span>
+              <span className="text-2xl font-black text-slate-900">{detailsRejected}</span>
             </div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
-            <FileX className="w-5 h-5" />
+            <AlertCircle className="w-5 h-5" />
           </div>
         </div>
 
         <div className="bg-white p-4.5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
           <div>
-            <span className="text-xs font-bold text-slate-400 block mb-1">Awaiting Correction</span>
+            <span className="text-xs font-bold text-slate-400 block mb-1">Correction Req.</span>
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-black text-slate-900">5</span>
-              <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-md">26% of total</span>
+              <span className="text-2xl font-black text-slate-900">{awaitingCorrection}</span>
             </div>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+          <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
+            <RotateCcw className="w-5 h-5" />
+          </div>
+        </div>
+
+        <div className="bg-white p-4.5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+          <div>
+            <span className="text-xs font-bold text-slate-400 block mb-1">Other Reasons</span>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-black text-slate-900">{otherReasons}</span>
+            </div>
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center font-bold">
             <Clock className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-white p-4.5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
-          <div>
-            <span className="text-xs font-bold text-slate-400 block mb-1">Re-reviewed Requests</span>
-            <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-black text-slate-900">3</span>
-              <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md">Need re-evaluation</span>
-            </div>
-          </div>
-          <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold">
-            <RefreshCw className="w-5 h-5" />
           </div>
         </div>
       </div>
@@ -228,13 +235,21 @@ export const UnapprovedMaidsTab: React.FC = () => {
                   <td className="py-3.5 px-4 text-right">
                     <button
                       onClick={() => setActiveDrawerMaid(m)}
-                      className="px-3.5 py-1.5 bg-[#043927] hover:bg-[#064e3b] text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-sm"
+                      className="px-3.5 py-1.5 bg-[#123D2A] hover:bg-[#184a34] text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-sm"
                     >
                       View
                     </button>
                   </td>
                 </tr>
               ))}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={10} className="py-12 text-center text-slate-400">
+                    <UserX className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+                    <p className="text-sm font-semibold">No unapproved maid applications found.</p>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -333,7 +348,7 @@ export const UnapprovedMaidsTab: React.FC = () => {
                   requestMaidCorrection('maid_001', 'Please upload a clear Aadhaar card.');
                   setActiveDrawerMaid(null);
                 }}
-                className="flex-1 py-2.5 bg-[#043927] hover:bg-[#064e3b] text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md"
+                className="flex-1 py-2.5 bg-[#123D2A] hover:bg-[#184a34] text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md"
               >
                 <Send className="w-3.5 h-3.5" /> Request Update
               </button>
@@ -364,3 +379,4 @@ export const UnapprovedMaidsTab: React.FC = () => {
     </div>
   );
 };
+

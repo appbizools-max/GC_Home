@@ -1,547 +1,409 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  TextInput,
-  TouchableOpacity,
   ScrollView,
-  Image,
-  ActivityIndicator,
   KeyboardAvoidingView,
+  TouchableWithoutFeedback,
+  TouchableOpacity,
+  Keyboard,
   Platform,
+  StatusBar,
+  Animated,
+  Easing,
 } from 'react-native';
+import { HelpCircle, Briefcase } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
 import { AppLogo } from '../../components/ui/AppLogo';
-import { TrustBadgeRow } from '../../components/ui/TrustBadgeRow';
-import { BottomWaveDecoration } from '../../components/ui/BottomWaveDecoration';
-import { CountryPickerModal, CountryItem, COUNTRIES } from '../../components/ui/CountryPickerModal';
 import { NeedHelpModal } from '../../components/ui/NeedHelpModal';
-import { ASSETS } from '../../assets/index';
-import {
-  Smartphone,
-  Lock,
-  ArrowRight,
-  Headphones,
-  X,
-  Clock,
-  Calendar,
-  Home,
-  ChevronDown,
-} from 'lucide-react-native';
+
+import { PhoneNumberInput } from './components/PhoneNumberInput';
+import { PrimaryButton } from './components/PrimaryButton';
+import { TermsText } from './components/TermsText';
+
+// ── Animated slot helper ───────────────────────────────────────────────────────
+// Each element has its own opacity + translateY pair, staggered by delay.
+function useSlotAnim(delay: number) {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(16)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: 380,
+        delay,
+        useNativeDriver: true,
+        easing: Easing.out(Easing.cubic),
+      }),
+      Animated.timing(translateY, {
+        toValue: 0,
+        duration: 360,
+        delay,
+        useNativeDriver: true,
+        easing: Easing.out(Easing.cubic),
+      }),
+    ]).start();
+  }, []);
+
+  return { opacity, transform: [{ translateY }] };
+}
 
 export const LoginScreen: React.FC = () => {
-  const { sendLoginOtp, isAuthLoading, authError, clearAuthError } = useAuth();
+  const {
+    sendLoginOtp,
+    isAuthLoading,
+    authError,
+    clearAuthError,
+    navigateTo,
+    setRegistrationDraft,
+  } = useAuth();
 
-  const [phoneNumber, setPhoneNumber] = useState('9849201824');
-  const [selectedCountry, setSelectedCountry] = useState<CountryItem>(COUNTRIES[0]);
-  const [showCountryPicker, setShowCountryPicker] = useState(false);
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [showHelpModal, setShowHelpModal] = useState(false);
-  const [localError, setLocalError] = useState('');
+  const [validationError, setValidationError] = useState('');
+  const [apiError, setApiError] = useState('');
 
-  // Validate phone number: 10 digits
+  // ── Staggered entrance animations ──────────────────────────────────────────
+  const logoAnim     = useSlotAnim(0);
+  const titleAnim    = useSlotAnim(80);
+  const inputAnim    = useSlotAnim(160);
+  const buttonAnim   = useSlotAnim(240);
+  const secondaryAnim = useSlotAnim(320);
+
+  // Validate 10-digit Indian Mobile Number starting with 6-9
   const rawDigits = phoneNumber.replace(/\D/g, '');
-  const isValidPhone = rawDigits.length === 10;
+  const isIndianValidPattern = /^[6-9]\d{9}$/.test(rawDigits);
+  const isValidPhone = rawDigits.length === 10 && isIndianValidPattern;
 
   const handlePhoneChange = (text: string) => {
-    // Only numbers
     const cleaned = text.replace(/[^0-9]/g, '');
     setPhoneNumber(cleaned);
-    if (localError) setLocalError('');
+    if (apiError) setApiError('');
     if (authError) clearAuthError();
+
+    if (cleaned.length === 10) {
+      if (!/^[6-9]/.test(cleaned)) {
+        setValidationError('Please enter a valid 10-digit mobile number starting with 6-9.');
+      } else {
+        setValidationError('');
+      }
+    } else {
+      setValidationError('');
+    }
   };
 
   const handleClear = () => {
     setPhoneNumber('');
-    setLocalError('');
+    setValidationError('');
+    setApiError('');
     if (authError) clearAuthError();
   };
 
-  const handleContinue = async () => {
-    if (!isValidPhone) {
-      setLocalError('Please enter a valid 10-digit mobile number.');
-      return;
+  const handleCreateAccountPress = () => {
+    setApiError('');
+    setValidationError('');
+    if (authError) clearAuthError();
+
+    // If user already typed valid or partial digits, pass it as initial draft for convenience
+    if (rawDigits.length > 0) {
+      setRegistrationDraft({
+        name: '',
+        phone: `+91 ${rawDigits}`,
+      });
     }
-    const fullPhone = `${selectedCountry.dialCode} ${rawDigits}`;
-    await sendLoginOtp(fullPhone);
+
+    // Navigate to Complete Your Profile screen WITHOUT sending OTP
+    navigateTo('complete_profile');
   };
 
+  const handleBecomePartnerPress = () => {
+    setApiError('');
+    setValidationError('');
+    if (authError) clearAuthError();
+    navigateTo('become_maid_info');
+  };
+
+  const handleContinue = async () => {
+    Keyboard.dismiss();
+    if (!isValidPhone || isAuthLoading) {
+      if (!isValidPhone) {
+        setValidationError('Please enter a valid mobile number.');
+      }
+      return;
+    }
+
+    setApiError('');
+    if (authError) clearAuthError();
+
+    const fullPhone = `+91 ${rawDigits}`;
+
+    try {
+      const success = await sendLoginOtp(fullPhone);
+      if (!success) {
+        setApiError('Unable to send verification code. Please try again.');
+      }
+    } catch (err: any) {
+      setApiError(err?.message || 'Unable to send verification code. Please try again.');
+    }
+  };
+
+  const displayError = validationError || apiError || authError;
+
   return (
-    <KeyboardAvoidingView
-      style={styles.keyboardContainer}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView
-        style={styles.container}
-        contentContainerStyle={styles.contentContainer}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Top Header Row */}
-        <View style={styles.headerRow}>
-          <AppLogo size="sm" showTagline={true} align="left" />
-          <TouchableOpacity
-            style={styles.helpButton}
-            onPress={() => setShowHelpModal(true)}
-            activeOpacity={0.7}
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss} touchSoundDisabled>
+      <View style={styles.safeContainer}>
+        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+
+        <KeyboardAvoidingView
+          style={styles.flexWrapper}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <ScrollView
+            style={styles.scrollContainer}
+            contentContainerStyle={styles.contentContainer}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
           >
-            <Headphones size={15} color="#168A68" />
-            <Text style={styles.helpText}>Need Help?</Text>
-          </TouchableOpacity>
-        </View>
+            {/* Top Spacing */}
+            <View style={styles.topSpacer} />
 
-        {/* Hero Welcome & Visual Section */}
-        <View style={styles.heroSection}>
-          <View style={styles.heroTextCol}>
-            <Text style={styles.welcomeTitle}>Welcome to</Text>
-            <Text style={styles.brandAccentTitle}>GC Home Plus</Text>
-            <Text style={styles.welcomeSubtitle}>
-              Book trusted cleaning services easily and enjoy a cleaner, healthier home.
-            </Text>
-          </View>
+            {/* 1. GC HOME+ Brand Logo — animated entrance */}
+            <Animated.View style={[styles.logoSection, logoAnim]}>
+              <AppLogo size="md" showTagline={false} align="center" />
+            </Animated.View>
 
-          {/* Hero Circular Visual */}
-          <View style={styles.heroVisualWrapper}>
-            <Image
-              source={typeof ASSETS.heroLivingRoom === 'string' ? { uri: ASSETS.heroLivingRoom } : ASSETS.heroLivingRoom}
-              style={styles.heroImage}
-            />
-            <View style={styles.heroFloatingTag}>
-              <Text style={styles.heroFloatingTagText}>Clean Homes</Text>
-              <Text style={styles.heroFloatingTagSub}>Happier Lives 💚</Text>
+            {/* 2. Login Title & Subtitle — animated entrance */}
+            <Animated.View style={[styles.titleSection, titleAnim]}>
+              <Text style={styles.titleText}>Welcome back</Text>
+              <Text style={styles.subtitleText}>Sign in to continue</Text>
+            </Animated.View>
+
+            {/* 3. Form Area */}
+            <View style={styles.formContainer}>
+              {/* Mobile Number Input — animated entrance */}
+              <Animated.View style={inputAnim}>
+                <PhoneNumberInput
+                  phoneNumber={phoneNumber}
+                  onChangeText={handlePhoneChange}
+                  onClear={handleClear}
+                  error={displayError}
+                />
+              </Animated.View>
+
+              {/* Primary CTA Button — animated entrance */}
+              <Animated.View style={buttonAnim}>
+                <PrimaryButton
+                  title={isAuthLoading ? 'Sending code...' : 'Continue'}
+                  onPress={handleContinue}
+                  disabled={!isValidPhone || isAuthLoading}
+                  loading={isAuthLoading}
+                  accessibilityLabel="Continue to verify mobile number"
+                />
+              </Animated.View>
+
+              {/* Secondary actions — staggered appearance */}
+              <Animated.View style={secondaryAnim}>
+                {/* 4. Navigate to Complete Your Profile (NO OTP SENT) */}
+                <View style={styles.switchRow}>
+                  <Text style={styles.switchNormalText}>New to GC HOME+?</Text>
+                  <TouchableOpacity
+                    onPress={handleCreateAccountPress}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel="Create an account"
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Text style={styles.switchActionText}>Create an account</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* 5. Minimal Or Divider */}
+                <View style={styles.orDividerContainer}>
+                  <View style={styles.orDividerLine} />
+                  <Text style={styles.orDividerText}>or</Text>
+                  <View style={styles.orDividerLine} />
+                </View>
+
+                {/* 6. Become a Partner Secondary Action */}
+                <View style={styles.partnerSwitchRow}>
+                  <Text style={styles.partnerPromptText}>Want to become a partner?</Text>
+                  <TouchableOpacity
+                    onPress={handleBecomePartnerPress}
+                    activeOpacity={0.75}
+                    style={styles.becomePartnerBtn}
+                    accessibilityRole="button"
+                    accessibilityLabel="Become a Partner"
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Briefcase size={13} color="#0D8846" strokeWidth={2.2} />
+                    <Text style={styles.becomePartnerActionText}>Become a Partner</Text>
+                  </TouchableOpacity>
+                </View>
+              </Animated.View>
             </View>
-          </View>
-        </View>
 
-        {/* 3 Trust Feature Indicators */}
-        <View style={styles.trustRowWrapper}>
-          <TrustBadgeRow variant="login" />
-        </View>
+            {/* Bottom Spacing */}
+            <View style={styles.bottomSpacer} />
 
-        {/* Authentication Card */}
-        <View style={styles.authCard}>
-          {/* Card Header */}
-          <View style={styles.cardHeader}>
-            <View style={styles.mobileIconCircle}>
-              <Smartphone size={18} color="#168A68" strokeWidth={2.2} />
-            </View>
-            <View>
-              <Text style={styles.cardTitle}>Login / Register</Text>
-              <Text style={styles.cardSubtitle}>Enter your mobile number to continue</Text>
-            </View>
-          </View>
-
-          {/* Phone Input Box */}
-          <View style={styles.inputContainer}>
-            <Text style={styles.inputLabel}>Mobile Number</Text>
-            <View
-              style={[
-                styles.phoneInputRow,
-                (localError || authError) ? styles.phoneInputRowError : null,
-              ]}
-            >
-              {/* Country Selector */}
+            {/* 5. Need Help? Link */}
+            <Animated.View style={secondaryAnim}>
               <TouchableOpacity
-                style={styles.countryBtn}
-                onPress={() => setShowCountryPicker(true)}
-                activeOpacity={0.7}
+                style={styles.needHelpBtn}
+                onPress={() => setShowHelpModal(true)}
+                activeOpacity={0.75}
+                accessibilityRole="button"
+                accessibilityLabel="Need Help?"
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                <Text style={styles.flagEmoji}>{selectedCountry.flag}</Text>
-                <Text style={styles.dialCode}>{selectedCountry.dialCode}</Text>
-                <ChevronDown size={14} color="#68788C" />
+                <HelpCircle size={15} color="#0D8846" strokeWidth={2.2} />
+                <Text style={styles.needHelpText}>Need Help?</Text>
               </TouchableOpacity>
 
-              <View style={styles.verticalDivider} />
+              {/* 6. Terms & Privacy Policy Links */}
+              <TermsText />
+            </Animated.View>
+          </ScrollView>
+        </KeyboardAvoidingView>
 
-              {/* Number Input */}
-              <TextInput
-                style={styles.textInput}
-                value={phoneNumber}
-                onChangeText={handlePhoneChange}
-                keyboardType="phone-pad"
-                maxLength={10}
-                placeholder="Enter 10-digit number"
-                placeholderTextColor="#94A3B8"
-              />
-
-              {/* Clear (X) Button */}
-              {phoneNumber.length > 0 && (
-                <TouchableOpacity onPress={handleClear} style={styles.clearBtn} activeOpacity={0.7}>
-                  <X size={15} color="#68788C" />
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {/* Error Message */}
-            {(localError || authError) ? (
-              <Text style={styles.errorText}>{localError || authError}</Text>
-            ) : null}
-          </View>
-
-          {/* Helper Message */}
-          <View style={styles.helperCard}>
-            <Lock size={15} color="#168A68" />
-            <Text style={styles.helperText}>We'll send a 6-digit OTP to this number</Text>
-          </View>
-
-          {/* Primary CTA Button */}
-          <TouchableOpacity
-            style={[
-              styles.continueButton,
-              (!isValidPhone || isAuthLoading) && styles.continueButtonDisabled,
-            ]}
-            onPress={handleContinue}
-            disabled={!isValidPhone || isAuthLoading}
-            activeOpacity={0.88}
-          >
-            {isAuthLoading ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
-            ) : (
-              <>
-                <Text style={styles.continueButtonText}>Continue</Text>
-                <ArrowRight size={18} color="#FFFFFF" strokeWidth={2.4} />
-              </>
-            )}
-          </TouchableOpacity>
-
-          {/* Terms & Privacy */}
-          <Text style={styles.termsText}>
-            By continuing, you agree to GC Home Plus{' '}
-            <Text style={styles.termsLink}>Terms of Service</Text> &{' '}
-            <Text style={styles.termsLink}>Privacy Policy</Text>.
-          </Text>
-        </View>
-
-        {/* Benefits Strip at Bottom */}
-        <View style={styles.benefitsStrip}>
-          <View style={styles.benefitItem}>
-            <Clock size={16} color="#168A68" />
-            <Text style={styles.benefitText}>Quick Booking</Text>
-          </View>
-          <View style={styles.benefitDivider} />
-          <View style={styles.benefitItem}>
-            <Calendar size={16} color="#168A68" />
-            <Text style={styles.benefitText}>Flexible Scheduling</Text>
-          </View>
-          <View style={styles.benefitDivider} />
-          <View style={styles.benefitItem}>
-            <Home size={16} color="#168A68" />
-            <Text style={styles.benefitText}>Professional Cleaning</Text>
-          </View>
-        </View>
-
-        {/* Bottom Organic Wave */}
-        <BottomWaveDecoration slogan="Clean Spaces. Brighter Lives." />
-      </ScrollView>
-
-      {/* Modals */}
-      <CountryPickerModal
-        visible={showCountryPicker}
-        selectedCountry={selectedCountry}
-        onSelect={setSelectedCountry}
-        onClose={() => setShowCountryPicker(false)}
-      />
-
-      <NeedHelpModal
-        visible={showHelpModal}
-        onClose={() => setShowHelpModal(false)}
-      />
-    </KeyboardAvoidingView>
+        {/* Need Help Modal */}
+        <NeedHelpModal
+          visible={showHelpModal}
+          onClose={() => setShowHelpModal(false)}
+        />
+      </View>
+    </TouchableWithoutFeedback>
   );
 };
 
 const styles = StyleSheet.create({
-  keyboardContainer: {
+  safeContainer: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 0,
   },
-  container: {
+  flexWrapper: {
+    flex: 1,
+  },
+  scrollContainer: {
     flex: 1,
     backgroundColor: '#FFFFFF',
   },
   contentContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 24,
-    minHeight: '100%',
-  },
-  headerRow: {
-    flexDirection: 'row',
+    flexGrow: 1,
+    paddingHorizontal: 24,
     justifyContent: 'space-between',
+    paddingTop: Platform.OS === 'ios' ? 20 : 16,
+    paddingBottom: Platform.OS === 'ios' ? 24 : 16,
+  },
+  topSpacer: {
+    height: Platform.OS === 'ios' ? 24 : 16,
+  },
+  logoSection: {
     alignItems: 'center',
-    marginBottom: 14,
-  },
-  helpButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: '#F5FCF8',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#E1E8E5',
-  },
-  helpText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#168A68',
-  },
-  heroSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 14,
-  },
-  heroTextCol: {
-    flex: 1,
-    paddingRight: 10,
-  },
-  welcomeTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#10243A',
-    lineHeight: 26,
-  },
-  brandAccentTitle: {
-    fontSize: 22,
-    fontWeight: '900',
-    color: '#168A68',
-    lineHeight: 26,
-    marginBottom: 4,
-  },
-  welcomeSubtitle: {
-    fontSize: 12,
-    color: '#68788C',
-    lineHeight: 16,
-  },
-  heroVisualWrapper: {
-    width: 105,
-    height: 105,
-    borderRadius: 52.5,
-    position: 'relative',
-    borderWidth: 3,
-    borderColor: '#EAF8F1',
-    shadowColor: '#168A68',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  heroImage: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 50,
-  },
-  heroFloatingTag: {
-    position: 'absolute',
-    bottom: -8,
-    alignSelf: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#C6EEDB',
-    alignItems: 'center',
-  },
-  heroFloatingTagText: {
-    fontSize: 8,
-    fontWeight: '800',
-    color: '#10243A',
-  },
-  heroFloatingTagSub: {
-    fontSize: 7.5,
-    fontWeight: '700',
-    color: '#168A68',
-  },
-  trustRowWrapper: {
-    marginBottom: 14,
-    backgroundColor: '#F5FCF8',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E1E8E5',
-    paddingVertical: 6,
-  },
-  authCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: '#E1E8E5',
-    shadowColor: '#10243A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-    marginBottom: 16,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 14,
-  },
-  mobileIconCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#EAF8F1',
     justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#C6EEDB',
+    marginBottom: 28,
   },
-  cardTitle: {
-    fontSize: 17,
+  titleSection: {
+    alignItems: 'center',
+    marginBottom: 28,
+  },
+  titleText: {
+    fontSize: 26,
     fontWeight: '800',
-    color: '#10243A',
-  },
-  cardSubtitle: {
-    fontSize: 12,
-    color: '#68788C',
-    marginTop: 1,
-  },
-  inputContainer: {
-    marginBottom: 12,
-  },
-  inputLabel: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    color: '#68788C',
-    marginBottom: 6,
-  },
-  phoneInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F5FCF8',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#E1E8E5',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  phoneInputRowError: {
-    borderColor: '#EF4444',
-    backgroundColor: '#FEF2F2',
-  },
-  countryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingRight: 8,
-  },
-  flagEmoji: {
-    fontSize: 16,
-  },
-  dialCode: {
-    fontSize: 14.5,
-    fontWeight: '700',
-    color: '#10243A',
-  },
-  verticalDivider: {
-    width: 1,
-    height: 22,
-    backgroundColor: '#D1DDD6',
-    marginRight: 10,
-  },
-  textInput: {
-    flex: 1,
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#10243A',
-    letterSpacing: 0.5,
-  },
-  clearBtn: {
-    padding: 4,
-    backgroundColor: '#E2E8F0',
-    borderRadius: 10,
-  },
-  errorText: {
-    fontSize: 11,
-    color: '#EF4444',
-    marginTop: 4,
-    fontWeight: '600',
-  },
-  helperCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#EAF8F1',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#C6EEDB',
-  },
-  helperText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#0E5B47',
-  },
-  continueButton: {
-    backgroundColor: '#168A68',
-    borderRadius: 26,
-    paddingVertical: 14,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-    shadowColor: '#168A68',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 4,
-    marginBottom: 12,
-  },
-  continueButtonDisabled: {
-    backgroundColor: '#A3D9C9',
-    shadowOpacity: 0,
-    elevation: 0,
-  },
-  continueButtonText: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  termsText: {
-    fontSize: 11,
-    color: '#68788C',
+    color: '#171A18',
     textAlign: 'center',
-    lineHeight: 16,
-    paddingHorizontal: 10,
+    letterSpacing: -0.4,
   },
-  termsLink: {
-    color: '#168A68',
-    fontWeight: '700',
-    textDecorationLine: 'underline',
+  subtitleText: {
+    fontSize: 14.5,
+    color: '#526058',
+    textAlign: 'center',
+    marginTop: 6,
+    fontWeight: '500',
   },
-  benefitsStrip: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    backgroundColor: '#F5FCF8',
-    borderRadius: 14,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderWidth: 1,
-    borderColor: '#E1E8E5',
-    marginBottom: 10,
+  formContainer: {
+    width: '100%',
+    marginBottom: 20,
   },
-  benefitItem: {
+  switchRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 18,
     gap: 6,
   },
-  benefitText: {
-    fontSize: 10.5,
-    fontWeight: '700',
-    color: '#10243A',
+  switchNormalText: {
+    fontSize: 13.5,
+    color: '#526058',
+    fontWeight: '500',
   },
-  benefitDivider: {
-    width: 1,
-    height: 14,
-    backgroundColor: '#E1E8E5',
+  switchActionText: {
+    fontSize: 13.5,
+    color: '#123D2A',
+    fontWeight: '700',
+  },
+  orDividerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 16,
+    marginBottom: 14,
+    gap: 10,
+  },
+  orDividerLine: {
+    width: 60,
+    height: 1,
+    backgroundColor: '#E2E8F0',
+  },
+  orDividerText: {
+    fontSize: 12.5,
+    color: '#94A3B8',
+    fontWeight: '500',
+  },
+  partnerSwitchRow: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  partnerPromptText: {
+    fontSize: 13,
+    color: '#526058',
+    fontWeight: '500',
+  },
+  becomePartnerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    backgroundColor: '#EAF5EC',
+    borderWidth: 1,
+    borderColor: '#C6E3CB',
+  },
+  becomePartnerActionText: {
+    fontSize: 13,
+    color: '#123D2A',
+    fontWeight: '700',
+  },
+  bottomSpacer: {
+    flex: 1,
+    minHeight: 24,
+  },
+  needHelpBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    alignSelf: 'center',
+  },
+  needHelpText: {
+    fontSize: 13,
+    color: '#123D2A',
+    fontWeight: '600',
   },
 });

@@ -1,6 +1,7 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image } from 'react-native';
 import { ServiceCategory } from '../../services/homeService';
+import { resolveImageSource } from '../../utils/imageUtils';
 import {
   Home,
   UtensilsCrossed,
@@ -52,9 +53,17 @@ export const ServiceCategoryRow: React.FC<ServiceCategoryRowProps> = ({
             activeOpacity={0.8}
             accessibilityLabel={cat.name.replace('\n', ' ')}
           >
-            {/* Soft Pastel Rounded Square Icon Box */}
+            {/* Soft Pastel Rounded Square Icon Box or Category Image */}
             <View style={[styles.iconBox, { backgroundColor: cat.bgColor }]}>
-              {getIcon(cat.iconName, cat.iconColor)}
+              {cat.imageUrl ? (
+                <Image
+                  source={resolveImageSource(cat.imageUrl)}
+                  style={styles.categoryImage}
+                  resizeMode="cover"
+                />
+              ) : (
+                getIcon(cat.iconName, cat.iconColor)
+              )}
             </View>
 
             {/* Category Name */}
@@ -94,6 +103,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.04,
     shadowRadius: 3,
     elevation: 1,
+    overflow: 'hidden',
+  },
+  categoryImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 16,
   },
   categoryName: {
     fontSize: 10.5,

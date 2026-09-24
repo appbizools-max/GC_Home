@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
-import { AppLogo } from '../ui/AppLogo';
-import { Bell, MapPin, ChevronDown, User as UserIcon } from 'lucide-react-native';
+import { GCLogo } from '../common/GCLogo';
+import { Bell, User as UserIcon } from 'lucide-react-native';
 
 interface GCHeaderProps {
   currentLocation: string;
@@ -16,7 +16,7 @@ interface GCHeaderProps {
 export const GCHeader: React.FC<GCHeaderProps> = ({
   currentLocation,
   isUsingGPS = true,
-  unreadNotificationsCount = 2,
+  unreadNotificationsCount = 0,
   profilePhotoUri,
   onOpenLocation,
   onOpenNotifications,
@@ -24,64 +24,58 @@ export const GCHeader: React.FC<GCHeaderProps> = ({
 }) => {
   return (
     <View style={styles.headerContainer}>
-      {/* ── TOP ROW: Brand Logo & Actions ── */}
-      <View style={styles.topRow}>
-        <AppLogo size="sm" showTagline={true} align="left" />
+      {/* ── Single Row: Brand Left | Actions Right ── */}
+      <View style={styles.row}>
 
-        <View style={styles.topActionsRow}>
-          {/* Notification Button with Badge */}
+        {/* ── LEFT: Circular Logo + Brand Name Stack ── */}
+        <View style={styles.brandGroup}>
+          {/* Official GC HOME+ circular logo */}
+          <GCLogo size={40} />
+
+          {/* Brand text: name + caption */}
+          <View style={styles.brandTextCol}>
+            <Text style={styles.brandName}>
+              GC HOME<Text style={styles.goldPlus}>+</Text>
+            </Text>
+            <Text style={styles.brandCaption}>Genuine Cleaning. Genuine Care.</Text>
+          </View>
+        </View>
+
+        {/* ── RIGHT: Notification Bell + Profile Avatar ── */}
+        <View style={styles.actionsGroup}>
+
+          {/* Notification Bell */}
           <TouchableOpacity
-            style={styles.actionIconButton}
+            style={styles.iconBtn}
             onPress={onOpenNotifications}
             activeOpacity={0.7}
             accessibilityLabel="Notifications"
           >
-            <Bell size={20} color="#10243A" />
+            <Bell size={20} color="#171A18" />
             {unreadNotificationsCount > 0 && (
-              <View style={styles.unreadBadge}>
-                <View style={styles.unreadDot} />
+              <View style={styles.badge}>
+                <View style={styles.badgeDot} />
               </View>
             )}
           </TouchableOpacity>
 
           {/* Profile Avatar */}
           <TouchableOpacity
-            style={styles.avatarButton}
+            style={styles.avatarBtn}
             onPress={onOpenProfile}
             activeOpacity={0.8}
             accessibilityLabel="User Profile"
           >
             {profilePhotoUri ? (
-              <Image source={{ uri: profilePhotoUri }} style={styles.avatarImage} />
+              <Image source={{ uri: profilePhotoUri }} style={styles.avatarImg} />
             ) : (
               <View style={styles.avatarPlaceholder}>
-                <UserIcon size={18} color="#168A68" />
+                <UserIcon size={18} color="#123D2A" />
               </View>
             )}
           </TouchableOpacity>
         </View>
       </View>
-
-      {/* ── SECOND ROW: Location (Strictly Below Logo/Name Area) ── */}
-      <TouchableOpacity
-        style={styles.locationSelectorRow}
-        onPress={onOpenLocation}
-        activeOpacity={0.75}
-        accessibilityLabel="Select Location"
-      >
-        <View style={styles.locationPinBox}>
-          <MapPin size={16} color="#168A68" strokeWidth={2.4} />
-        </View>
-
-        <View style={styles.locationTextGroup}>
-          <View style={styles.locationTitleRow}>
-            <Text style={styles.locationMainText} numberOfLines={1}>
-              {currentLocation || 'HSR Layout, Bengaluru, Karnataka 560102'}
-            </Text>
-            <ChevronDown size={14} color="#10243A" strokeWidth={2.2} />
-          </View>
-        </View>
-      </TouchableOpacity>
     </View>
   );
 };
@@ -90,21 +84,57 @@ const styles = StyleSheet.create({
   headerContainer: {
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 8,
+    paddingTop: 12,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F4F2',
   },
-  topRow: {
+
+  // ── Single row ──────────────────────────────────────────────────────────────
+  row: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    justifyContent: 'space-between',
   },
-  topActionsRow: {
+
+  // ── Brand (left) ────────────────────────────────────────────────────────────
+  brandGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  brandTextCol: {
+    flexDirection: 'column',
+    justifyContent: 'center',
+    gap: 1,
+  },
+  brandName: {
+    fontSize: 17,
+    fontWeight: '900',
+    color: '#171A18',
+    letterSpacing: -0.4,
+    lineHeight: 20,
+  },
+  goldPlus: {
+    color: '#C9A227',
+    fontWeight: '900',
+  },
+  brandCaption: {
+    fontSize: 10.5,
+    fontWeight: '600',
+    color: '#6FAF72',
+    letterSpacing: 0.1,
+    lineHeight: 13,
+  },
+
+  // ── Actions (right) ─────────────────────────────────────────────────────────
+  actionsGroup: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
   },
-  actionIconButton: {
+  iconBtn: {
     width: 38,
     height: 38,
     borderRadius: 19,
@@ -115,7 +145,7 @@ const styles = StyleSheet.create({
     borderColor: '#E1E8E5',
     position: 'relative',
   },
-  unreadBadge: {
+  badge: {
     position: 'absolute',
     top: 7,
     right: 8,
@@ -128,22 +158,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  unreadDot: {
+  badgeDot: {
     width: 4,
     height: 4,
     borderRadius: 2,
     backgroundColor: '#EF4444',
   },
-  avatarButton: {
+  avatarBtn: {
     width: 38,
     height: 38,
     borderRadius: 19,
     borderWidth: 1.5,
-    borderColor: '#168A68',
+    borderColor: '#123D2A',
     overflow: 'hidden',
-    backgroundColor: '#EAF8F1',
+    backgroundColor: '#EAF5EC',
   },
-  avatarImage: {
+  avatarImg: {
     width: '100%',
     height: '100%',
   },
@@ -152,29 +182,5 @@ const styles = StyleSheet.create({
     height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  locationSelectorRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 3,
-  },
-  locationPinBox: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  locationTextGroup: {
-    flex: 1,
-  },
-  locationTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  locationMainText: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#10243A',
-    flexShrink: 1,
   },
 });

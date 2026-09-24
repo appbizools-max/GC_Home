@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import { supabase } from '../../config/supabase';
 import {
@@ -45,7 +45,7 @@ export const BookingDetailsPage: React.FC = () => {
         <p className="text-sm font-bold">No booking details available.</p>
         <button
           onClick={() => setCurrentTab('all-bookings')}
-          className="mt-4 bg-[#043927] text-white px-4 py-2 rounded-xl text-xs font-bold cursor-pointer"
+          className="mt-4 bg-[#123D2A] text-white px-4 py-2 rounded-xl text-xs font-bold cursor-pointer"
         >
           Return to All Bookings
         </button>
@@ -132,7 +132,7 @@ export const BookingDetailsPage: React.FC = () => {
             <ChevronRight className="w-3 h-3" />
             <span>All Bookings</span>
             <ChevronRight className="w-3 h-3" />
-            <span className="text-[#043927] font-bold">Booking Details</span>
+            <span className="text-[#123D2A] font-bold">Booking Details</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-black text-[#0A192F] tracking-tight">
             Booking Details
@@ -148,7 +148,7 @@ export const BookingDetailsPage: React.FC = () => {
             onClick={() => openAssignMaid(b.bookingId)}
             className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-extrabold px-3.5 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow-sm cursor-pointer"
           >
-            <RefreshCw className="w-3.5 h-3.5 text-[#043927]" />
+            <RefreshCw className="w-3.5 h-3.5 text-[#123D2A]" />
             <span>Reassign Maid</span>
           </button>
 
@@ -156,7 +156,7 @@ export const BookingDetailsPage: React.FC = () => {
             onClick={() => setRescheduleModalOpen(true)}
             className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-extrabold px-3.5 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow-sm cursor-pointer"
           >
-            <Calendar className="w-3.5 h-3.5 text-[#043927]" />
+            <Calendar className="w-3.5 h-3.5 text-[#123D2A]" />
             <span>Reschedule</span>
           </button>
 
@@ -168,7 +168,7 @@ export const BookingDetailsPage: React.FC = () => {
             <span>Cancel Booking</span>
           </button>
 
-          <button className="bg-[#043927] hover:bg-[#064e3b] text-white font-extrabold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow-md cursor-pointer">
+          <button className="bg-[#123D2A] hover:bg-[#184a34] text-white font-extrabold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow-md cursor-pointer">
             <Phone className="w-3.5 h-3.5" />
             <span>Contact Customer</span>
           </button>
@@ -194,7 +194,7 @@ export const BookingDetailsPage: React.FC = () => {
           <div className="grid grid-cols-7 gap-2 relative items-center text-center">
             {/* Step 1: Created */}
             <div className="flex flex-col items-center relative z-10">
-              <div className="w-8 h-8 rounded-full bg-[#043927] text-white flex items-center justify-center font-bold text-xs shadow-md">
+              <div className="w-8 h-8 rounded-full bg-[#123D2A] text-white flex items-center justify-center font-bold text-xs shadow-md">
                 <CheckCircle2 className="w-4 h-4" />
               </div>
               <span className="text-[11px] font-extrabold text-slate-900 mt-2">Created</span>
@@ -203,7 +203,7 @@ export const BookingDetailsPage: React.FC = () => {
 
             {/* Step 2: Payment Confirmed */}
             <div className="flex flex-col items-center relative z-10">
-              <div className="w-8 h-8 rounded-full bg-[#043927] text-white flex items-center justify-center font-bold text-xs shadow-md">
+              <div className="w-8 h-8 rounded-full bg-[#123D2A] text-white flex items-center justify-center font-bold text-xs shadow-md">
                 <CheckCircle2 className="w-4 h-4" />
               </div>
               <span className="text-[11px] font-extrabold text-slate-900 mt-2">
@@ -214,7 +214,7 @@ export const BookingDetailsPage: React.FC = () => {
 
             {/* Step 3: Maid Assigned */}
             <div className="flex flex-col items-center relative z-10">
-              <div className="w-8 h-8 rounded-full bg-[#043927] text-white flex items-center justify-center font-bold text-xs shadow-md">
+              <div className="w-8 h-8 rounded-full bg-[#123D2A] text-white flex items-center justify-center font-bold text-xs shadow-md">
                 <CheckCircle2 className="w-4 h-4" />
               </div>
               <span className="text-[11px] font-extrabold text-slate-900 mt-2">
@@ -225,7 +225,7 @@ export const BookingDetailsPage: React.FC = () => {
 
             {/* Step 4: En Route */}
             <div className="flex flex-col items-center relative z-10">
-              <div className="w-8 h-8 rounded-full bg-[#043927] text-white flex items-center justify-center font-bold text-xs shadow-md">
+              <div className="w-8 h-8 rounded-full bg-[#123D2A] text-white flex items-center justify-center font-bold text-xs shadow-md">
                 <CheckCircle2 className="w-4 h-4" />
               </div>
               <span className="text-[11px] font-extrabold text-slate-900 mt-2">En Route</span>
@@ -234,7 +234,7 @@ export const BookingDetailsPage: React.FC = () => {
 
             {/* Step 5: Arrived */}
             <div className="flex flex-col items-center relative z-10">
-              <div className="w-8 h-8 rounded-full bg-[#043927] text-white flex items-center justify-center font-bold text-xs shadow-md">
+              <div className="w-8 h-8 rounded-full bg-[#123D2A] text-white flex items-center justify-center font-bold text-xs shadow-md">
                 <CheckCircle2 className="w-4 h-4" />
               </div>
               <span className="text-[11px] font-extrabold text-slate-900 mt-2">Arrived</span>
@@ -243,10 +243,10 @@ export const BookingDetailsPage: React.FC = () => {
 
             {/* Step 6: Cleaning Started */}
             <div className="flex flex-col items-center relative z-10">
-              <div className="w-8 h-8 rounded-full bg-[#043927] text-white flex items-center justify-center font-bold text-xs shadow-md ring-4 ring-emerald-100 animate-pulse">
+              <div className="w-8 h-8 rounded-full bg-[#123D2A] text-white flex items-center justify-center font-bold text-xs shadow-md ring-4 ring-emerald-100 animate-pulse">
                 <CheckCircle2 className="w-4 h-4" />
               </div>
-              <span className="text-[11px] font-extrabold text-[#043927] mt-2">
+              <span className="text-[11px] font-extrabold text-[#123D2A] mt-2">
                 Cleaning Started
               </span>
               <span className="text-[10px] text-slate-400 font-medium">11:10 AM</span>
@@ -306,7 +306,7 @@ export const BookingDetailsPage: React.FC = () => {
               <div className="text-xs text-slate-500 font-medium">
                 {b.address.city} - {b.address.pincode}
               </div>
-              <button className="text-[11px] font-bold text-[#043927] hover:underline flex items-center gap-1 mt-1 cursor-pointer">
+              <button className="text-[11px] font-bold text-[#123D2A] hover:underline flex items-center gap-1 mt-1 cursor-pointer">
                 <span>View on Map</span>
               </button>
             </div>
@@ -324,17 +324,39 @@ export const BookingDetailsPage: React.FC = () => {
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-sm font-extrabold text-[#0A192F]">Payment Details</h3>
               <span className="bg-emerald-50 text-emerald-700 font-extrabold px-2.5 py-0.5 rounded-full text-[10px]">
-                Paid
+                {b.paymentStatus === 'paid' ? 'Paid' : b.paymentStatus === 'refunded' ? 'Refunded' : 'Pending'}
               </span>
             </div>
 
             <div className="text-xs space-y-2 font-medium text-slate-600">
               <div className="flex justify-between">
                 <span>Payment Method:</span>
-                <span className="font-extrabold text-slate-900">{b.paymentMethod}</span>
+                <span className="font-extrabold text-slate-900 uppercase">{b.paymentMethod || 'Online'}</span>
               </div>
               <div className="flex justify-between">
-                <span>Amount:</span>
+                <span>Service Price:</span>
+                <span className="font-bold text-slate-800">₹{b.servicePrice || (b.totalAmount ? Math.round(b.totalAmount * 0.8) : 0)}</span>
+              </div>
+              {b.couponCode && (
+                <div className="flex justify-between text-emerald-700 font-bold">
+                  <span>Coupon ({b.couponCode}):</span>
+                  <span>- ₹{b.discountAmount || 0}</span>
+                </div>
+              )}
+              {b.platformFee !== undefined && b.platformFee > 0 && (
+                <div className="flex justify-between text-slate-600">
+                  <span>Platform Fee:</span>
+                  <span>₹{b.platformFee}</span>
+                </div>
+              )}
+              {b.taxAmount !== undefined && b.taxAmount > 0 && (
+                <div className="flex justify-between text-slate-600">
+                  <span>GST (18%):</span>
+                  <span>₹{b.taxAmount}</span>
+                </div>
+              )}
+              <div className="flex justify-between pt-2 border-t border-slate-100">
+                <span className="font-extrabold text-slate-900">Total Amount:</span>
                 <span className="font-black text-slate-900 text-sm">₹{b.totalAmount}</span>
               </div>
               <div className="flex justify-between">
@@ -410,7 +432,7 @@ export const BookingDetailsPage: React.FC = () => {
               <h3 className="text-sm font-extrabold text-[#0A192F]">Assigned Maid</h3>
               <button
                 onClick={() => openAssignMaid(b.bookingId)}
-                className="text-xs font-bold text-[#043927] hover:underline cursor-pointer"
+                className="text-xs font-bold text-[#123D2A] hover:underline cursor-pointer"
               >
                 Change
               </button>
@@ -462,7 +484,7 @@ export const BookingDetailsPage: React.FC = () => {
           <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm flex flex-col gap-3">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-extrabold text-[#0A192F]">Live Location</h3>
-              <button className="text-xs font-bold text-[#043927] hover:underline flex items-center gap-1">
+              <button className="text-xs font-bold text-[#123D2A] hover:underline flex items-center gap-1">
                 <Navigation className="w-3.5 h-3.5" />
                 <span>Track Live</span>
               </button>
@@ -521,7 +543,7 @@ export const BookingDetailsPage: React.FC = () => {
           <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm flex flex-col gap-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-sm font-extrabold text-[#0A192F]">Before & After Photos</h3>
-              <span className="text-[11px] font-bold text-[#043927]">
+              <span className="text-[11px] font-bold text-[#123D2A]">
                 {photos.length} Uploaded
               </span>
             </div>
@@ -531,7 +553,7 @@ export const BookingDetailsPage: React.FC = () => {
               <button
                 onClick={() => setActivePhotoTab('before')}
                 className={`flex-1 py-1.5 rounded-lg transition-all cursor-pointer ${
-                  activePhotoTab === 'before' ? 'bg-white text-[#043927] shadow-sm' : 'text-slate-500'
+                  activePhotoTab === 'before' ? 'bg-white text-[#123D2A] shadow-sm' : 'text-slate-500'
                 }`}
               >
                 Before ({photos.filter(p => p.photo_type === 'before').length})
@@ -539,7 +561,7 @@ export const BookingDetailsPage: React.FC = () => {
               <button
                 onClick={() => setActivePhotoTab('after')}
                 className={`flex-1 py-1.5 rounded-lg transition-all cursor-pointer ${
-                  activePhotoTab === 'after' ? 'bg-white text-[#043927] shadow-sm' : 'text-slate-500'
+                  activePhotoTab === 'after' ? 'bg-white text-[#123D2A] shadow-sm' : 'text-slate-500'
                 }`}
               >
                 After ({photos.filter(p => p.photo_type === 'after').length})
@@ -620,3 +642,4 @@ export const BookingDetailsPage: React.FC = () => {
     </div>
   );
 };
+

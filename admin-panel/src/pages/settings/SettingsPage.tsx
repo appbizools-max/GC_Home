@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { Send, Bell, Sliders, CheckCircle, Save, Clock, MapPin, Settings, Plus, X, Edit2 } from 'lucide-react';
 import { supabase, supabaseAdmin } from '../../config/supabase';
 import { useAdmin } from '../../context/AdminContext';
@@ -258,7 +258,7 @@ export const SettingsPage: React.FC = () => {
 
           <button
             type="submit"
-            className="px-4 py-2.5 bg-[#043927] hover:bg-[#064e3b] text-white rounded-xl text-xs font-bold cursor-pointer flex items-center gap-2 self-start shadow-sm transition-all"
+            className="px-4 py-2.5 bg-[#123D2A] hover:bg-[#184a34] text-white rounded-xl text-xs font-bold cursor-pointer flex items-center gap-2 self-start shadow-sm transition-all"
           >
             <Send className="w-4 h-4" /> Broadcast Push Alert
           </button>
@@ -502,7 +502,7 @@ export const SettingsPage: React.FC = () => {
       <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
         <button
           onClick={handleSaveSettings}
-          className="w-full md:w-auto px-6 py-3 bg-[#043927] hover:bg-[#064e3b] text-white rounded-xl text-sm font-bold cursor-pointer flex items-center justify-center gap-2 shadow-md transition-all"
+          className="w-full md:w-auto px-6 py-3 bg-[#123D2A] hover:bg-[#184a34] text-white rounded-xl text-sm font-bold cursor-pointer flex items-center justify-center gap-2 shadow-md transition-all"
         >
           <Save className="w-5 h-5" /> Save All Platform Settings
         </button>
@@ -510,3 +510,4 @@ export const SettingsPage: React.FC = () => {
     </div>
   );
 };
+

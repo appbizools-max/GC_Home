@@ -1,4 +1,4 @@
-export type MaidApplicationStatus = 'none' | 'pending' | 'approved' | 'rejected';
+export type MaidApplicationStatus = 'none' | 'pending' | 'approved' | 'rejected' | 'correction_requested';
 
 export type KycDocStatus = 'verified' | 'under_review' | 'pending' | 'rejected' | 'not_submitted';
 
@@ -28,6 +28,17 @@ export interface BankDetails {
   accountNumber: string;
   ifscCode: string;
   bankName: string;
+  upiId?: string;
+}
+
+export interface PartnerProvidedService {
+  id: string;
+  serviceName: string;
+  experienceYears: number;
+  experienceMonths: number;
+  description: string;
+  additionalSkills?: string;
+  certificateUrl?: string;
 }
 
 export interface MaidProfile {
@@ -36,12 +47,21 @@ export interface MaidProfile {
   fullName: string;
   phone: string;
   email?: string;
+  dob?: string;
+  gender?: string;
   photoUrl: string;
   idProofUrl: string;
   emergencyContact: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
   address: string;
+  fullAddress?: string;
+  locality?: string;
+  pincode?: string;
+  city?: string;
   bankDetails: BankDetails;
   serviceArea: string;
+  preferredServiceArea?: string;
   serviceRadiusKm: number;
   healthSafetyDecl: boolean;
   status: MaidApplicationStatus;
@@ -53,32 +73,40 @@ export interface MaidProfile {
   totalRatingsCount: number;
   completedJobsCount: number;
   workingDays: string[];
+  workingHours?: string;
+  emergencyJobsAccepted?: boolean;
   appliedAt: string;
   approvedAt?: string;
   distanceKm?: number;
   etaMins?: number;
   skills?: string[];
-
-  // Extended fields for 5 Maid Partners screens
-  age?: number;
-  gender?: string;
-  experience?: string;
+  servicesProvided?: PartnerProvidedService[];
+  languagesSpoken?: string[];
+  preferredAreas?: string[];
   languages?: string[];
-  kycCompletionPct?: number;
-  missingSections?: string[];
-  kycStatus?: 'pending' | 'under_review' | 'verified' | 'rejected' | 'incomplete';
-  kycDocuments?: KycDocument[];
   earningsThisMonth?: number;
   totalEarnings?: number;
+  adminNotes?: string;
+  missingSections?: string[];
+  kycStatus?: string;
+  kycCompletionPct?: number;
+  kycDocuments?: any[];
+  aadhaarDocUrl?: string;
+  panDocUrl?: string;
+  addressProofUrl?: string;
+  otherDocsUrls?: string[];
+  termsAccepted?: boolean;
+  privacyAccepted?: boolean;
+  accuracyConfirmed?: boolean;
+  correctionRequested?: boolean;
+  age?: number;
+  experience?: string;
   uniqueCustomersServed?: number;
   currentStatus?: 'online' | 'busy' | 'available' | 'offline';
-  preferredAreas?: string[];
   lastActive?: string;
   lastUpdated?: string;
-  adminNotes?: string;
   quote?: string;
   history?: MaidHistoryItem[];
-  dob?: string;
   alternatePhone?: string;
 }
 
@@ -112,6 +140,8 @@ export type BookingStatus =
   | 'ongoing'
   | 'scheduled'
   | 'completed'
+  | 'customer_confirmed'
+  | 'payment_settled'
   | 'cancelled'
   | 'rescheduled';
 
@@ -184,6 +214,10 @@ export interface Booking {
   timeSlot: string;
   specialInstructions?: string;
   status: BookingStatus;
+  adminApprovalStatus?: 'pending' | 'approved' | 'rejected';
+  assignmentStatus?: 'unassigned' | 'searching' | 'assigned' | 'accepted' | 'rejected' | 'expired' | 'partner_offered' | 'request_sent' | string;
+  categoryName?: string;
+  selectedAddOns?: any[];
   assignedMaidId?: string;
   assignedMaidName?: string;
   assignedMaidPhone?: string;
@@ -194,6 +228,10 @@ export interface Booking {
   paymentMethod: string;
   paymentStatus: 'pending' | 'paid' | 'refunded';
   totalAmount: number;
+  couponCode?: string;
+  discountAmount?: number;
+  platformFee?: number;
+  taxAmount?: number;
   transactionId?: string;
   paidAt?: string;
   createdAt: string;
@@ -217,8 +255,17 @@ export interface Booking {
   cancelledBy?: 'Customer' | 'Maid' | 'Admin';
   refundStatus?: 'Refunded' | 'Pending' | 'Not Applicable';
   refundAmount?: number;
+  // Slot Confirmation & Reminder Fields
+  slotReminderSentAt?: string;
+  slotConfirmationStatus?: 'none' | 'reminder_sent' | 'customer_confirmed' | 'maid_confirmed' | 'both_confirmed' | 'red_flagged' | 'finalized' | 'admin_resolved';
+  customerConfirmedSlot?: boolean;
+  customerSlotConfirmedAt?: string;
+  maidConfirmedSlot?: boolean;
+  maidSlotConfirmedAt?: string;
+  fiveMinCheckTriggeredAt?: string;
+  adminFinalizedAt?: string;
+  adminResolvedAt?: string;
   refundDate?: string;
-  discountAmount?: number;
   bookingDate?: string;
   rescheduledFrom?: string;
   rescheduledTo?: string;

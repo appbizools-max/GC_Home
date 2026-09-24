@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,8 +8,11 @@ import {
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useCart } from '../../context/CartContext';
+import { supabase } from '../../config/supabase';
 import { AppLogo } from '../../components/ui/AppLogo';
+import { AddressFormModal } from '../../components/ui/AddressFormModal';
 import { Address } from '../../types';
+import { checkPincodeServiceability } from '../../services/pincodeService';
 import {
   ArrowLeft,
   MapPin,
@@ -24,48 +27,94 @@ import {
   Edit3,
 } from 'lucide-react-native';
 
-const SAVED_ADDRESSES_LIST: Address[] = [
-  {
-    id: 'addr_home',
-    label: 'Home',
-    street: '123, 4th Cross, HSR Layout',
-    locality: 'Sector 2, HSR Layout',
-    city: 'Bengaluru',
-    pincode: '560102',
-    landmark: 'Near BDA Complex',
-  },
-  {
-    id: 'addr_office',
-    label: 'Office',
-    street: 'Prestige Tech Park, Outer Ring Road',
-    locality: 'Marathahalli - Sarjapur',
-    city: 'Bengaluru',
-    pincode: '560103',
-  },
-  {
-    id: 'addr_other',
-    label: 'Parents Home',
-    street: '742, 21st Main, 5th Block',
-    locality: 'Koramangala',
-    city: 'Bengaluru',
-    pincode: '560034',
-  },
-];
+const DEFAULT_ADDRESS: Address = {
+  id: 'addr_current',
+  label: 'Home',
+  street: 'Road No 36, Jubilee Hills',
+  locality: 'Jubilee Hills',
+  city: 'Hyderabad',
+  pincode: '500033',
+};
 
 export const AddressConfirmationScreen: React.FC = () => {
-  const { navigateTo } = useAuth();
+  const { navigateTo, savedAddresses, addSavedAddress, updateSavedAddress } = useAuth();
   const { cart, setDeliveryAddress } = useCart();
 
+  const availableAddresses = (savedAddresses && savedAddresses.length > 0)
+    ? savedAddresses
+    : [cart?.address || DEFAULT_ADDRESS];
+
   const [selectedAddress, setSelectedAddress] = useState<Address>(
-    cart?.address || SAVED_ADDRESSES_LIST[0]
+    cart?.address || availableAddresses[0]
   );
   const [isServiceAvailable, setIsServiceAvailable] = useState<boolean>(true);
 
+  // Address Modal State for Add / Edit
+  const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
+  const [editingAddress, setEditingAddress] = useState<Address | null>(null);
+
+  const handleAddNew = () => {
+    setEditingAddress(null);
+    setIsAddressModalOpen(true);
+  };
+
+  const handleEditCurrent = () => {
+    setEditingAddress(selectedAddress);
+    setIsAddressModalOpen(true);
+  };
+
+  const handleSaveModalAddress = async (data: Omit<Address, 'id'>) => {
+    if (editingAddress) {
+      await updateSavedAddress(editingAddress.id, data);
+      const updated: Address = { ...editingAddress, ...data };
+      setSelectedAddress(updated);
+      setDeliveryAddress(updated);
+    } else {
+      await addSavedAddress(data);
+      const newAddr: Address = {
+        id: 'addr_' + Date.now(),
+        ...data,
+      };
+      setSelectedAddress(newAddr);
+      setDeliveryAddress(newAddr);
+    }
+  };
+
+  const [serviceMessage, setServiceMessage] = useState<string>('Services available in your area.');
+
+  const validateArea = useCallback(async () => {
+    if (!selectedAddress || !selectedAddress.pincode) {
+      setIsServiceAvailable(false);
+      setServiceMessage('Sorry, GC HOME+ is currently not available in your area.');
+      return;
+    }
+    const result = await checkPincodeServiceability(selectedAddress.pincode);
+    setIsServiceAvailable(result.isServiceable);
+    setServiceMessage(result.message);
+  }, [selectedAddress?.pincode]);
+
+  useEffect(() => {
+    validateArea();
+
+    // Supabase Realtime sync: reflect Admin activate/deactivate changes immediately
+    const channel = supabase
+      .channel('service_areas_realtime_address_confirm')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'service_areas' },
+        () => {
+          validateArea();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [validateArea]);
+
   const handleSelect = (addr: Address) => {
     setSelectedAddress(addr);
-    // Simulating coverage check in Bengaluru
-    const available = addr.city.toLowerCase().includes('bengaluru') || addr.pincode.startsWith('560');
-    setIsServiceAvailable(available);
     setDeliveryAddress(addr);
   };
 
@@ -83,6 +132,7 @@ export const AddressConfirmationScreen: React.FC = () => {
           style={styles.backBtn}
           onPress={() => navigateTo('service-details')}
           activeOpacity={0.7}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
           <ArrowLeft size={20} color="#10243A" />
         </TouchableOpacity>
@@ -113,7 +163,7 @@ export const AddressConfirmationScreen: React.FC = () => {
               <Text style={styles.badgeLabelText}>{selectedAddress.label} Address</Text>
             </View>
 
-            <TouchableOpacity style={styles.editBtn} activeOpacity={0.7}>
+            <TouchableOpacity style={styles.editBtn} onPress={handleEditCurrent} activeOpacity={0.7}>
               <Edit3 size={13} color="#168A68" />
               <Text style={styles.editText}>Edit</Text>
             </TouchableOpacity>
@@ -139,14 +189,14 @@ export const AddressConfirmationScreen: React.FC = () => {
               <>
                 <ShieldCheck size={16} color="#168A68" />
                 <Text style={styles.coverageText}>
-                  Great news! GC Home Plus services are available at this location.
+                  Services available in your area.
                 </Text>
               </>
             ) : (
               <>
                 <AlertCircle size={16} color="#EF4444" />
                 <Text style={[styles.coverageText, { color: '#EF4444' }]}>
-                  This service isn't currently available at this location.
+                  Sorry, GC HOME+ is currently not available in your area.
                 </Text>
               </>
             )}
@@ -156,14 +206,14 @@ export const AddressConfirmationScreen: React.FC = () => {
         {/* Saved Addresses Section */}
         <View style={styles.savedSectionHeader}>
           <Text style={styles.sectionTitle}>Saved Addresses</Text>
-          <TouchableOpacity style={styles.addNewBtn} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.addNewBtn} onPress={handleAddNew} activeOpacity={0.7}>
             <Plus size={14} color="#168A68" strokeWidth={2.5} />
             <Text style={styles.addNewText}>Add New</Text>
           </TouchableOpacity>
         </View>
 
         <View style={styles.addressesList}>
-          {SAVED_ADDRESSES_LIST.map(addr => {
+          {availableAddresses.map(addr => {
             const isSelected = selectedAddress.id === addr.id;
             return (
               <TouchableOpacity
@@ -215,6 +265,14 @@ export const AddressConfirmationScreen: React.FC = () => {
           <ArrowRight size={18} color="#FFFFFF" strokeWidth={2.4} />
         </TouchableOpacity>
       </View>
+
+      {/* Address Form Modal with PIN auto-fill */}
+      <AddressFormModal
+        visible={isAddressModalOpen}
+        initialAddress={editingAddress}
+        onSave={handleSaveModalAddress}
+        onClose={() => setIsAddressModalOpen(false)}
+      />
     </View>
   );
 };

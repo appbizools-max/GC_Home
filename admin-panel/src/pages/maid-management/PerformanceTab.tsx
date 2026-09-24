@@ -115,7 +115,7 @@ export const PerformanceTab: React.FC = () => {
 
         <button
           onClick={() => alert('Exporting performance report...')}
-          className="px-4 py-2.5 bg-[#043927] hover:bg-[#064e3b] text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer shadow-md self-start md:self-auto"
+          className="px-4 py-2.5 bg-[#123D2A] hover:bg-[#184a34] text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer shadow-md self-start md:self-auto"
         >
           <Download className="w-4 h-4" /> Export Report
         </button>
@@ -128,7 +128,6 @@ export const PerformanceTab: React.FC = () => {
             <span className="text-xs font-bold text-slate-400 block mb-1">Total Jobs Completed</span>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-black text-slate-900">{totalJobsCompleted.toLocaleString()}</span>
-              <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md">Live</span>
             </div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold">
@@ -141,7 +140,6 @@ export const PerformanceTab: React.FC = () => {
             <span className="text-xs font-bold text-slate-400 block mb-1">Average Rating</span>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-black text-slate-900">{avgRating}</span>
-              <span className="text-[10px] font-bold text-slate-500">{approvedMaids.length} maids</span>
             </div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-500 flex items-center justify-center font-bold">
@@ -154,7 +152,6 @@ export const PerformanceTab: React.FC = () => {
             <span className="text-xs font-bold text-slate-400 block mb-1">Total Customers Served</span>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-black text-slate-900">{totalCustomersServed.toLocaleString()}</span>
-              <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md">Live</span>
             </div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-sky-50 text-sky-700 flex items-center justify-center font-bold">
@@ -167,7 +164,6 @@ export const PerformanceTab: React.FC = () => {
             <span className="text-xs font-bold text-slate-400 block mb-1">Total Earnings</span>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-black text-emerald-950">₹{totalEarnings.toLocaleString()}</span>
-              <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-md">Live</span>
             </div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold">
@@ -246,7 +242,7 @@ export const PerformanceTab: React.FC = () => {
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider">Earnings</h3>
-            <span className="text-xs font-black text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full">₹56,200</span>
+            <span className="text-xs font-black text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full">₹{totalEarnings.toLocaleString()}</span>
           </div>
           <div className="h-32 flex items-end justify-between gap-1.5 pt-4 border-b border-slate-100">
             {[20, 25, 30, 38, 42, 48, 52, 60, 75].map((val, idx) => (
@@ -329,7 +325,7 @@ export const PerformanceTab: React.FC = () => {
           </button>
 
           <button
-            className="px-4 py-2 bg-[#043927] hover:bg-[#064e3b] text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+            className="px-4 py-2 bg-[#123D2A] hover:bg-[#184a34] text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
           >
             <Search className="w-3.5 h-3.5" /> Search
           </button>
@@ -375,15 +371,15 @@ export const PerformanceTab: React.FC = () => {
                       {m.rating}
                     </div>
                   </td>
-                  <td className="py-3.5 px-4 font-black text-[#043927]">
-                    ₹{(m.totalEarnings || 56200).toLocaleString()}
+                  <td className="py-3.5 px-4 font-black text-[#123D2A]">
+                    ₹{(m.totalEarnings || 0).toLocaleString()}
                   </td>
                   <td className="py-3.5 px-4 font-bold text-emerald-700">98%</td>
                   <td className="py-3.5 px-4 font-bold text-rose-500">2%</td>
                   <td className="py-3.5 px-4 text-right">
                     <button
                       onClick={() => setActiveDrawerMaid(m)}
-                      className="px-3.5 py-1.5 bg-[#043927] hover:bg-[#064e3b] text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-sm"
+                      className="px-3.5 py-1.5 bg-[#123D2A] hover:bg-[#184a34] text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-sm"
                     >
                       View
                     </button>
@@ -581,7 +577,7 @@ export const PerformanceTab: React.FC = () => {
                 <button className="flex-1 py-2.5 bg-white border border-slate-200 hover:bg-slate-100 text-slate-800 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-sm">
                   <UserCheck className="w-3.5 h-3.5 text-slate-600" /> Assign Job
                 </button>
-                <button className="py-2.5 px-4 bg-[#043927] hover:bg-[#064e3b] text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md">
+                <button className="py-2.5 px-4 bg-[#123D2A] hover:bg-[#184a34] text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md">
                   <Phone className="w-3.5 h-3.5" /> Call
                 </button>
               </div>
@@ -610,4 +606,5 @@ export const PerformanceTab: React.FC = () => {
     </div>
   );
 };
+
 

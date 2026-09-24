@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { useAuth } from '../context/AuthContext';
-import { Home, Calendar, Tag, Headphones, User, DollarSign } from 'lucide-react-native';
+import { Home, Sparkles, Calendar, User, DollarSign } from 'lucide-react-native';
 
 export const BottomTabs: React.FC = () => {
   const { user, maidProfile, currentScreen, navigateTo } = useAuth();
@@ -11,8 +11,14 @@ export const BottomTabs: React.FC = () => {
     !user ||
     currentScreen === 'splash' ||
     currentScreen === 'login' ||
+    currentScreen === 'otp' ||
     currentScreen === 'otp_verification' ||
     currentScreen === 'profile_setup' ||
+    currentScreen === 'complete_profile' ||
+    currentScreen === 'become_maid_info' ||
+    currentScreen === 'become_maid' ||
+    currentScreen === 'maid_registration_form' ||
+    currentScreen === 'maid_status' ||
     currentScreen === 'service_details' ||
     currentScreen === 'booking_screen' ||
     currentScreen === 'booking_confirmation'
@@ -20,9 +26,10 @@ export const BottomTabs: React.FC = () => {
     return null;
   }
 
-  const isMaidApproved = (user.role === 'maid' || user.maidApplicationStatus === 'approved' || maidProfile?.status === 'approved') && maidProfile?.isOnline === true;
+  const isPartner = user.role === 'maid' || user.role === 'partner' || (maidProfile?.status === 'approved' && user.maidApplicationStatus === 'approved');
+  const isMaidApproved = isPartner && (maidProfile?.status === 'approved' || user.maidApplicationStatus === 'approved');
 
-  // ── Maid Partner Bottom Navigation (If in Maid Mode) ──
+  // ── Maid Partner Bottom Navigation (If Partner Account is Approved) ──
   if (isMaidApproved) {
     const maidTabs = [
       { id: 'maid_home', label: 'Home', icon: Home },
@@ -36,8 +43,8 @@ export const BottomTabs: React.FC = () => {
         {maidTabs.map(tab => {
           const isActive = currentScreen === tab.id;
           const IconComp = tab.icon;
-          const activeColor = '#168A68';
-          const inactiveColor = '#68788C';
+          const activeColor = '#123D2A';
+          const inactiveColor = '#526058';
 
           return (
             <TouchableOpacity
@@ -70,22 +77,29 @@ export const BottomTabs: React.FC = () => {
     );
   }
 
-  // ── Customer Bottom Navigation (Exactly 5 Tabs: Home, My Bookings, Offers, Help, Profile) ──
+  // ── Customer Bottom Navigation (Exactly 4 Tabs: Home, Services, My Bookings, Profile) ──
   const customerTabs = [
     { id: 'customer_home', label: 'Home', icon: Home },
+    { id: 'services_listing', label: 'Services', icon: Sparkles },
     { id: 'my_bookings', label: 'My Bookings', icon: Calendar },
-    { id: 'offers', label: 'Offers', icon: Tag },
-    { id: 'help', label: 'Help', icon: Headphones },
     { id: 'user_profile', label: 'Profile', icon: User },
   ];
 
   return (
     <View style={styles.bottomNav}>
       {customerTabs.map(tab => {
-        const isActive = currentScreen === tab.id;
+        const isActive =
+          tab.id === 'customer_home'
+            ? currentScreen === 'customer_home' || currentScreen === 'home'
+            : tab.id === 'services_listing'
+            ? currentScreen === 'services_listing' || currentScreen === 'services-listing'
+            : tab.id === 'my_bookings'
+            ? currentScreen === 'my_bookings' || currentScreen === 'my-bookings'
+            : currentScreen === 'user_profile' || currentScreen === 'profile';
+
         const IconComp = tab.icon;
-        const activeColor = '#168A68';
-        const inactiveColor = '#68788C';
+        const activeColor = '#123D2A';
+        const inactiveColor = '#526058';
 
         return (
           <TouchableOpacity
@@ -100,7 +114,7 @@ export const BottomTabs: React.FC = () => {
                 size={21}
                 color={isActive ? activeColor : inactiveColor}
                 strokeWidth={isActive ? 2.5 : 1.8}
-                fill={isActive && tab.id === 'customer_home' ? '#EAF8F1' : 'none'}
+                fill={isActive && (tab.id === 'customer_home' || tab.id === 'services_listing') ? '#EAF5EC' : 'none'}
               />
             </View>
             <Text
@@ -126,10 +140,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
-    borderTopColor: '#E1E8E5',
+    borderTopColor: '#E2E8F0',
     paddingTop: 8,
     paddingBottom: Platform.OS === 'ios' ? 22 : 8,
-    shadowColor: '#10243A',
+    shadowColor: '#171A18',
     shadowOffset: { width: 0, height: -3 },
     shadowOpacity: 0.05,
     shadowRadius: 6,
@@ -150,19 +164,19 @@ const styles = StyleSheet.create({
   },
   navLabel: {
     fontSize: 10,
-    color: '#68788C',
+    color: '#526058',
     fontWeight: '600',
     marginTop: 2,
   },
   activeNavLabel: {
-    color: '#168A68',
+    color: '#123D2A',
     fontWeight: '800',
   },
   activeDot: {
     width: 4,
     height: 4,
     borderRadius: 2,
-    backgroundColor: '#168A68',
+    backgroundColor: '#123D2A',
     marginTop: 2,
   },
 });

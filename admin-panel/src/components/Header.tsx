@@ -54,7 +54,7 @@ export const Header: React.FC = () => {
           title={sidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
           className="p-2 rounded-xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 transition-all cursor-pointer flex items-center justify-center shrink-0"
         >
-          <Menu className="w-5 h-5 text-[#043927]" />
+          <Menu className="w-5 h-5 text-[#123D2A]" />
         </button>
 
         <div className="flex-1 relative">
@@ -62,7 +62,7 @@ export const Header: React.FC = () => {
           <input
             type="text"
             placeholder="Search by booking ID, customer name, phone number or location..."
-            className="w-full bg-slate-50/80 border border-slate-200/80 rounded-xl pl-10 pr-4 py-2 text-xs text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#043927]/20 focus:border-[#043927] transition-all font-medium"
+            className="w-full bg-slate-50/80 border border-slate-200/80 rounded-xl pl-10 pr-4 py-2 text-xs text-slate-800 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#123D2A]/20 focus:border-[#123D2A] transition-all font-medium"
           />
         </div>
       </div>
@@ -78,16 +78,16 @@ export const Header: React.FC = () => {
             }}
             className="flex items-center gap-2 bg-slate-50 border border-slate-200/80 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700 cursor-pointer hover:bg-slate-100 transition-all shadow-sm"
           >
-            <MapPin className="w-3.5 h-3.5 text-[#043927]" />
-            <span>{selectedLocation}</span>
+            <MapPin className="w-3.5 h-3.5 text-[#123D2A]" />
+            <span>{selectedLocation} | Telangana</span>
             <span className="text-[10px] text-slate-400">▼</span>
           </button>
 
           {showLocationDropdown && (
-            <div className="absolute right-0 mt-2 w-52 bg-white rounded-2xl shadow-2xl border border-slate-200 p-2 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
+            <div className="absolute right-0 mt-2 w-56 bg-white rounded-2xl shadow-2xl border border-slate-200 p-2 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
               <div className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider px-2 py-1 flex items-center justify-between border-b border-slate-100 pb-1.5 mb-1">
                 <span>Select Operations Hub</span>
-                <span className="text-emerald-700 font-bold">{LOCATION_TIMEZONE_MAP[selectedLocation]?.timezone.split('/')[1]}</span>
+                <span className="text-emerald-700 font-bold">Telangana</span>
               </div>
               <div className="space-y-0.5 max-h-60 overflow-y-auto">
                 {Object.keys(LOCATION_TIMEZONE_MAP).map(loc => (
@@ -99,13 +99,13 @@ export const Header: React.FC = () => {
                     }}
                     className={`w-full text-left px-3 py-2 rounded-xl text-xs font-bold flex items-center justify-between transition-colors cursor-pointer ${
                       selectedLocation === loc
-                        ? 'bg-[#043927] text-white shadow-sm'
+                        ? 'bg-[#123D2A] text-white shadow-sm'
                         : 'text-slate-700 hover:bg-slate-100'
                     }`}
                   >
                     <span>{loc}</span>
-                    <span className={`text-[10px] ${selectedLocation === loc ? 'text-emerald-200' : 'text-slate-400'}`}>
-                      {LOCATION_TIMEZONE_MAP[loc].timezone.split('/')[1].replace('_', ' ')}
+                    <span className={`text-[10px] font-medium ${selectedLocation === loc ? 'text-emerald-200' : 'text-slate-400'}`}>
+                      Telangana
                     </span>
                   </button>
                 ))}
@@ -116,14 +116,14 @@ export const Header: React.FC = () => {
 
         {/* Real-time Dynamic Date & Clock Control */}
         <div
-          title={`Operations Timezone: ${selectedTimezone} (${LOCATION_TIMEZONE_MAP[selectedLocation]?.label || selectedLocation})`}
+          title={`Operations Hub: ${selectedLocation} | Telangana (IST)`}
           className="flex items-center gap-2 bg-slate-50 border border-slate-200/80 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-100 transition-all shadow-sm cursor-default"
         >
-          <Calendar className="w-3.5 h-3.5 text-[#043927]" />
+          <Calendar className="w-3.5 h-3.5 text-[#123D2A]" />
           <div className="flex items-center gap-1.5">
             <span>{formattedDate}</span>
             <span className="text-slate-300 font-normal">|</span>
-            <span className="text-[#043927] font-black tabular-nums">{formattedTime}</span>
+            <span className="text-[#123D2A] font-black tabular-nums">{formattedTime}</span>
           </div>
         </div>
 
@@ -201,7 +201,7 @@ export const Header: React.FC = () => {
 
         {/* Admin Profile */}
         <div className="flex items-center gap-2.5 pl-2 border-l border-slate-200">
-          <div className="w-8 h-8 rounded-full bg-[#043927] text-white font-extrabold text-xs flex items-center justify-center shadow-sm">
+          <div className="w-8 h-8 rounded-full bg-[#123D2A] text-white font-extrabold text-xs flex items-center justify-center shadow-sm">
             AP
           </div>
           <div className="hidden sm:block">

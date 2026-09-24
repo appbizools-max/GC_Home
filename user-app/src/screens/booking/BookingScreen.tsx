@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,8 +8,11 @@ import {
   ScrollView,
   Image,
   Modal,
+  Alert,
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../config/supabase';
+import { checkPincodeServiceability } from '../../services/pincodeService';
 import {
   ArrowLeft,
   Calendar,
@@ -26,6 +29,7 @@ import {
   ChevronLeft,
   ChevronRight,
   X,
+  AlertCircle,
 } from 'lucide-react-native';
 import { PaymentMethod } from '../../types';
 
@@ -118,12 +122,41 @@ export const BookingScreen: React.FC = () => {
   const selectedSlot = computeArrivalWindow(selectedHour, selectedMinute, selectedPeriod);
 
   const [isEditingAddress, setIsEditingAddress] = useState<boolean>(false);
-  const [street, setStreet] = useState<string>('Flat 402, Green Glen Layout');
-  const [locality, setLocality] = useState<string>('Bellandur');
-  const [city] = useState<string>('Bengaluru');
-  const [pincode] = useState<string>('560103');
+  const [street, setStreet] = useState<string>('Mankammathota, Near Clock Tower');
+  const [locality, setLocality] = useState<string>('Collectorate Road');
+  const [city] = useState<string>('Karimnagar');
+  const [pincode] = useState<string>('505001');
   const [instructions, setInstructions] = useState<string>('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('upi');
+  const [isServiceable, setIsServiceable] = useState<boolean>(true);
+
+  const validatePincode = useCallback(async () => {
+    if (!pincode) {
+      setIsServiceable(false);
+      return;
+    }
+    const res = await checkPincodeServiceability(pincode);
+    setIsServiceable(res.isServiceable);
+  }, [pincode]);
+
+  useEffect(() => {
+    validatePincode();
+
+    const channel = supabase
+      .channel('service_areas_realtime_booking_screen')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'service_areas' },
+        () => {
+          validatePincode();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [validatePincode]);
 
   if (!selectedService) {
     navigateTo('services_listing');
@@ -136,6 +169,13 @@ export const BookingScreen: React.FC = () => {
   const finalTotalAmount = Math.max(0, baseServicePrice + safetyKitFee - discountAmount);
 
   const handleConfirmBooking = () => {
+    if (!isServiceable) {
+      Alert.alert(
+        'Service Unavailable',
+        'Sorry, GC HOME+ is currently not available in your area.'
+      );
+      return;
+    }
     const booking = createBooking({
       customerName: user?.name || 'Rahul Verma',
       customerPhone: user?.phone || '+91 98111 22233',
@@ -331,6 +371,23 @@ export const BookingScreen: React.FC = () => {
               <Text style={styles.addressLine2}>
                 {locality}, {city} - {pincode}
               </Text>
+              <View style={{ marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: isServiceable ? '#F0FDF4' : '#FEF2F2', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: isServiceable ? '#DCFCE7' : '#FEE2E2' }}>
+                {isServiceable ? (
+                  <>
+                    <ShieldCheck size={14} color="#168A68" />
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#168A68' }}>
+                      Services available in your area.
+                    </Text>
+                  </>
+                ) : (
+                  <>
+                    <AlertCircle size={14} color="#EF4444" />
+                    <Text style={{ fontSize: 12, fontWeight: '700', color: '#EF4444' }}>
+                      Sorry, GC HOME+ is currently not available in your area.
+                    </Text>
+                  </>
+                )}
+              </View>
             </View>
           )}
         </View>
@@ -461,11 +518,14 @@ export const BookingScreen: React.FC = () => {
 
         <TouchableOpacity
           onPress={handleConfirmBooking}
-          style={styles.confirmCtaButton}
+          style={[styles.confirmCtaButton, !isServiceable && { backgroundColor: '#94A3B8' }]}
+          disabled={!isServiceable}
           activeOpacity={0.88}
         >
-          <Text style={styles.confirmCtaText}>Confirm & Book Slot</Text>
-          <ArrowRight size={16} color="#FFFFFF" />
+          <Text style={styles.confirmCtaText}>
+            {isServiceable ? 'Confirm & Book Slot' : 'Area Not Available'}
+          </Text>
+          {isServiceable && <ArrowRight size={16} color="#FFFFFF" />}
         </TouchableOpacity>
       </View>
 

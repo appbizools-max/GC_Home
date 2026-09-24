@@ -18,6 +18,7 @@ import {
   CheckCircle2,
   AlertCircle,
 } from 'lucide-react';
+import { GCLogo } from '../../components/common/GCLogo';
 
 export const LoginPage: React.FC = () => {
   const { loginAdminWithCredentials, resetPassword } = useAdmin();
@@ -103,22 +104,20 @@ export const LoginPage: React.FC = () => {
     >
       {/* Top Header Row */}
       <header className="max-w-7xl w-full mx-auto px-6 py-3.5 lg:py-4 flex items-center justify-between z-10 shrink-0">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-[#043927] text-white font-black text-sm flex items-center justify-center shadow-xs">
-            GC
-          </div>
+        <div className="flex items-center gap-2.5">
+          <GCLogo size={38} />
           <div>
-            <span className="text-sm font-black text-[#0A192F] tracking-tight block leading-tight">
-              GC HOME+
+            <span className="text-sm font-black text-[#171A18] tracking-tight block leading-tight">
+              GC HOME<span className="text-[#C9A227]">+</span>
             </span>
-            <span className="text-[10px] text-emerald-800 font-bold block leading-tight">
+            <span className="text-[10px] text-[#123D2A] font-bold block leading-tight">
               Admin Portal
             </span>
           </div>
         </div>
 
         <div className="bg-white/95 backdrop-blur border border-slate-200/90 rounded-full px-3.5 py-1.5 text-xs font-bold text-slate-800 flex items-center gap-2 shadow-xs">
-          <ShieldCheck className="w-4 h-4 text-[#043927]" />
+          <ShieldCheck className="w-4 h-4 text-[#123D2A]" />
           <span>Secure Admin Access</span>
         </div>
       </header>
@@ -129,19 +128,19 @@ export const LoginPage: React.FC = () => {
         <div className="lg:col-span-7 flex flex-col justify-center pr-0 lg:pr-4">
           {/* Main Headline */}
           <h1 className="text-4xl sm:text-5xl lg:text-[54px] font-black tracking-tight leading-[1.06] mb-2.5">
-            <span className="text-[#0A192F] block">Clean Spaces.</span>
-            <span className="text-[#043927] block mt-0.5">Better Lives.</span>
+            <span className="text-[#171A18] block">Clean Spaces.</span>
+            <span className="text-[#123D2A] block mt-0.5">Better Lives.</span>
           </h1>
 
           {/* Subtitle */}
-          <p className="text-[#0F1E36] text-sm sm:text-base max-w-lg mb-5 leading-relaxed font-bold tracking-tight">
+          <p className="text-[#171A18] text-sm sm:text-base max-w-lg mb-5 leading-relaxed font-bold tracking-tight">
             Manage your operations, partners, services and bookings — all in one powerful dashboard.
           </p>
 
           {/* 4 Feature Badges */}
           <div className="grid grid-cols-4 gap-2.5 sm:gap-3 max-w-md mb-5 items-start">
             <div className="flex flex-col items-center text-center">
-              <div className="w-11 h-11 rounded-2xl bg-[#E8F5E9] border border-emerald-200/80 text-[#043927] flex items-center justify-center shadow-xs mb-1.5 transition-transform hover:scale-105">
+              <div className="w-11 h-11 rounded-2xl bg-[#EAF5EC] border border-[#6FAF72]/30 text-[#123D2A] flex items-center justify-center shadow-xs mb-1.5 transition-transform hover:scale-105">
                 <BarChart3 className="w-5 h-5" />
               </div>
               <span className="text-[11px] font-extrabold text-slate-900 leading-tight">
@@ -150,7 +149,7 @@ export const LoginPage: React.FC = () => {
             </div>
 
             <div className="flex flex-col items-center text-center">
-              <div className="w-11 h-11 rounded-2xl bg-[#E8F5E9] border border-emerald-200/80 text-[#043927] flex items-center justify-center shadow-xs mb-1.5 transition-transform hover:scale-105">
+              <div className="w-11 h-11 rounded-2xl bg-[#EAF5EC] border border-[#6FAF72]/30 text-[#123D2A] flex items-center justify-center shadow-xs mb-1.5 transition-transform hover:scale-105">
                 <ShieldCheck className="w-5 h-5" />
               </div>
               <span className="text-[11px] font-extrabold text-slate-900 leading-tight">
@@ -159,7 +158,7 @@ export const LoginPage: React.FC = () => {
             </div>
 
             <div className="flex flex-col items-center text-center">
-              <div className="w-11 h-11 rounded-2xl bg-[#E8F5E9] border border-emerald-200/80 text-[#043927] flex items-center justify-center shadow-xs mb-1.5 transition-transform hover:scale-105">
+              <div className="w-11 h-11 rounded-2xl bg-[#EAF5EC] border border-[#6FAF72]/30 text-[#123D2A] flex items-center justify-center shadow-xs mb-1.5 transition-transform hover:scale-105">
                 <Users className="w-5 h-5" />
               </div>
               <span className="text-[11px] font-extrabold text-slate-900 leading-tight">
@@ -168,7 +167,7 @@ export const LoginPage: React.FC = () => {
             </div>
 
             <div className="flex flex-col items-center text-center">
-              <div className="w-11 h-11 rounded-2xl bg-[#E8F5E9] border border-emerald-200/80 text-[#043927] flex items-center justify-center shadow-xs mb-1.5 transition-transform hover:scale-105">
+              <div className="w-11 h-11 rounded-2xl bg-[#EAF5EC] border border-[#6FAF72]/30 text-[#123D2A] flex items-center justify-center shadow-xs mb-1.5 transition-transform hover:scale-105">
                 <Settings className="w-5 h-5" />
               </div>
               <span className="text-[11px] font-extrabold text-slate-900 leading-tight">
@@ -178,7 +177,7 @@ export const LoginPage: React.FC = () => {
           </div>
 
           {/* Bottom Left Stats Card */}
-          <div className="bg-[#0B3B2B]/95 backdrop-blur-md border border-emerald-600/40 rounded-2xl p-4 sm:p-4.5 text-white max-w-md shadow-xl shadow-emerald-950/20">
+          <div className="bg-[#123D2A]/95 backdrop-blur-md border border-[#6FAF72]/30 rounded-2xl p-4 sm:p-4.5 text-white max-w-md shadow-xl shadow-emerald-950/20">
             <p className="italic text-emerald-100 text-xs sm:text-sm font-medium mb-3 leading-relaxed">
               “A cleaner tomorrow starts with better management.”
             </p>
@@ -186,21 +185,21 @@ export const LoginPage: React.FC = () => {
             <div className="border-t border-emerald-700/60 pt-2.5 grid grid-cols-3 gap-2 text-center">
               <div>
                 <div className="text-xl sm:text-2xl font-black text-white tracking-tight">100+</div>
-                <div className="text-[9px] sm:text-[10px] text-emerald-200 font-extrabold uppercase tracking-widest mt-0.5">
+                <div className="text-[9px] sm:text-[10px] text-[#C9A227] font-extrabold uppercase tracking-widest mt-0.5">
                   Partners
                 </div>
               </div>
 
               <div>
                 <div className="text-xl sm:text-2xl font-black text-white tracking-tight">5K+</div>
-                <div className="text-[9px] sm:text-[10px] text-emerald-200 font-extrabold uppercase tracking-widest mt-0.5">
+                <div className="text-[9px] sm:text-[10px] text-[#C9A227] font-extrabold uppercase tracking-widest mt-0.5">
                   Customers
                 </div>
               </div>
 
               <div>
                 <div className="text-xl sm:text-2xl font-black text-white tracking-tight">20+</div>
-                <div className="text-[9px] sm:text-[10px] text-emerald-200 font-extrabold uppercase tracking-widest mt-0.5">
+                <div className="text-[9px] sm:text-[10px] text-[#C9A227] font-extrabold uppercase tracking-widest mt-0.5">
                   Cities
                 </div>
               </div>
@@ -211,7 +210,7 @@ export const LoginPage: React.FC = () => {
         {/* Right Side: Login Form Card */}
         <div className="lg:col-span-5 flex justify-center lg:justify-end w-full">
           <div className="bg-white rounded-3xl p-6 sm:p-7 shadow-2xl shadow-slate-900/10 border border-slate-100 max-w-[420px] w-full">
-            <h2 className="text-2xl sm:text-3xl font-black text-[#0A192F] tracking-tight">
+            <h2 className="text-2xl sm:text-3xl font-black text-[#171A18] tracking-tight">
               Welcome Back
             </h2>
             <p className="text-xs text-slate-500 font-semibold mb-4 mt-0.5">
@@ -246,7 +245,7 @@ export const LoginPage: React.FC = () => {
                     onChange={e => setEmail(e.target.value)}
                     placeholder="admin@example.com"
                     required
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-xs sm:text-sm text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#043927]/20 focus:border-[#043927] transition-all font-semibold"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-2.5 text-xs sm:text-sm text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#123D2A]/20 focus:border-[#123D2A] transition-all font-semibold"
                   />
                 </div>
               </div>
@@ -264,7 +263,7 @@ export const LoginPage: React.FC = () => {
                     onChange={e => setPassword(e.target.value)}
                     placeholder="Enter admin password"
                     required
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-10 py-2.5 text-xs sm:text-sm text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#043927]/20 focus:border-[#043927] transition-all font-semibold"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-10 py-2.5 text-xs sm:text-sm text-slate-900 placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#123D2A]/20 focus:border-[#123D2A] transition-all font-semibold"
                   />
                   <button
                     type="button"
@@ -283,7 +282,7 @@ export const LoginPage: React.FC = () => {
                     type="checkbox"
                     checked={rememberMe}
                     onChange={e => setRememberMe(e.target.checked)}
-                    className="w-3.5 h-3.5 rounded border-slate-300 text-[#043927] focus:ring-[#043927]/30 cursor-pointer"
+                    className="w-3.5 h-3.5 rounded border-slate-300 text-[#123D2A] focus:ring-[#123D2A]/30 cursor-pointer"
                   />
                   <span className="text-[11px]">Remember me</span>
                 </label>
@@ -294,7 +293,7 @@ export const LoginPage: React.FC = () => {
                     setResetEmail(email || 'admin@example.com');
                     setShowForgotModal(true);
                   }}
-                  className="text-[#043927] text-[11px] font-bold hover:underline cursor-pointer"
+                  className="text-[#123D2A] text-[11px] font-bold hover:underline cursor-pointer"
                 >
                   Forgot password?
                 </button>
@@ -304,7 +303,7 @@ export const LoginPage: React.FC = () => {
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="w-full bg-[#043927] hover:bg-[#064e3b] active:scale-[0.99] text-white font-extrabold py-3 px-4 rounded-xl text-xs sm:text-sm shadow-md shadow-[#043927]/20 transition-all flex items-center justify-center gap-2 cursor-pointer mt-1 disabled:opacity-70 tracking-wide"
+                className="w-full bg-[#123D2A] hover:bg-[#184a34] active:scale-[0.99] text-white font-extrabold py-3 px-4 rounded-xl text-xs sm:text-sm shadow-md shadow-[#123D2A]/20 transition-all flex items-center justify-center gap-2 cursor-pointer mt-1 disabled:opacity-70 tracking-wide"
               >
                 {isSubmitting ? (
                   <>
@@ -321,8 +320,8 @@ export const LoginPage: React.FC = () => {
             </form>
 
             {/* Enterprise Security Banner */}
-            <div className="bg-[#EFFDF6] border border-emerald-100 rounded-xl p-2.5 mt-3.5 flex items-center gap-2 text-[11px] text-emerald-900 font-semibold">
-              <Shield className="w-3.5 h-3.5 text-emerald-700 flex-shrink-0" />
+            <div className="bg-[#EAF5EC] border border-[#6FAF72]/30 rounded-xl p-2.5 mt-3.5 flex items-center gap-2 text-[11px] text-[#123D2A] font-semibold">
+              <Shield className="w-3.5 h-3.5 text-[#123D2A] flex-shrink-0" />
               <span>Enterprise-grade encryption & RLS session security</span>
             </div>
 
@@ -348,26 +347,26 @@ export const LoginPage: React.FC = () => {
       <footer className="w-full border-t border-slate-200/70 bg-white/85 backdrop-blur-md py-2.5 px-6 z-10 shrink-0">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3 text-[11px] text-slate-600 font-semibold">
           <div className="flex items-center gap-2">
-            <Headphones className="w-3.5 h-3.5 text-[#043927]" />
+            <Headphones className="w-3.5 h-3.5 text-[#123D2A]" />
             <div>
-              <span className="font-extrabold text-[#0A192F]">Support Helpline:</span>{' '}
+              <span className="font-extrabold text-[#171A18]">Support Helpline:</span>{' '}
               <span className="text-slate-500 font-medium">1800-424-663 (24/7 Operations)</span>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <FileText className="w-3.5 h-3.5 text-[#043927]" />
+            <FileText className="w-3.5 h-3.5 text-[#123D2A]" />
             <div className="flex items-center gap-1.5">
-              <span className="font-extrabold text-[#0A192F]">Platform Status:</span>{' '}
+              <span className="font-extrabold text-[#171A18]">Platform Status:</span>{' '}
               <span className="text-slate-500 font-medium">All systems operational</span>
               <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <Shield className="w-3.5 h-3.5 text-[#043927]" />
+            <Shield className="w-3.5 h-3.5 text-[#123D2A]" />
             <div>
-              <span className="font-extrabold text-[#0A192F]">Security:</span>{' '}
+              <span className="font-extrabold text-[#171A18]">Security:</span>{' '}
               <span className="text-slate-500 font-medium">SOC-2 & ISO 27001 Certified</span>
             </div>
           </div>
@@ -388,11 +387,11 @@ export const LoginPage: React.FC = () => {
               <X className="w-5 h-5" />
             </button>
 
-            <div className="w-11 h-11 rounded-2xl bg-[#E8F5E9] text-[#043927] flex items-center justify-center mb-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-[#EAF5EC] text-[#123D2A] flex items-center justify-center mb-3.5">
               <Lock className="w-5 h-5" />
             </div>
 
-            <h3 className="text-lg font-extrabold text-[#0A192F]">Reset Admin Password</h3>
+            <h3 className="text-lg font-extrabold text-[#171A18]">Reset Admin Password</h3>
             <p className="text-xs text-slate-500 mt-0.5 mb-4 font-medium">
               Enter your registered administrator email to receive password reset instructions.
             </p>
@@ -425,7 +424,7 @@ export const LoginPage: React.FC = () => {
                   onChange={e => setResetEmail(e.target.value)}
                   placeholder="admin@example.com"
                   required
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#043927]/20 focus:border-[#043927] transition-all font-semibold"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#123D2A]/20 focus:border-[#123D2A] transition-all font-semibold"
                 />
               </div>
 
@@ -444,7 +443,7 @@ export const LoginPage: React.FC = () => {
                 <button
                   type="submit"
                   disabled={resetSubmitting}
-                  className="flex-1 bg-[#043927] hover:bg-[#064e3b] text-white font-extrabold py-2.5 px-4 rounded-xl text-xs transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-70"
+                  className="flex-1 bg-[#123D2A] hover:bg-[#184a34] text-white font-extrabold py-2.5 px-4 rounded-xl text-xs transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-70"
                 >
                   {resetSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Send Reset Link'}
                 </button>

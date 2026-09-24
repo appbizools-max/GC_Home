@@ -26,33 +26,17 @@ export interface ProfileInputData {
   uid?: string;
   name: string;
   email?: string;
-  city: string;
-  address: string;
+  city?: string;
+  address?: string;
   profilePhoto?: string;
 }
 
-// Known demo / test profiles for seamless onboarding testing
-const KNOWN_PROFILES: Record<string, Partial<User>> = {
-  '+91 98492 01824': {
-    uid: 'user_rohan_98492',
-    name: 'Rohan Sharma',
-    email: 'rohan@gmail.com',
-    phone: '+91 98492 01824',
-    role: 'customer',
-    maidApplicationStatus: 'none',
-    profilePhoto: typeof ASSETS.customerAvatar === 'string' ? ASSETS.customerAvatar : undefined,
-    createdAt: '2026-09-01',
-  },
-  '+91 98111 22233': {
-    uid: 'cust_curr',
-    name: 'Rahul Verma',
-    email: 'rahul.v@example.com',
-    phone: '+91 98111 22233',
-    role: 'customer',
-    maidApplicationStatus: 'none',
-    profilePhoto: typeof ASSETS.customerAvatar === 'string' ? ASSETS.customerAvatar : undefined,
-    createdAt: '2026-09-01',
-  },
+// Helper to generate RFC4122 v4 UUID
+const generateUUID = () => {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
 };
 
 // Safe storage wrapper (supports React Native AsyncStorage with Web fallback)
@@ -104,25 +88,46 @@ class AuthService {
    * Request / Send 6-digit OTP to mobile number
    */
   async sendOtp(phoneNumber: string): Promise<SendOtpResponse> {
-    // Artificial latency for realistic network experience
-    await new Promise(r => setTimeout(r, 650));
+    await new Promise(r => setTimeout(r, 450));
 
     const cleanPhone = phoneNumber.trim();
     if (!cleanPhone || cleanPhone.replace(/\D/g, '').length < 10) {
       throw new Error('Please enter a valid 10-digit mobile number.');
     }
 
-    // Default test code or generated 6-digit OTP
-    // For convenience in UI demo, code '749216' is standard demo code, or generated 6 digits
-    const demoOtp = '749216';
-    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes validity
+    // Standard default OTP for user logins
+    const demoOtp = '123456';
+    const expiresAt = Date.now() + 60 * 60 * 1000; // 60 minutes validity
 
     this.activeOtps.set(cleanPhone, {
       code: demoOtp,
       expiresAt,
     });
 
-    const isKnown = Boolean(KNOWN_PROFILES[cleanPhone]);
+    const digitsOnly = cleanPhone.replace(/\D/g, '');
+    const last10Digits = digitsOnly.slice(-10);
+    const standardFormat = `+91 ${last10Digits}`;
+    const compactFormat = `+91${last10Digits}`;
+
+    let isKnown = false;
+    try {
+      const { data } = await supabase
+        .from('user_profiles')
+        .select('id')
+        .or(`phone.eq.${cleanPhone},phone.eq.${standardFormat},phone.eq.${compactFormat},phone.eq.${last10Digits}`)
+        .maybeSingle();
+      if (data && data.id) isKnown = true;
+    } catch {
+      // Offline fallback
+      try {
+        const { data } = await supabase
+          .from('user_profiles')
+          .select('id')
+          .eq('phone', cleanPhone)
+          .maybeSingle();
+        if (data && data.id) isKnown = true;
+      } catch {}
+    }
 
     return {
       success: true,
@@ -136,47 +141,81 @@ class AuthService {
    * Verify 6-digit OTP
    */
   async verifyOtp(phoneNumber: string, enteredOtp: string): Promise<VerifyOtpResponse> {
-    await new Promise(r => setTimeout(r, 700));
+    await new Promise(r => setTimeout(r, 400));
 
     const cleanPhone = phoneNumber.trim();
     const cleanOtp = enteredOtp.replace(/\D/g, '');
 
     if (cleanOtp.length !== 6) {
-      throw new Error('Please enter the complete 6-digit OTP.');
+      throw new Error('Please enter the complete 6-digit OTP (e.g. 123456).');
     }
 
-    // Check against active OTP or allow demo OTP '749216' / '123456'
     const stored = this.activeOtps.get(cleanPhone);
     const isValid =
-      cleanOtp === '749216' ||
       cleanOtp === '123456' ||
+      cleanOtp === '749216' ||
       (stored && stored.code === cleanOtp && Date.now() <= stored.expiresAt);
 
     if (!isValid) {
       if (stored && Date.now() > stored.expiresAt) {
-        throw new Error('OTP expired. Please request a new code.');
+        throw new Error('OTP expired. Please enter default OTP 123456.');
       }
-      throw new Error('Incorrect OTP. Please check the code and try again.');
+      throw new Error('Incorrect OTP. Please enter default OTP 123456.');
     }
 
-    // Clean up OTP
     this.activeOtps.delete(cleanPhone);
 
-    // Check if user has an existing profile
-    const existingProfile = KNOWN_PROFILES[cleanPhone];
     const sessionToken = 'jwt_' + Math.random().toString(36).substring(2) + Date.now();
 
-    if (existingProfile && existingProfile.name) {
+    // Check if user has an existing live profile in Supabase
+    const digitsOnly = cleanPhone.replace(/\D/g, '');
+    const last10Digits = digitsOnly.slice(-10);
+    const standardFormat = `+91 ${last10Digits}`;
+    const compactFormat = `+91${last10Digits}`;
+
+    let existingProfile: any = null;
+    try {
+      const { data } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .or(`phone.eq.${cleanPhone},phone.eq.${standardFormat},phone.eq.${compactFormat},phone.eq.${last10Digits}`)
+        .maybeSingle();
+      if (data && data.id) existingProfile = data;
+    } catch {
+      try {
+        const { data } = await supabase
+          .from('user_profiles')
+          .select('*')
+          .eq('phone', cleanPhone)
+          .maybeSingle();
+        if (data && data.id) existingProfile = data;
+      } catch {}
+    }
+
+    if (existingProfile && (existingProfile.name || existingProfile.full_name)) {
       const user: User = {
-        uid: existingProfile.uid || 'user_' + Date.now(),
-        name: existingProfile.name,
+        uid: existingProfile.id,
+        name: existingProfile.name || existingProfile.full_name,
         phone: cleanPhone,
         email: existingProfile.email || '',
-        role: 'customer',
-        profilePhoto: existingProfile.profilePhoto,
-        maidApplicationStatus: 'none',
-        createdAt: existingProfile.createdAt || new Date().toISOString().split('T')[0],
+        role: (existingProfile.role as any) || 'customer',
+        profilePhoto: existingProfile.profile_photo_url || undefined,
+        maidApplicationStatus: existingProfile.maid_application_status || 'none',
+        createdAt: existingProfile.created_at || new Date().toISOString().split('T')[0],
       };
+
+      // Update last_login_at in user_profiles
+      try {
+        await supabase
+          .from('user_profiles')
+          .update({
+            last_login_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existingProfile.id);
+      } catch (logErr) {
+        console.warn('Notice updating last login timestamp:', logErr);
+      }
 
       await safeStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
       await safeStorage.setItem(TOKEN_STORAGE_KEY, sessionToken);
@@ -193,7 +232,7 @@ class AuthService {
 
     // New User - Profile setup required
     const tempUser: User = {
-      uid: 'user_' + Date.now(),
+      uid: generateUUID(),
       name: '',
       phone: cleanPhone,
       role: 'customer',
@@ -214,22 +253,59 @@ class AuthService {
   }
 
   /**
+   * Check if a mobile number is already registered in user_profiles
+   */
+  async checkPhoneExists(phoneNumber: string): Promise<boolean> {
+    const cleanPhone = phoneNumber.trim();
+    const digitsOnly = cleanPhone.replace(/\D/g, '');
+    const last10Digits = digitsOnly.slice(-10);
+    const standardFormat = `+91 ${last10Digits}`;
+    const compactFormat = `+91${last10Digits}`;
+
+    try {
+      const { data } = await supabase
+        .from('user_profiles')
+        .select('id')
+        .or(`phone.eq.${cleanPhone},phone.eq.${standardFormat},phone.eq.${compactFormat},phone.eq.${last10Digits}`)
+        .maybeSingle();
+
+      return Boolean(data && data.id);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Save / Complete user profile setup
    */
   async createProfile(data: ProfileInputData, phone: string): Promise<{ success: boolean; user: User; address: Address }> {
-    await new Promise(r => setTimeout(r, 600));
+    await new Promise(r => setTimeout(r, 400));
 
     if (!data.name || data.name.trim().length < 2) {
       throw new Error('Please enter your full name (minimum 2 characters).');
     }
-    if (!data.city || data.city.trim().length === 0) {
-      throw new Error('Please select your city.');
-    }
-    if (!data.address || data.address.trim().length < 5) {
-      throw new Error('Please provide your complete home address.');
+
+    const finalCity = data.city?.trim() || 'Hyderabad, Telangana';
+    const finalAddress = data.address?.trim() || 'Hyderabad, Telangana';
+
+    // Check if customer profile already exists for this mobile number to prevent duplicate rows
+    let existingProfileId: string | null = null;
+    try {
+      const { data: existingRow } = await supabase
+        .from('user_profiles')
+        .select('id')
+        .eq('phone', phone.trim())
+        .maybeSingle();
+      if (existingRow && existingRow.id) {
+        existingProfileId = existingRow.id;
+      }
+    } catch {
+      // Ignore network errors
     }
 
-    const uid = data.uid || 'user_' + Date.now();
+    const isUuid = Boolean(data.uid && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(data.uid));
+    const uid = existingProfileId || (isUuid && data.uid ? data.uid : generateUUID());
+
     const newUser: User = {
       uid,
       name: data.name.trim(),
@@ -241,36 +317,58 @@ class AuthService {
       createdAt: new Date().toISOString().split('T')[0],
     };
 
+    const newAddressId = generateUUID();
     const newAddress: Address = {
-      id: 'addr_' + Date.now(),
+      id: newAddressId,
       label: 'Home',
-      street: data.address,
-      locality: data.city,
-      city: data.city,
-      pincode: '560102',
+      street: finalAddress,
+      locality: finalCity,
+      city: finalCity,
+      pincode: '500081',
     };
 
-    // Store in known profiles cache
-    KNOWN_PROFILES[phone] = newUser;
-
-    // Persist securely
+    // Persist securely in local storage
     await safeStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(newUser));
     await safeStorage.setItem(ONBOARDING_COMPLETED_KEY, 'true');
 
-    // Attempt Supabase sync if customers table exists
+    // Sync to Supabase user_profiles table so Admin Panel instantly lists this customer
     try {
-      await supabase.from('customers').upsert({
+      await supabase.from('user_profiles').upsert({
         id: uid,
         name: newUser.name,
+        full_name: newUser.name,
         phone: newUser.phone,
         email: newUser.email,
+        role: 'customer',
+        customer_type: 'Regular Customer',
+        address: finalAddress,
+        city: finalCity,
+        account_status: 'active',
+        maid_application_status: 'none',
+        profile_photo_url: newUser.profilePhoto || null,
+        last_login_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+    } catch (dbErr) {
+      console.warn('Customer profile DB sync notice:', dbErr);
+    }
+
+    // Sync address to Supabase saved_addresses table
+    try {
+      await supabase.from('saved_addresses').insert({
+        id: newAddressId,
+        user_id: uid,
+        label: 'Home',
+        street: data.address,
+        locality: data.city,
         city: data.city,
-        address: data.address,
-        profile_photo: newUser.profilePhoto,
+        pincode: '500081',
+        is_default: true,
         created_at: new Date().toISOString(),
       });
-    } catch {
-      // Offline / local fallback
+    } catch (addrErr) {
+      console.warn('Saved address DB sync notice:', addrErr);
     }
 
     return {

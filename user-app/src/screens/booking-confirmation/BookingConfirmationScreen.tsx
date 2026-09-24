@@ -32,10 +32,10 @@ export const BookingConfirmationScreen: React.FC = () => {
     dateLabel: 'Today, 26 Apr',
     timeSlot: '4:00 PM – 6:00 PM',
     address: {
-      street: '123, 4th Cross, HSR Layout',
-      locality: 'Sector 2',
-      city: 'Bengaluru',
-      pincode: '560102',
+      street: '123, Collectorate Road, Mankammathota',
+      locality: 'Clock Tower Area',
+      city: 'Karimnagar',
+      pincode: '505001',
     },
     totalAmount: 848,
     paymentStatus: 'paid',
@@ -75,7 +75,6 @@ export const BookingConfirmationScreen: React.FC = () => {
 
           <View style={styles.serviceBriefRow}>
             <Text style={styles.serviceName}>{booking.serviceName}</Text>
-            <Text style={styles.homeSizeTag}>{booking.homeSize.label}</Text>
           </View>
 
           <View style={styles.divider} />

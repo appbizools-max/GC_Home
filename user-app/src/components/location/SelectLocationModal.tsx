@@ -9,6 +9,7 @@ import {
   ScrollView,
   Dimensions,
 } from 'react-native';
+import { useAuth } from '../../context/AuthContext';
 import {
   ArrowLeft,
   Search,
@@ -48,34 +49,9 @@ interface SelectLocationModalProps {
   onClose: () => void;
 }
 
-const DEFAULT_SAVED_ADDRESSES: SavedAddressOption[] = [
-  {
-    id: 'addr_home',
-    type: 'home',
-    label: 'Home',
-    address: '123, 4th Cross, HSR Layout\nBengaluru, Karnataka 560102',
-    isDefault: true,
-  },
-  {
-    id: 'addr_office',
-    type: 'office',
-    label: 'Office',
-    address: 'Prestige Tech Park, Sarjapur Road\nBengaluru, Karnataka 560103',
-  },
-  {
-    id: 'addr_other',
-    type: 'other',
-    label: 'Other',
-    address: '742, 21st Main, Koramangala\nBengaluru, Karnataka 560034',
-  },
-];
+const DEFAULT_SAVED_ADDRESSES: SavedAddressOption[] = [];
 
-const INITIAL_RECENT_ADDRESSES: RecentAddressOption[] = [
-  { id: 'rec_1', area: 'Koramangala', fullAddress: 'Bengaluru, Karnataka 560034' },
-  { id: 'rec_2', area: 'Indiranagar', fullAddress: 'Bengaluru, Karnataka 560038' },
-  { id: 'rec_3', area: 'Whitefield', fullAddress: 'Bengaluru, Karnataka 560066' },
-  { id: 'rec_4', area: 'BTM Layout', fullAddress: 'Bengaluru, Karnataka 560076' },
-];
+const INITIAL_RECENT_ADDRESSES: RecentAddressOption[] = [];
 
 export const SelectLocationModal: React.FC<SelectLocationModalProps> = ({
   visible,
@@ -83,12 +59,23 @@ export const SelectLocationModal: React.FC<SelectLocationModalProps> = ({
   onSelectAddress,
   onClose,
 }) => {
+  const { savedAddresses } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedId, setSelectedId] = useState<string>('addr_home');
+  const [selectedId, setSelectedId] = useState<string>('');
   const [recentAddresses, setRecentAddresses] = useState(INITIAL_RECENT_ADDRESSES);
   const [selectedFormattedAddress, setSelectedFormattedAddress] = useState(
-    currentAddress || '123, 4th Cross, HSR Layout, Bengaluru, Karnataka 560102'
+    currentAddress || ''
   );
+
+  const activeSavedAddresses: SavedAddressOption[] = savedAddresses && savedAddresses.length > 0
+    ? savedAddresses.map(addr => ({
+        id: addr.id,
+        type: (addr.label?.toLowerCase().includes('office') ? 'office' : (addr.label?.toLowerCase().includes('home') ? 'home' : 'other')) as any,
+        label: addr.label || 'Home',
+        address: `${addr.street ? addr.street + ', ' : ''}${addr.locality ? addr.locality + ', ' : ''}${addr.city || 'Hyderabad'} - ${addr.pincode || '500001'}`,
+        isDefault: Boolean(addr.isDefault),
+      }))
+    : DEFAULT_SAVED_ADDRESSES;
 
   const handleSelectSaved = (saved: SavedAddressOption) => {
     setSelectedId(saved.id);
@@ -206,74 +193,88 @@ export const SelectLocationModal: React.FC<SelectLocationModalProps> = ({
           </View>
 
           <View style={styles.savedList}>
-            {DEFAULT_SAVED_ADDRESSES.map(item => {
-              const isSelected = selectedId === item.id;
-              return (
-                <TouchableOpacity
-                  key={item.id}
-                  style={[styles.savedCard, isSelected && styles.savedCardSelected]}
-                  onPress={() => handleSelectSaved(item)}
-                  activeOpacity={0.88}
-                >
-                  <View style={styles.savedCardContent}>
-                    <View style={styles.savedIconBox}>
-                      {item.type === 'home' && <Home size={20} color="#168A68" />}
-                      {item.type === 'office' && <Building size={20} color="#168A68" />}
-                      {item.type === 'other' && <MapPin size={20} color="#168A68" />}
-                    </View>
-
-                    <View style={styles.savedDetails}>
-                      <View style={styles.savedLabelRow}>
-                        <Text style={styles.savedLabel}>{item.label}</Text>
-                        {item.isDefault && (
-                          <View style={styles.defaultBadge}>
-                            <Text style={styles.defaultBadgeText}>Default</Text>
-                          </View>
-                        )}
+            {activeSavedAddresses.length === 0 ? (
+              <View style={{ padding: 14, backgroundColor: '#F8FAFC', borderRadius: 12, alignItems: 'center' }}>
+                <Text style={{ fontSize: 13, color: '#64748B', fontWeight: '500' }}>No saved addresses yet</Text>
+              </View>
+            ) : (
+              activeSavedAddresses.map(item => {
+                const isSelected = selectedId === item.id;
+                return (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={[styles.savedCard, isSelected && styles.savedCardSelected]}
+                    onPress={() => handleSelectSaved(item)}
+                    activeOpacity={0.88}
+                  >
+                    <View style={styles.savedCardContent}>
+                      <View style={styles.savedIconBox}>
+                        {item.type === 'home' && <Home size={20} color="#168A68" />}
+                        {item.type === 'office' && <Building size={20} color="#168A68" />}
+                        {item.type === 'other' && <MapPin size={20} color="#168A68" />}
                       </View>
-                      <Text style={styles.savedAddressText}>{item.address}</Text>
-                    </View>
-                  </View>
 
-                  <View style={styles.savedActionsRow}>
-                    {isSelected ? (
-                      <CheckCircle2 size={20} color="#168A68" fill="#168A68" />
-                    ) : (
-                      <Circle size={20} color="#CBD5E1" />
-                    )}
-                    <TouchableOpacity style={styles.moreOptionsBtn} activeOpacity={0.7}>
-                      <MoreVertical size={16} color="#68788C" />
-                    </TouchableOpacity>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
+                      <View style={styles.savedDetails}>
+                        <View style={styles.savedLabelRow}>
+                          <Text style={styles.savedLabel}>{item.label}</Text>
+                          {item.isDefault && (
+                            <View style={styles.defaultBadge}>
+                              <Text style={styles.defaultBadgeText}>Default</Text>
+                            </View>
+                          )}
+                        </View>
+                        <Text style={styles.savedAddressText}>{item.address}</Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.savedActionsRow}>
+                      {isSelected ? (
+                        <CheckCircle2 size={20} color="#168A68" fill="#168A68" />
+                      ) : (
+                        <Circle size={20} color="#CBD5E1" />
+                      )}
+                      <TouchableOpacity style={styles.moreOptionsBtn} activeOpacity={0.7}>
+                        <MoreVertical size={16} color="#68788C" />
+                      </TouchableOpacity>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })
+            )}
           </View>
 
           {/* Recent Addresses Section */}
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionTitle}>Recent Addresses</Text>
-            <TouchableOpacity onPress={() => setRecentAddresses([])} activeOpacity={0.7}>
-              <Text style={styles.clearAllText}>Clear All</Text>
-            </TouchableOpacity>
+            {recentAddresses.length > 0 && (
+              <TouchableOpacity onPress={() => setRecentAddresses([])} activeOpacity={0.7}>
+                <Text style={styles.clearAllText}>Clear All</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           <View style={styles.recentList}>
-            {recentAddresses.map(recent => (
-              <TouchableOpacity
-                key={recent.id}
-                style={styles.recentItem}
-                onPress={() => handleSelectRecent(recent)}
-                activeOpacity={0.7}
-              >
-                <Clock size={16} color="#68788C" style={styles.recentIcon} />
-                <View style={styles.recentTextCol}>
-                  <Text style={styles.recentArea}>{recent.area}</Text>
-                  <Text style={styles.recentFull}>{recent.fullAddress}</Text>
-                </View>
-                <ChevronRight size={16} color="#CBD5E1" />
-              </TouchableOpacity>
-            ))}
+            {recentAddresses.length === 0 ? (
+              <View style={{ padding: 14, backgroundColor: '#F8FAFC', borderRadius: 12, alignItems: 'center' }}>
+                <Text style={{ fontSize: 13, color: '#64748B', fontWeight: '500' }}>No recent addresses</Text>
+              </View>
+            ) : (
+              recentAddresses.map(recent => (
+                <TouchableOpacity
+                  key={recent.id}
+                  style={styles.recentItem}
+                  onPress={() => handleSelectRecent(recent)}
+                  activeOpacity={0.7}
+                >
+                  <Clock size={16} color="#68788C" style={styles.recentIcon} />
+                  <View style={styles.recentTextCol}>
+                    <Text style={styles.recentArea}>{recent.area}</Text>
+                    <Text style={styles.recentFull}>{recent.fullAddress}</Text>
+                  </View>
+                  <ChevronRight size={16} color="#CBD5E1" />
+                </TouchableOpacity>
+              ))
+            )}
           </View>
         </ScrollView>
 

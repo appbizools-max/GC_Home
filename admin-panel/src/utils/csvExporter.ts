@@ -22,9 +22,18 @@ export function exportToCSV<T extends Record<string, any>>(
   // Format row lines
   for (const row of rows) {
     const values = keys.map(key => {
-      const val = row[key];
+      let val: any = row[key];
       if (val === null || val === undefined) {
         return '""';
+      }
+      // Format ISO timestamp strings if key contains Date/At/Created/Time
+      if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:/.test(val)) {
+        try {
+          val = new Date(val).toLocaleString('en-IN', {
+            dateStyle: 'medium',
+            timeStyle: 'short',
+          });
+        } catch {}
       }
       if (typeof val === 'object') {
         return `"${JSON.stringify(val).replace(/"/g, '""')}"`;
