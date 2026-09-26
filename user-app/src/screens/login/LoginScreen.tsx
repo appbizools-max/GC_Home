@@ -12,9 +12,11 @@ import {
   StatusBar,
   Animated,
   Easing,
+  Image,
 } from 'react-native';
 import { HelpCircle, Briefcase } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
+import ASSETS from '../../assets';
 import { AppLogo } from '../../components/ui/AppLogo';
 import { NeedHelpModal } from '../../components/ui/NeedHelpModal';
 
@@ -197,7 +199,12 @@ export const LoginScreen: React.FC = () => {
 
             {/* 1. GC HOME+ Brand Logo — animated entrance */}
             <Animated.View style={[styles.logoSection, logoAnim]}>
-              <AppLogo size="md" showTagline={false} align="center" />
+              <Image
+                source={typeof ASSETS.splash === 'string' ? { uri: ASSETS.splash } : ASSETS.splash}
+                style={styles.splashBrandLogo}
+                resizeMode="contain"
+                accessibilityLabel="GC Home Plus Brand Logo"
+              />
             </Animated.View>
 
             {/* 2. Login Title & Subtitle — animated entrance */}
@@ -329,7 +336,11 @@ const styles = StyleSheet.create({
   logoSection: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 28,
+    marginBottom: 16,
+  },
+  splashBrandLogo: {
+    width: 140,
+    height: 140,
   },
   titleSection: {
     alignItems: 'center',

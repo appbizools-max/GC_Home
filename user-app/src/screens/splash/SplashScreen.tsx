@@ -1,13 +1,15 @@
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
+const { useEffect, useRef } = React;
 import {
   View,
   StyleSheet,
   Animated,
   Dimensions,
   Easing,
+  Image,
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
-import { GCLogo } from '../../components/common/GCLogo';
+import ASSETS from '../../assets';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -22,21 +24,21 @@ export const SplashScreen: React.FC = () => {
   const bgFade = useRef(new Animated.Value(0)).current;
 
   // ── Logo reveal ───────────────────────────────────────────────────────────
-  const logoOpacity  = useRef(new Animated.Value(0)).current;
-  const logoScale    = useRef(new Animated.Value(0.78)).current;
+  const logoOpacity = useRef(new Animated.Value(0)).current;
+  const logoScale = useRef(new Animated.Value(0.78)).current;
   const logoTranslateY = useRef(new Animated.Value(18)).current;
 
   // ── Gold shimmer sweep ────────────────────────────────────────────────────
-  const shimmerX     = useRef(new Animated.Value(-LOGO_SIZE)).current;
+  const shimmerX = useRef(new Animated.Value(-LOGO_SIZE)).current;
   const shimmerOpacity = useRef(new Animated.Value(0)).current;
 
   // ── Glow pulse ────────────────────────────────────────────────────────────
-  const glowOpacity  = useRef(new Animated.Value(0)).current;
-  const glowScale    = useRef(new Animated.Value(0.88)).current;
+  const glowOpacity = useRef(new Animated.Value(0)).current;
+  const glowScale = useRef(new Animated.Value(0.88)).current;
 
   // ── Exit ──────────────────────────────────────────────────────────────────
-  const exitOpacity  = useRef(new Animated.Value(1)).current;
-  const exitScale    = useRef(new Animated.Value(1)).current;
+  const exitOpacity = useRef(new Animated.Value(1)).current;
+  const exitScale = useRef(new Animated.Value(1)).current;
 
   // Timer ref so we can clean up
   const sessionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -208,7 +210,7 @@ export const SplashScreen: React.FC = () => {
             {
               width: GLOW_SIZE,
               height: GLOW_SIZE,
-              borderRadius: GLOW_SIZE / 2,
+              borderRadius: 24,
               opacity: glowOpacity,
               transform: [{ scale: glowScale }],
             },
@@ -230,8 +232,13 @@ export const SplashScreen: React.FC = () => {
             },
           ]}
         >
-          {/* The actual GC HOME+ circular logo */}
-          <GCLogo size={LOGO_SIZE} />
+          {/* The official GC HOME+ splash brand logo */}
+          <Image
+            source={typeof ASSETS.splash === 'string' ? { uri: ASSETS.splash } : ASSETS.splash}
+            style={{ width: LOGO_SIZE, height: LOGO_SIZE }}
+            resizeMode="contain"
+            accessibilityLabel="GC Home Plus Splash Logo"
+          />
 
           {/* Gold shimmer sweep overlay — clipped to logo bounds */}
           <Animated.View
@@ -308,7 +315,7 @@ const styles = StyleSheet.create({
   // ── Logo ───────────────────────────────────────────────────────────────────
   logoWrapper: {
     overflow: 'hidden',
-    borderRadius: 9999,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
   },
