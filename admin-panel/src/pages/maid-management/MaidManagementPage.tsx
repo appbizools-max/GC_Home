@@ -1,34 +1,45 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAdmin } from '../../context/AdminContext';
 import { AllMaidsTab } from './AllMaidsTab';
-import { Plus, Users, Clock, ShieldCheck, Wifi, UserX } from 'lucide-react';
+import { Plus, Users, Clock, ShieldCheck, Wifi, UserX, AlertTriangle, RefreshCw, MapPin } from 'lucide-react';
 
-export const MaidManagementPage: React.FC = () => {
-  const { maids, currentTab } = useAdmin();
+interface MaidManagementPageProps {
+  initialSubTab?: 'all' | 'pending-approval' | 'pending-kyc' | 'active' | 'inactive';
+  selectedPartnerId?: string;
+}
+
+export const MaidManagementPage: React.FC<MaidManagementPageProps> = ({
+  initialSubTab,
+  selectedPartnerId,
+}) => {
+  const navigate = useNavigate();
+  const { maids, maidsLoading, maidsError, refreshMaids, currentTab, selectedLocation } = useAdmin();
 
   // 5 Streamlined Sub-Tabs
   const [activeSubTab, setActiveSubTab] = useState<
     'all' | 'pending-approval' | 'pending-kyc' | 'active' | 'inactive'
-  >('all');
+  >(initialSubTab || 'all');
 
-  // Synchronize with AdminContext currentTab
   useEffect(() => {
-    if (currentTab === 'pending-approvals' || currentTab === 'pending-maid-details') {
+    if (initialSubTab) {
+      setActiveSubTab(initialSubTab);
+    } else if (currentTab === 'pending-approvals' || currentTab === 'pending-maid-details') {
       setActiveSubTab('pending-approval');
     } else if (currentTab === 'pending-kyc') {
       setActiveSubTab('pending-kyc');
-    } else if (currentTab === 'active-maids') {
+    } else if (currentTab === 'active-maids' || currentTab === 'approved-maids') {
       setActiveSubTab('active');
     } else if (currentTab === 'inactive-maids') {
       setActiveSubTab('inactive');
     } else {
       setActiveSubTab('all');
     }
-  }, [currentTab]);
+  }, [initialSubTab, currentTab]);
 
-  // Real-data KPI counts
+  // Real-data KPI counts - strictly separate approval, KYC, and online availability
   const totalCount = maids.length;
-  const pendingApprovalCount = maids.filter(m => m.status === 'pending').length;
+  const pendingApprovalCount = maids.filter(m => m.status === 'pending' && m.submittedAt).length;
   const pendingKycCount = maids.filter(
     m =>
       m.kycStatus === 'pending' ||
@@ -36,19 +47,26 @@ export const MaidManagementPage: React.FC = () => {
       m.kycStatus === 'incomplete' ||
       (m.status === 'pending' && m.kycStatus !== 'verified')
   ).length;
-  const activeCount = maids.filter(m => m.status === 'approved' && m.isOnline).length;
-  const inactiveCount = maids.filter(m => m.status === 'rejected' || (m.status === 'approved' && !m.isOnline)).length;
+  // Active means approved AND actually online/available
+  const activeCount = maids.filter(
+    m => m.status === 'approved' && (m.isOnline || m.currentStatus === 'online' || m.currentStatus === 'available')
+  ).length;
+  const inactiveCount = maids.filter(
+    m => m.status === 'approved' && !m.isOnline && m.currentStatus !== 'online'
+  ).length;
 
   return (
     <div className="flex flex-col gap-5 font-sans">
       {/* 1. Page Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-            Partners
-          </h1>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+              Partners
+            </h1>
+          </div>
           <p className="text-xs text-slate-500 font-medium mt-0.5">
-            Manage registered partners, approvals, availability and partner status.
+            Manage registered partners, approvals, KYC, availability, and partner status.
           </p>
         </div>
 
@@ -60,14 +78,36 @@ export const MaidManagementPage: React.FC = () => {
         </button>
       </div>
 
-      {/* 2. 4 Simplified KPI Cards (Real Data Only - No Fake Comparisons) */}
+      {/* Error Alert if Supabase fetch failed */}
+      {maidsError && (
+        <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center justify-between text-xs text-rose-800 animate-fadeIn">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+            <div>
+              <strong className="font-bold">Unable to load partners:</strong> {maidsError}
+            </div>
+          </div>
+          <button
+            onClick={() => refreshMaids()}
+            className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-bold flex items-center gap-1 cursor-pointer transition-all shadow-xs"
+          >
+            <RefreshCw className="w-3.5 h-3.5" /> Retry
+          </button>
+        </div>
+      )}
+
+      {/* 2. 4 Simplified KPI Cards (Real Data Only - With Skeleton Loading) */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
         {/* KPI 1: Total Partners */}
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
           <div>
             <span className="text-xs font-bold text-slate-400 block mb-0.5">Total Partners</span>
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-black text-slate-900">{totalCount}</span>
+              {maidsLoading ? (
+                <div className="h-7 w-12 bg-slate-200 animate-pulse rounded-md my-0.5" />
+              ) : (
+                <span className="text-2xl font-black text-slate-900">{totalCount}</span>
+              )}
             </div>
             <span className="text-[10px] text-slate-400 font-semibold block mt-0.5">
               Registered on platform
@@ -83,7 +123,11 @@ export const MaidManagementPage: React.FC = () => {
           <div>
             <span className="text-xs font-bold text-slate-400 block mb-0.5">Pending Approval</span>
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-black text-slate-900">{pendingApprovalCount}</span>
+              {maidsLoading ? (
+                <div className="h-7 w-12 bg-slate-200 animate-pulse rounded-md my-0.5" />
+              ) : (
+                <span className="text-2xl font-black text-slate-900">{pendingApprovalCount}</span>
+              )}
             </div>
             <span className="text-[10px] text-amber-600 font-semibold block mt-0.5">
               Awaiting admin review
@@ -99,7 +143,11 @@ export const MaidManagementPage: React.FC = () => {
           <div>
             <span className="text-xs font-bold text-slate-400 block mb-0.5">Active Partners</span>
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-black text-slate-900">{activeCount}</span>
+              {maidsLoading ? (
+                <div className="h-7 w-12 bg-slate-200 animate-pulse rounded-md my-0.5" />
+              ) : (
+                <span className="text-2xl font-black text-slate-900">{activeCount}</span>
+              )}
             </div>
             <span className="text-[10px] text-emerald-600 font-semibold block mt-0.5">
               Currently available online
@@ -115,7 +163,11 @@ export const MaidManagementPage: React.FC = () => {
           <div>
             <span className="text-xs font-bold text-slate-400 block mb-0.5">Pending KYC</span>
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-black text-slate-900">{pendingKycCount}</span>
+              {maidsLoading ? (
+                <div className="h-7 w-12 bg-slate-200 animate-pulse rounded-md my-0.5" />
+              ) : (
+                <span className="text-2xl font-black text-slate-900">{pendingKycCount}</span>
+              )}
             </div>
             <span className="text-[10px] text-amber-600 font-semibold block mt-0.5">
               Verification required
@@ -131,7 +183,10 @@ export const MaidManagementPage: React.FC = () => {
       <div className="bg-white p-1.5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-1.5 overflow-x-auto">
         {/* Tab 1: All Partners */}
         <button
-          onClick={() => setActiveSubTab('all')}
+          onClick={() => {
+            setActiveSubTab('all');
+            navigate('/admin/partners');
+          }}
           className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
             activeSubTab === 'all'
               ? 'bg-[#123D2A] text-white shadow-sm'
@@ -144,13 +199,16 @@ export const MaidManagementPage: React.FC = () => {
               activeSubTab === 'all' ? 'bg-emerald-800 text-white' : 'bg-slate-100 text-slate-700'
             }`}
           >
-            {totalCount}
+            {maidsLoading ? '—' : totalCount}
           </span>
         </button>
 
         {/* Tab 2: Pending Approval */}
         <button
-          onClick={() => setActiveSubTab('pending-approval')}
+          onClick={() => {
+            setActiveSubTab('pending-approval');
+            navigate('/admin/partners/pending');
+          }}
           className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
             activeSubTab === 'pending-approval'
               ? 'bg-amber-500 text-slate-950 shadow-sm font-black'
@@ -159,13 +217,16 @@ export const MaidManagementPage: React.FC = () => {
         >
           <Clock className="w-3.5 h-3.5" /> Pending Approval
           <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-900">
-            {pendingApprovalCount}
+            {maidsLoading ? '—' : pendingApprovalCount}
           </span>
         </button>
 
         {/* Tab 3: Pending KYC */}
         <button
-          onClick={() => setActiveSubTab('pending-kyc')}
+          onClick={() => {
+            setActiveSubTab('pending-kyc');
+            navigate('/admin/partners/pending-kyc');
+          }}
           className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
             activeSubTab === 'pending-kyc'
               ? 'bg-amber-600 text-white shadow-sm'
@@ -174,13 +235,16 @@ export const MaidManagementPage: React.FC = () => {
         >
           <ShieldCheck className="w-3.5 h-3.5" /> Pending KYC
           <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-900">
-            {pendingKycCount}
+            {maidsLoading ? '—' : pendingKycCount}
           </span>
         </button>
 
         {/* Tab 4: Active Partners */}
         <button
-          onClick={() => setActiveSubTab('active')}
+          onClick={() => {
+            setActiveSubTab('active');
+            navigate('/admin/partners/approved');
+          }}
           className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
             activeSubTab === 'active'
               ? 'bg-emerald-800 text-white shadow-sm'
@@ -189,13 +253,16 @@ export const MaidManagementPage: React.FC = () => {
         >
           <Wifi className="w-3.5 h-3.5" /> Active Partners
           <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800">
-            {activeCount}
+            {maidsLoading ? '—' : activeCount}
           </span>
         </button>
 
         {/* Tab 5: Inactive Partners */}
         <button
-          onClick={() => setActiveSubTab('inactive')}
+          onClick={() => {
+            setActiveSubTab('inactive');
+            navigate('/admin/partners/inactive');
+          }}
           className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
             activeSubTab === 'inactive'
               ? 'bg-slate-800 text-white shadow-sm'
@@ -204,13 +271,13 @@ export const MaidManagementPage: React.FC = () => {
         >
           <UserX className="w-3.5 h-3.5" /> Inactive Partners
           <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-slate-100 text-slate-700">
-            {inactiveCount}
+            {maidsLoading ? '—' : inactiveCount}
           </span>
         </button>
       </div>
 
       {/* 4. Streamlined Partner Table & Management */}
-      <AllMaidsTab activeTab={activeSubTab} />
+      <AllMaidsTab activeTab={activeSubTab} initialPartnerId={selectedPartnerId} />
     </div>
   );
 };

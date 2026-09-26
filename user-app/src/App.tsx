@@ -37,92 +37,12 @@ import { BottomTabs } from './components/BottomTabs';
 const RouterView: React.FC = () => {
   const { currentScreen, user, maidProfile } = useAuth();
 
-  const isPartnerUser = user?.role === 'maid' || user?.role === 'partner' || (maidProfile?.status === 'approved' && user?.maidApplicationStatus === 'approved');
+  const isPartnerUser = user?.role === 'maid' || user?.role === 'partner';
   const isPartnerApproved = isPartnerUser && (maidProfile?.status === 'approved' || user?.maidApplicationStatus === 'approved');
 
   const renderScreen = () => {
-    // ── 1. Unauthenticated Visitor Routing ──
-    if (!user) {
-      switch (currentScreen) {
-        case 'splash':
-          return <SplashScreen />;
-        case 'login':
-          return <LoginScreen />;
-        case 'otp':
-        case 'otp_verification':
-          return <OtpVerificationScreen />;
-        case 'profile_setup':
-        case 'profile-setup':
-        case 'complete_profile':
-        case 'complete-profile':
-        case 'register':
-        case 'registration':
-        case 'customer_registration':
-          return <ProfileSetupScreen />;
-        case 'become_maid_info':
-        case 'become_maid':
-        case 'become-maid':
-          return <BecomeMaidInfoScreen />;
-        case 'maid_registration_form':
-        case 'become_maid_form':
-          return <MaidRegistrationFormScreen />;
-        case 'help':
-          return <HelpSupportScreen />;
-        default:
-          return <LoginScreen />;
-      }
-    }
-
-    // ── 2. Partner / Maid Dedicated Routing (Zero Customer Page Leakage) ──
-    if (isPartnerUser) {
-      if (isPartnerApproved) {
-        switch (currentScreen) {
-          case 'splash':
-            return <SplashScreen />;
-          case 'login':
-            return <LoginScreen />;
-          case 'maid_home':
-            return <MaidHomeScreen />;
-          case 'active_job':
-            return <ActiveJobScreen />;
-          case 'my_jobs':
-            return <MyJobsScreen />;
-          case 'earnings':
-            return <EarningsScreen />;
-          case 'maid_profile':
-            return <MaidProfileScreen />;
-          case 'help':
-            return <HelpSupportScreen />;
-          case 'notifications':
-            return <NotificationsScreen />;
-          default:
-            // Guard: All other routes default strictly to Partner Home
-            return <MaidHomeScreen />;
-        }
-      } else {
-        // Pending or Review Partner: show only partner status screen
-        switch (currentScreen) {
-          case 'splash':
-            return <SplashScreen />;
-          case 'login':
-            return <LoginScreen />;
-          case 'maid_status':
-          case 'become_maid_info':
-          case 'become_maid':
-          case 'become-maid':
-            return <BecomeMaidInfoScreen />;
-          case 'maid_registration_form':
-          case 'become_maid_form':
-            return <MaidRegistrationFormScreen />;
-          case 'help':
-            return <HelpSupportScreen />;
-          default:
-            return <BecomeMaidInfoScreen />;
-        }
-      }
-    }
-
-    // ── 3. Customer Dedicated Routing (No Partner Operational Pages) ──
+    // ── 1. Dedicated Authentication & Registration / Onboarding Routes ──
+    // These must ALWAYS render their screen directly without role interception
     switch (currentScreen) {
       case 'splash':
         return <SplashScreen />;
@@ -139,6 +59,52 @@ const RouterView: React.FC = () => {
       case 'registration':
       case 'customer_registration':
         return <ProfileSetupScreen />;
+      case 'become_maid_info':
+      case 'become_maid':
+      case 'become-maid':
+        return <BecomeMaidInfoScreen />;
+      case 'maid_registration_form':
+      case 'become_maid_form':
+      case 'maid_register':
+        return <MaidRegistrationFormScreen />;
+      case 'maid_status':
+        return <BecomeMaidInfoScreen />;
+      case 'help':
+        return <HelpSupportScreen />;
+    }
+
+    // ── 2. Guard: If not logged in, return LoginScreen ──
+    if (!user) {
+      return <LoginScreen />;
+    }
+
+    // ── 3. Partner / Maid Dedicated Routing (Active ONLY for Partner Roles) ──
+    if (isPartnerUser) {
+      if (isPartnerApproved) {
+        switch (currentScreen) {
+          case 'maid_home':
+            return <MaidHomeScreen />;
+          case 'active_job':
+            return <ActiveJobScreen />;
+          case 'my_jobs':
+            return <MyJobsScreen />;
+          case 'earnings':
+            return <EarningsScreen />;
+          case 'maid_profile':
+            return <MaidProfileScreen />;
+          case 'notifications':
+            return <NotificationsScreen />;
+          default:
+            return <MaidHomeScreen />;
+        }
+      } else {
+        // Pending or under review partner
+        return <BecomeMaidInfoScreen />;
+      }
+    }
+
+    // ── 4. Customer Dedicated Routing (Default for all customers) ──
+    switch (currentScreen) {
       case 'home':
       case 'customer_home':
         return <CustomerHomeScreen />;

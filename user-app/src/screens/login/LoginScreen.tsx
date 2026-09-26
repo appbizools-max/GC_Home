@@ -18,6 +18,8 @@ import { useAuth } from '../../context/AuthContext';
 import { AppLogo } from '../../components/ui/AppLogo';
 import { NeedHelpModal } from '../../components/ui/NeedHelpModal';
 
+import { supabase } from '../../config/supabase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PhoneNumberInput } from './components/PhoneNumberInput';
 import { PrimaryButton } from './components/PrimaryButton';
 import { TermsText } from './components/TermsText';
@@ -57,7 +59,7 @@ export const LoginScreen: React.FC = () => {
     authError,
     clearAuthError,
     navigateTo,
-    setRegistrationDraft,
+    startCustomerRegistrationFlow,
   } = useAuth();
 
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -106,23 +108,47 @@ export const LoginScreen: React.FC = () => {
     setValidationError('');
     if (authError) clearAuthError();
 
-    // If user already typed valid or partial digits, pass it as initial draft for convenience
-    if (rawDigits.length > 0) {
-      setRegistrationDraft({
-        name: '',
-        phone: `+91 ${rawDigits}`,
-      });
-    }
-
-    // Navigate to Complete Your Profile screen WITHOUT sending OTP
-    navigateTo('complete_profile');
+    // Start Customer Registration with clean state (Complete Your Profile -> Mobile -> OTP -> Customer Home)
+    startCustomerRegistrationFlow(rawDigits.length > 0 ? rawDigits : undefined);
   };
 
-  const handleBecomePartnerPress = () => {
+  const handleBecomePartnerPress = async () => {
     setApiError('');
     setValidationError('');
     if (authError) clearAuthError();
-    navigateTo('become_maid_info');
+
+    // Check if entered phone or active user already has a submitted application in Supabase maid_profiles
+    const digits = rawDigits.slice(-10);
+    const phoneToCheck = digits ? `+91 ${digits}` : '';
+
+    if (phoneToCheck) {
+      try {
+        const phoneVariants = [phoneToCheck, `+91${digits}`, digits];
+        const orFilter = phoneVariants.map(v => `phone.eq.${v}`).join(',');
+        const { data } = await supabase
+          .from('maid_profiles')
+          .select('id, status')
+          .or(orFilter)
+          .limit(1);
+
+        if (data && data.length > 0) {
+          const pStatus = data[0].status;
+          if (pStatus === 'approved') {
+            navigateTo('maid_home');
+            return;
+          } else if (pStatus === 'pending' || pStatus === 'correction_requested' || pStatus === 'rejected') {
+            navigateTo('maid_status');
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Partner lookup error:', err);
+      }
+    }
+
+    // No existing application exists in database:
+    // ALWAYS start Partner Registration Step 1 for a new partner (Personal Details)
+    navigateTo('maid_registration_form');
   };
 
   const handleContinue = async () => {

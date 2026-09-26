@@ -1,7 +1,8 @@
-﻿import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import { exportBookingsToCSV as exportFilteredBookings } from '../../utils/exportUtils';
 import { Booking } from '../../types';
+import { formatDateDDMMYYYY } from '../../utils/bookingDisplayUtils';
 import {
   CheckCircle2,
   Calendar,
@@ -254,7 +255,7 @@ export const CompletedBookingsPage: React.FC = () => {
       }
       return booking.completedAt;
     }
-    return `${booking.date}${booking.timeSlot ? `, ${booking.timeSlot}` : ''}`;
+    return `${formatDateDDMMYYYY(booking.date)}${booking.timeSlot ? `, ${booking.timeSlot}` : ''}`;
   };
 
   // Helper: Mask phone number for authorized privacy
@@ -535,23 +536,20 @@ export const CompletedBookingsPage: React.FC = () => {
                         {job.bookingId}
                       </td>
 
-                      {/* Customer (Name & Compact Avatar only, no full address/phone) */}
+                      {/* Customer */}
                       <td className="py-3.5 px-4">
-                        <div className="flex items-center gap-2.5">
-                          {job.customerAvatar ? (
-                            <img
-                              src={job.customerAvatar}
-                              alt={job.customerName}
-                              className="w-7 h-7 rounded-full object-cover border border-slate-200"
-                            />
-                          ) : (
-                            <div className="w-7 h-7 rounded-full bg-slate-100 text-slate-600 font-bold flex items-center justify-center text-[11px] border border-slate-200">
-                              {job.customerName.charAt(0).toUpperCase()}
-                            </div>
-                          )}
+                        <div>
                           <span className="font-bold text-slate-900 block truncate max-w-[140px]">
                             {job.customerName}
                           </span>
+                          <a
+                            href={`tel:${job.customerPhone}`}
+                            className="text-[10px] text-slate-500 hover:text-emerald-700 font-medium inline-flex items-center gap-1 mt-0.5"
+                            onClick={e => e.stopPropagation()}
+                          >
+                            <Phone className="w-2.5 h-2.5 text-slate-400" />
+                            {job.customerPhone}
+                          </a>
                         </div>
                       </td>
 
@@ -832,7 +830,7 @@ export const CompletedBookingsPage: React.FC = () => {
                   <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/80">
                     <span className="text-slate-400 font-semibold block text-[10px]">Service Date & Time</span>
                     <span className="font-bold text-slate-900 block mt-0.5">
-                      {selectedBooking.date} {selectedBooking.timeSlot ? `• ${selectedBooking.timeSlot}` : ''}
+                      {formatDateDDMMYYYY(selectedBooking.date)} {selectedBooking.timeSlot ? `• ${selectedBooking.timeSlot}` : ''}
                     </span>
                   </div>
                   <div className="bg-slate-50 p-3 rounded-xl border border-slate-200/80">

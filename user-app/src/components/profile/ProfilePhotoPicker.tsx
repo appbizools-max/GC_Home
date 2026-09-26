@@ -28,6 +28,7 @@ import { supabase } from '../../config/supabase';
 export interface ProfilePhotoPickerProps {
   value?: string;
   onChange: (photoUri: string) => void;
+  onDelete?: () => void;
   label?: string;
   subLabel?: string;
   userType?: 'customer' | 'partner';
@@ -40,6 +41,7 @@ export interface ProfilePhotoPickerProps {
 export const ProfilePhotoPicker: React.FC<ProfilePhotoPickerProps> = ({
   value,
   onChange,
+  onDelete,
   label = 'Profile Photo',
   subLabel = 'Clear portrait with front camera',
   userType = 'customer',
@@ -74,12 +76,10 @@ export const ProfilePhotoPicker: React.FC<ProfilePhotoPickerProps> = ({
       const response = await fetch(uri);
       body = await response.blob();
     } else if (base64) {
-      const byteCharacters = atob(base64);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      body = new Uint8Array(byteNumbers);
+      // React Native (Hermes/JSC) does not have atob — use fetch with data URI instead
+      const dataUri = `data:image/jpeg;base64,${base64}`;
+      const response = await fetch(dataUri);
+      body = await response.blob();
     } else {
       const response = await fetch(uri);
       body = await response.blob();
@@ -311,8 +311,23 @@ export const ProfilePhotoPicker: React.FC<ProfilePhotoPickerProps> = ({
     reader.readAsDataURL(file);
   };
 
-  const handleRemovePhoto = () => {
+  const handleRemovePhoto = async () => {
+    try {
+      if (value && value.includes('supabase.co/storage/v1/object/public/')) {
+        const parts = value.split('/public/');
+        if (parts.length > 1) {
+          const [bucket, ...rest] = parts[1].split('/');
+          const path = rest.join('/');
+          if (bucket && path) {
+            await supabase.storage.from(bucket).remove([decodeURIComponent(path)]);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Storage photo deletion notice:', e);
+    }
     onChange('');
+    if (onDelete) onDelete();
     setUploadStatus('idle');
     setLastSelectedUri(null);
     setLastBase64(undefined);

@@ -78,8 +78,9 @@ export interface MaidProfile {
   aadhaarBackUrl?: string;
   panDocUrl?: string;
   addressProofUrl?: string;
-  policeClearanceUrl?: string;
   otherDocsUrls?: string[];
+  documents?: any[];
+  kycDocuments?: any;
   servicesProvided?: PartnerProvidedService[];
   languagesSpoken?: string[];
   termsAccepted?: boolean;
@@ -201,6 +202,7 @@ export interface Booking {
   partnerLocationLat?: number;
   partnerLocationLng?: number;
   partnerAcceptedAt?: string;
+  partnerEta?: string;
   partnerArrivedAt?: string;
   estimatedArrivalTime?: string;
   partnerEtaMinutes?: number;
@@ -228,7 +230,7 @@ export interface Booking {
   adminFinalizedAt?: string;
   adminResolvedAt?: string;
   // Assignment tracking (from bookings.assignment_status)
-  assignmentStatus?: 'unassigned' | 'partner_offered' | 'assigned';
+  assignmentStatus?: 'unassigned' | 'partner_offered' | 'assigned' | 'pending_acceptance';
 }
 
 export interface JobAssignment {
@@ -432,5 +434,5 @@ export interface CustomerBooking {
   adminFinalizedAt?: string;
   adminResolvedAt?: string;
   // Assignment tracking (from bookings.assignment_status)
-  assignmentStatus?: 'unassigned' | 'partner_offered' | 'assigned';
+  assignmentStatus?: 'unassigned' | 'partner_offered' | 'assigned' | 'pending_acceptance';
 }

@@ -1,6 +1,8 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Service, MaidProfile, Booking, DashboardMetrics, BookingStatus } from '../types';
 import { supabase, supabaseAdmin } from '../config/supabase';
+import { formatDateDDMMYYYY } from '../utils/bookingDisplayUtils';
 
 interface AdminContextType {
   isAdminLoggedIn: boolean;
@@ -12,7 +14,12 @@ interface AdminContextType {
   serviceCategories: any[];
   serviceAddons: any[];
   maids: MaidProfile[];
+  maidsLoading: boolean;
+  maidsError: string | null;
+  refreshMaids: () => Promise<void>;
   bookings: Booking[];
+  bookingsLoading: boolean;
+  bookingsError: string | null;
   customers: any[];
   coupons: any[];
   homepageBanners: any[];
@@ -65,6 +72,7 @@ interface AdminContextType {
   rejectMaid: (uid: string, reason: string) => Promise<void>;
   updateMaidKycDocStatus: (uid: string, docId: string, status: any) => Promise<void>;
   requestMaidCorrection: (uid: string, note: string) => Promise<void>;
+  updateItemVerification: (uid: string, itemPath: string, status: 'verified' | 'rejected' | 'reupload_required', reason?: string) => Promise<void>;
   toggleMaidOnlineStatus: (uid: string, isOnline: boolean) => Promise<void>;
   toggleMaidActiveStatus: (uid: string, status: any) => Promise<void>;
   exportMaidsToCSV: () => void;
@@ -151,6 +159,84 @@ export const LOCATION_TIMEZONE_MAP: Record<string, { timezone: string; label: st
   'Warangal': { timezone: 'Asia/Kolkata', label: 'Warangal (IST)', region: 'Telangana' },
 };
 
+// ==================== LOCATION HELPER FUNCTIONS (NO HUB FILTERING) ====================
+export const isLocationMatchingHub = (_locationText: string | undefined | null, _hub?: string): boolean => {
+  return true;
+};
+
+export const isBookingInHub = (_row: any, _hub?: string): boolean => {
+  return true;
+};
+
+export const isMaidInHub = (_row: any, _hub?: string): boolean => {
+  return true;
+};
+
+export const isFakeLocation = (loc?: string | null): boolean => {
+  if (!loc) return true;
+  const cleaned = loc.trim().toLowerCase();
+  if (!cleaned) return true;
+  return (
+    cleaned === 'hyderabad, telangana' ||
+    cleaned === 'hyderabad' ||
+    cleaned === 'telangana' ||
+    cleaned === 'not specified' ||
+    cleaned === 'address not added' ||
+    cleaned === 'unknown' ||
+    cleaned === 'undefined' ||
+    cleaned === 'null'
+  );
+};
+
+export const TAB_ROUTE_MAP: Record<string, string> = {
+  'dashboard': '/admin/dashboard',
+  'dispatch': '/admin/dispatch',
+  'live-jobs': '/admin/live-jobs',
+  'operations': '/admin/live-jobs',
+  'all-bookings': '/admin/bookings',
+  'bookings': '/admin/bookings',
+  'pending-bookings': '/admin/bookings/pending',
+  'ongoing-bookings': '/admin/bookings/ongoing',
+  'completed-bookings': '/admin/bookings/completed',
+  'cancelled-bookings': '/admin/bookings/cancelled',
+  'rescheduled-bookings': '/admin/bookings/rescheduled',
+  'assign-maid': '/admin/bookings/assign',
+  'booking-details': '/admin/bookings',
+  'maids': '/admin/partners',
+  'all-maids': '/admin/partners',
+  'pending-approvals': '/admin/partners/pending',
+  'pending-maid-details': '/admin/partners/pending',
+  'pending-kyc': '/admin/partners/pending-kyc',
+  'approved-maids': '/admin/partners/approved',
+  'active-maids': '/admin/partners/approved',
+  'inactive-maids': '/admin/partners/inactive',
+  'customers': '/admin/customers',
+  'services': '/admin/services',
+  'services-catalog': '/admin/services',
+  'categories': '/admin/categories',
+  'service-categories': '/admin/categories',
+  'addons': '/admin/addons',
+  'service-addons': '/admin/addons',
+  'offers': '/admin/offers',
+  'banners': '/admin/banners',
+  'service-areas': '/admin/service-areas',
+  'service_areas': '/admin/service-areas',
+  'chat': '/admin/chat',
+  'chat-management': '/admin/chat',
+  'communications': '/admin/chat',
+  'payments': '/admin/payments',
+  'payment-reports': '/admin/payments',
+  'cash-reports': '/admin/payments',
+  'partner-payouts': '/admin/payouts',
+  'payouts': '/admin/payouts',
+  'transactions': '/admin/payouts',
+  'revenue': '/admin/financials',
+  'financials': '/admin/financials',
+  'notifications': '/admin/notifications',
+  'reports': '/admin/reports',
+  'settings': '/admin/settings',
+};
+
 const AdminContext = createContext<AdminContextType | undefined>(undefined);
 
 export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -167,14 +253,60 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return localStorage.getItem('admin_sidebar_collapsed') === 'true';
   });
 
-  const [selectedLocation, setSelectedLocationState] = useState<string>(() => {
-    const saved = localStorage.getItem('admin_selected_location');
-    return (saved && LOCATION_TIMEZONE_MAP[saved]) ? saved : 'Karimnagar';
-  });
+  const [selectedLocation, setSelectedLocationState] = useState<string>('All');
+  const selectedTimezone = 'Asia/Kolkata';
 
-  const selectedTimezone = LOCATION_TIMEZONE_MAP[selectedLocation]?.timezone || 'Asia/Kolkata';
+  const setSelectedLocation = (_location: string) => {
+    setSelectedLocationState('All');
+  };
 
-  const [currentTab, setCurrentTab] = useState<string>('dashboard');
+  const selectedLocationRef = useRef<string>('All');
+
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Compute currentTab from current URL pathname so it stays reactive on back/forward/refresh
+  const currentTab = useMemo(() => {
+    const path = location.pathname.toLowerCase();
+    if (path.includes('/admin/bookings/pending')) return 'pending-bookings';
+    if (path.includes('/admin/bookings/ongoing')) return 'ongoing-bookings';
+    if (path.includes('/admin/bookings/completed')) return 'completed-bookings';
+    if (path.includes('/admin/bookings/cancelled')) return 'cancelled-bookings';
+    if (path.includes('/admin/bookings/rescheduled')) return 'rescheduled-bookings';
+    if (path.includes('/admin/bookings/assign')) return 'assign-maid';
+    if (path.match(/\/admin\/bookings\/[^/]+/)) return 'booking-details';
+    if (path.includes('/admin/bookings')) return 'all-bookings';
+    if (path.includes('/admin/partners/pending-kyc') || path.includes('/admin/partners/kyc')) return 'pending-kyc';
+    if (path.includes('/admin/partners/pending')) return 'pending-approvals';
+    if (path.includes('/admin/partners/approved') || path.includes('/admin/partners/active')) return 'approved-maids';
+    if (path.includes('/admin/partners/inactive')) return 'inactive-maids';
+    if (path.includes('/admin/partners')) return 'maids';
+    if (path.includes('/admin/categories')) return 'categories';
+    if (path.includes('/admin/addons')) return 'addons';
+    if (path.includes('/admin/offers')) return 'offers';
+    if (path.includes('/admin/banners')) return 'banners';
+    if (path.includes('/admin/services')) return 'services';
+    if (path.includes('/admin/customers')) return 'customers';
+    if (path.includes('/admin/service-areas')) return 'service-areas';
+    if (path.includes('/admin/chat')) return 'chat';
+    if (path.includes('/admin/payments')) return 'payments';
+    if (path.includes('/admin/payouts')) return 'payouts';
+    if (path.includes('/admin/financials') || path.includes('/admin/revenue')) return 'revenue';
+    if (path.includes('/admin/notifications')) return 'notifications';
+    if (path.includes('/admin/reports')) return 'reports';
+    if (path.includes('/admin/settings')) return 'settings';
+    if (path.includes('/admin/dispatch')) return 'dispatch';
+    if (path.includes('/admin/live-jobs') || path.includes('/admin/operations')) return 'live-jobs';
+    return 'dashboard';
+  }, [location.pathname]);
+
+  const setCurrentTab = useCallback((tab: string) => {
+    const targetRoute = TAB_ROUTE_MAP[tab] || `/admin/${tab}`;
+    if (location.pathname !== targetRoute) {
+      navigate(targetRoute);
+    }
+  }, [navigate, location.pathname]);
+
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
   const [selectedMaidForReview, setSelectedMaidForReview] = useState<MaidProfile | null>(null);
   const [selectedBookingForAssignment, setSelectedBookingForAssignment] = useState<Booking | null>(null);
@@ -189,7 +321,11 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [serviceCategories, setServiceCategories] = useState<any[]>([]);
   const [serviceAddons, setServiceAddons] = useState<any[]>([]);
   const [maids, setMaids] = useState<MaidProfile[]>([]);
+  const [maidsLoading, setMaidsLoading] = useState<boolean>(true);
+  const [maidsError, setMaidsError] = useState<string | null>(null);
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [bookingsLoading, setBookingsLoading] = useState<boolean>(true);
+  const [bookingsError, setBookingsError] = useState<string | null>(null);
   const [customers, setCustomers] = useState<any[]>([]);
   const [coupons, setCoupons] = useState<any[]>([]);
   const [offers, setOffers] = useState<any[]>([]);
@@ -210,16 +346,6 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       localStorage.setItem('admin_sidebar_collapsed', String(next));
       return next;
     });
-  };
-
-  const setSelectedLocation = (location: string) => {
-    setSelectedLocationState(location);
-    localStorage.setItem('admin_selected_location', location);
-    if (adminUser) {
-      supabase.auth.updateUser({
-        data: { selected_location: location, selected_timezone: LOCATION_TIMEZONE_MAP[location]?.timezone || 'Asia/Kolkata' }
-      }).catch(() => {});
-    }
   };
 
   // Initialize Auth Session
@@ -430,6 +556,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     } catch (err) {
       console.error('Error signing out:', err);
     }
+    navigate('/login');
   };
 
   // ==================== DATA FETCHING FUNCTIONS ====================
@@ -497,16 +624,27 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, []);
 
-  const fetchMaids = useCallback(async () => {
+  const fetchMaids = useCallback(async (_hubToUse?: string, isSilent = false) => {
+    if (!isSilent) {
+      setMaidsLoading(true);
+      setMaidsError(null);
+    }
     try {
+      // Query all maid profiles without brittle SQL string filters so newly registered partners are always included
       const { data, error } = await supabase
         .from('maid_profiles')
-        .select('*')
-        .order('applied_at', { ascending: false });
+        .select('*');
 
       if (error) throw error;
 
       if (data) {
+        // Sort newest first by latest available timestamp
+        data.sort((a: any, b: any) => {
+          const timeA = new Date(a.latest_applied_at || a.applied_at || a.created_at || a.updated_at || 0).getTime();
+          const timeB = new Date(b.latest_applied_at || b.applied_at || b.created_at || b.updated_at || 0).getTime();
+          return timeB - timeA;
+        });
+
         const fetchedProfiles: MaidProfile[] = data.map((row: any) => {
           let rawSkills: any[] = [];
           if (Array.isArray(row.services_provided) && row.services_provided.length > 0) {
@@ -566,7 +704,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             fullAddress: row.full_address || row.address,
             locality: row.locality,
             pincode: row.pincode,
-            city: row.city || 'Bengaluru',
+            city: row.city || 'Telangana',
             bankDetails: {
               accountName: row.bank_account_name || row.full_name || '',
               accountNumber: row.bank_account_number || '',
@@ -574,7 +712,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               bankName: row.bank_name || '',
               upiId: row.upi_id || parsedKycDocs?.upiId,
             },
-            serviceArea: row.service_area || row.preferred_service_area || row.city || 'Bengaluru',
+            serviceArea: row.service_area || row.preferred_service_area || row.city || 'Telangana',
             preferredServiceArea: row.preferred_service_area || row.service_area,
             preferredCities: Array.isArray(row.preferred_cities) ? row.preferred_cities : (row.service_area ? row.service_area.split(',').map((s: string) => s.trim()) : []),
             serviceRadiusKm: row.service_radius_km || 5,
@@ -622,17 +760,33 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               : (typeof row.application_history === 'string'
                   ? (() => { try { return JSON.parse(row.application_history); } catch { return []; } })()
                   : []),
+            submittedAt: row.submitted_at || null,
+            verificationStatus: typeof row.verification_status === 'object' && row.verification_status !== null ? row.verification_status : undefined,
           };
         });
         setMaids(fetchedProfiles);
+      } else {
+        setMaids([]);
       }
     } catch (err: any) {
       console.error('Error fetching maids:', err);
+      if (!isSilent) {
+        setMaidsError(err.message || 'Failed to load partners from database');
+      }
+    } finally {
+      if (!isSilent) {
+        setMaidsLoading(false);
+      }
     }
   }, []);
 
-  const fetchBookings = useCallback(async () => {
+  const fetchBookings = useCallback(async (_hubToUse?: string, isSilent = false) => {
     try {
+      if (!isSilent) {
+        setBookingsLoading(true);
+        setBookingsError(null);
+      }
+
       const { data, error } = await supabase
         .from('bookings')
         .select('*')
@@ -646,12 +800,12 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           bookingId: row.booking_code || row.id || `GC-${Date.now()}`,
           customerId: row.customer_id || 'cust_01',
           customerName: row.customer_name || 'Customer',
-          customerPhone: row.customer_phone || '+91 98765 43210',
-          customerEmail: row.customer_email,
-          serviceId: row.service_id || 'srv_1',
-          serviceName: row.service_name || 'Home Cleaning',
-          servicePrice: Number(row.service_price || row.total_amount || 799),
-          totalAmount: Number(row.total_amount || 799),
+          customerPhone: row.customer_phone || '',
+          customerEmail: row.customer_email || '',
+          serviceId: row.service_id || '',
+          serviceName: row.service_name || 'Service',
+          servicePrice: Number(row.service_price || row.total_amount || 0),
+          totalAmount: Number(row.total_amount || 0),
           couponCode: row.coupon_code || undefined,
           discountAmount: row.discount_amount !== undefined && row.discount_amount !== null ? Number(row.discount_amount) : undefined,
           platformFee: row.platform_fee !== undefined && row.platform_fee !== null ? Number(row.platform_fee) : undefined,
@@ -662,7 +816,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             label: row.address_label || 'Home',
             street: row.address_street || '',
             locality: row.address_locality || '',
-            city: row.address_city || 'Hyderabad',
+            city: row.address_city || 'Telangana',
             pincode: row.address_pincode || '',
           },
           date: row.scheduled_date || 'Today',
@@ -698,24 +852,35 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           adminResolvedAt: row.admin_resolved_at,
         }));
         setBookings(fetchedBookings);
+      } else {
+        setBookings([]);
       }
     } catch (err: any) {
       console.error('Error fetching bookings:', err);
+      if (!isSilent) {
+        setBookingsError(err?.message || 'Failed to fetch bookings from Supabase');
+      }
+    } finally {
+      if (!isSilent) {
+        setBookingsLoading(false);
+      }
     }
   }, []);
 
-  const fetchCustomers = useCallback(async () => {
+  const fetchCustomers = useCallback(async (_hubToUse?: string) => {
     try {
-      // 1. Concurrently fetch user_profiles, maid_profiles, and bookings from Supabase
-      const [profilesRes, maidsRes, bookingsRes] = await Promise.all([
+      // 1. Concurrently fetch user_profiles, maid_profiles, bookings, and saved_addresses from Supabase
+      const [profilesRes, maidsRes, bookingsRes, savedAddressesRes] = await Promise.all([
         supabase.from('user_profiles').select('*').order('created_at', { ascending: false }),
         supabase.from('maid_profiles').select('*'),
         supabase.from('bookings').select('*').order('created_at', { ascending: false }),
+        supabase.from('saved_addresses').select('*').order('is_default', { ascending: false }),
       ]);
 
       const profilesData = profilesRes.data || [];
       const maidsData = maidsRes.data || [];
       const dbBookings = bookingsRes.data || [];
+      const savedAddressesData = savedAddressesRes.data || [];
 
       // 2. Build quick lookup maps for maid profiles by ID and clean phone
       const maidByPhone = new Map<string, any>();
@@ -726,9 +891,19 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (cleanP) maidByPhone.set(cleanP, m);
       });
 
+      // Build saved addresses lookup map by user_id
+      const addressesByUser = new Map<string, any[]>();
+      savedAddressesData.forEach((addr: any) => {
+        if (!addr.user_id) return;
+        if (!addressesByUser.has(addr.user_id)) {
+          addressesByUser.set(addr.user_id, []);
+        }
+        addressesByUser.get(addr.user_id)!.push(addr);
+      });
+
       const customerMap = new Map<string, any>();
 
-      // 3. Populate from user_profiles table (Every registered user is a Customer)
+      // 3. Populate from user_profiles table
       profilesData.forEach((p: any) => {
         if (p.role === 'admin') return; // Skip internal admin accounts
 
@@ -744,8 +919,12 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const userBookings = dbBookings.filter(b => 
           b.customer_id === p.id || (cleanPhone && (b.customer_phone || '').replace(/\D/g, '').slice(-10) === cleanPhone)
         );
-        const completedBookings = userBookings.filter(b => b.status === 'completed');
-        const totalSpent = completedBookings.reduce((sum, b) => sum + (Number(b.total_amount || b.service_price) || 0), 0);
+
+        // Only sum paid bookings for lifetime spend (excluding unpaid Pay After Service & cancelled)
+        const paidBookings = userBookings.filter(b => 
+          (b.payment_status === 'paid' || b.paymentStatus === 'paid') && b.status !== 'cancelled'
+        );
+        const totalSpent = paidBookings.reduce((sum, b) => sum + (Number(b.total_amount || b.service_price) || 0), 0);
 
         // Separate Partner Jobs (services performed as maid)
         const partnerJobs = dbBookings.filter(b => 
@@ -759,26 +938,74 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           custType = 'Regular Customer';
         }
 
+        const rawEmail = p.email || (maidMatch ? maidMatch.email : '');
+        const cleanEmail = rawEmail && !rawEmail.includes('customer@gchome.com') && !rawEmail.includes('example.com') ? rawEmail : '';
+
+        const latestBooking = userBookings[0];
+        const lastBookingDateFormatted = latestBooking?.scheduled_date || latestBooking?.created_at
+          ? formatDateDDMMYYYY(latestBooking.scheduled_date || latestBooking.created_at)
+          : 'No bookings';
+
+        // Retrieve actual address entered/saved by customer
+        const userSavedAddrs = addressesByUser.get(p.id) || [];
+        const primarySavedAddr = userSavedAddrs.find((a: any) => a.is_default) || userSavedAddrs[0];
+
+        let actualLocality = '';
+        if (primarySavedAddr) {
+          const loc = (primarySavedAddr.locality || primarySavedAddr.street_address || primarySavedAddr.street || primarySavedAddr.city || '').trim();
+          if (loc && !isFakeLocation(loc)) {
+            actualLocality = loc;
+          }
+        }
+        if (!actualLocality) {
+          const pLoc = (p.locality || p.address || p.city || '').trim();
+          if (pLoc && !isFakeLocation(pLoc)) {
+            actualLocality = pLoc;
+          }
+        }
+        if (!actualLocality) {
+          const bkWithLoc = userBookings.find(b => 
+            (b.address_locality && !isFakeLocation(b.address_locality)) ||
+            (b.address_street && !isFakeLocation(b.address_street)) ||
+            (b.address_city && !isFakeLocation(b.address_city))
+          );
+          if (bkWithLoc) {
+            actualLocality = (bkWithLoc.address_locality || bkWithLoc.address_street || bkWithLoc.address_city || '').trim();
+          }
+        }
+
+        const displayLocality = actualLocality || 'Address not added';
+
+        const customerAddressObj = primarySavedAddr ? {
+          id: primarySavedAddr.id,
+          label: primarySavedAddr.label || 'Home',
+          street: (primarySavedAddr.street_address || primarySavedAddr.street || '').trim(),
+          locality: (primarySavedAddr.locality || '').trim(),
+          city: (primarySavedAddr.city && !isFakeLocation(primarySavedAddr.city) ? primarySavedAddr.city : '').trim(),
+          pincode: (primarySavedAddr.pincode || '').trim(),
+        } : {
+          id: 'addr_' + (p.id || '1'),
+          label: 'Home',
+          street: (p.address && !isFakeLocation(p.address) ? p.address : '').trim(),
+          locality: actualLocality && actualLocality !== 'Address not added' ? actualLocality : '',
+          city: (p.city && !isFakeLocation(p.city) ? p.city : '').trim(),
+          pincode: (p.pincode || '').trim(),
+        };
+
+        // Important: Customer's underlying address remains authentic, Hub is an operational scope
         customerMap.set(custKey, {
           id: p.id || p.phone,
           name: p.name || p.full_name || (maidMatch ? maidMatch.full_name : 'Registered Customer'),
           phone: p.phone || (maidMatch ? maidMatch.phone : ''),
-          email: p.email || (maidMatch ? maidMatch.email : ''),
+          email: cleanEmail,
           avatarUrl: p.profile_photo_url || (maidMatch ? maidMatch.photo_url : '') || '',
           customerType: p.customer_type || custType,
-          locality: p.city || (maidMatch ? maidMatch.service_area : 'Karimnagar'),
-          address: {
-            id: 'addr_' + (p.id || '1'),
-            label: 'Home',
-            street: p.address || (maidMatch ? maidMatch.address : 'Karimnagar'),
-            locality: p.city || 'Karimnagar',
-            city: p.city || 'Karimnagar',
-            pincode: '500081',
-          },
+          locality: displayLocality,
+          address: customerAddressObj,
           totalBookings: userBookings.length,
           totalSpent: totalSpent,
           joinedDate: p.created_at ? new Date(p.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-          lastBookingDate: userBookings[0]?.scheduled_date || userBookings[0]?.created_at || 'No bookings yet',
+          lastBookingDate: lastBookingDateFormatted,
           status: p.is_active === false ? 'blocked' : 'active',
           ratingGiven: 5.0,
           notes: p.notes || '',
@@ -791,7 +1018,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         });
       });
 
-      // 4. Derive and merge any unprofiled bookings
+      // 4. Derive and merge any unprofiled bookings in this Hub
       dbBookings.forEach(b => {
         const custId = b.customer_id || b.customer_phone || b.id;
         if (!custId) return;
@@ -801,8 +1028,10 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const userBookings = dbBookings.filter(bk => 
           bk.customer_id === b.customer_id || (b.customer_phone && bk.customer_phone === b.customer_phone)
         );
-        const completedBookings = userBookings.filter(bk => bk.status === 'completed');
-        const totalSpent = completedBookings.reduce((sum, bk) => sum + (Number(bk.total_amount || bk.service_price) || 0), 0);
+        const paidBookings = userBookings.filter(bk => 
+          (bk.payment_status === 'paid' || bk.paymentStatus === 'paid') && bk.status !== 'cancelled'
+        );
+        const totalSpent = paidBookings.reduce((sum, bk) => sum + (Number(bk.total_amount || bk.service_price) || 0), 0);
 
         let custType: 'VIP Member' | 'Regular Customer' | 'First-time Customer' = 'First-time Customer';
         if (totalSpent > 5000 || userBookings.length >= 5) {
@@ -811,19 +1040,57 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           custType = 'Regular Customer';
         }
 
-        const joinedDate = b.created_at ? new Date(b.created_at).toISOString().split('T')[0] : (existing?.joinedDate || new Date().toISOString().split('T')[0]);
+        const rawBookingEmail = b.customer_email || '';
+        const cleanBookingEmail = rawBookingEmail && !rawBookingEmail.includes('customer@gchome.com') && !rawBookingEmail.includes('example.com') ? rawBookingEmail : '';
+
+        const bookingDateFormatted = b.scheduled_date || b.created_at
+          ? formatDateDDMMYYYY(b.scheduled_date || b.created_at)
+          : (existing?.lastBookingDate || 'No bookings in hub');
 
         if (existing) {
           customerMap.set(existing.id, {
             ...existing,
             name: existing.name && existing.name !== 'Registered Customer' ? existing.name : (b.customer_name || existing.name),
             phone: existing.phone || b.customer_phone || '',
-            email: existing.email || b.customer_email || '',
+            email: existing.email || cleanBookingEmail || '',
             totalBookings: userBookings.length,
             totalSpent: totalSpent,
             customerType: custType,
-            lastBookingDate: b.scheduled_date || b.created_at || existing.lastBookingDate,
+            lastBookingDate: bookingDateFormatted,
             address: existing.address,
+            customerBookingsCount: userBookings.length,
+          });
+        } else {
+          const bLoc = (b.address_locality || b.address_city || b.address_street || '').trim();
+          const unprofiledLocality = (bLoc && !isFakeLocation(bLoc)) ? bLoc : 'Address not added';
+
+          customerMap.set(custId, {
+            id: custId,
+            name: b.customer_name || 'Customer',
+            phone: b.customer_phone || '',
+            email: cleanBookingEmail,
+            avatarUrl: '',
+            customerType: custType,
+            locality: unprofiledLocality,
+            address: {
+              id: 'addr_' + custId,
+              label: b.address_label || 'Home',
+              street: (b.address_street && !isFakeLocation(b.address_street) ? b.address_street : '').trim(),
+              locality: (b.address_locality && !isFakeLocation(b.address_locality) ? b.address_locality : '').trim(),
+              city: (b.address_city && !isFakeLocation(b.address_city) ? b.address_city : '').trim(),
+              pincode: (b.address_pincode || '').trim(),
+            },
+            totalBookings: userBookings.length,
+            totalSpent: totalSpent,
+            joinedDate: b.created_at ? new Date(b.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+            lastBookingDate: bookingDateFormatted,
+            status: 'active',
+            ratingGiven: 5.0,
+            notes: '',
+            isPartner: false,
+            partnerStatus: 'none',
+            partnerProfile: null,
+            partnerJobsCount: 0,
             customerBookingsCount: userBookings.length,
           });
         }
@@ -891,11 +1158,11 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, []);
 
-  const fetchPayouts = useCallback(async () => {
+  const fetchPayouts = useCallback(async (_hubToUse?: string) => {
     try {
       const { data, error } = await supabase
         .from('payouts')
-        .select('*, maid:maid_profiles(full_name, maid_code), booking:bookings(booking_code)')
+        .select('*, maid:maid_profiles(full_name, maid_code, city, locality, service_area, preferred_cities), booking:bookings(booking_code, address_city, address_locality, address_street)')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -905,17 +1172,20 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, []);
 
-  const fetchRatings = useCallback(async () => {
+  const fetchRatings = useCallback(async (_hubToUse?: string) => {
     try {
       const { data, error } = await supabase
         .from('ratings')
-        .select('*, booking:bookings(booking_code, customer_name), maid:maid_profiles(full_name), service:services(name)')
+        .select('*, maid:maid_profiles(full_name, city, locality, service_area), booking:bookings(booking_code, address_city, address_locality, address_street)')
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.warn('Notice fetching ratings:', error.message);
+        return;
+      }
       setRatings(data || []);
     } catch (err: any) {
-      console.error('Error fetching ratings:', err);
+      console.warn('Error fetching ratings:', err);
     }
   }, []);
 
@@ -968,66 +1238,86 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   }, []);
 
+
+
   // ==================== REALTIME SUBSCRIPTIONS ====================
   useEffect(() => {
-    // Initial fetch
+    // Initial fetch using active Hub
     fetchServices();
     fetchServiceCategories();
     fetchServiceAddons();
-    fetchMaids();
-    fetchBookings();
-    fetchCustomers();
+    fetchMaids(selectedLocation);
+    fetchBookings(selectedLocation);
+    fetchCustomers(selectedLocation);
     fetchCoupons();
     fetchHomepageBanners();
     fetchServiceAreas();
-    fetchPayouts();
-    fetchRatings();
+    fetchPayouts(selectedLocation);
+    fetchRatings(selectedLocation);
     fetchPlatformSettings();
     fetchNotifications();
 
-    // Setup realtime subscriptions
+    // Fast heartbeat poll to guarantee instant reflection of newly registered partners and bookings without triggering loading state flicker
+    const pollInterval = setInterval(() => {
+      fetchMaids(selectedLocationRef.current, true);
+      fetchBookings(selectedLocationRef.current, true);
+      fetchNotifications();
+    }, 5000);
+
+    // Setup realtime subscriptions - Always use selectedLocationRef.current with silent updates
     const channel = supabase
       .channel('admin_realtime_channel')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'services' }, fetchServices)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'service_categories' }, fetchServiceCategories)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'service_addons' }, fetchServiceAddons)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'maid_profiles' }, () => {
-        fetchMaids();
-        fetchCustomers();
+        fetchMaids(selectedLocationRef.current, true);
+        fetchCustomers(selectedLocationRef.current);
+        fetchNotifications();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, () => {
-        fetchBookings();
-        fetchCustomers();
+        fetchBookings(selectedLocationRef.current, true);
+        fetchCustomers(selectedLocationRef.current);
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'partner_assignments' }, () => {
-        fetchBookings();
-        fetchCustomers();
+        fetchBookings(selectedLocationRef.current, true);
+        fetchCustomers(selectedLocationRef.current);
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_profiles' }, fetchCustomers)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'user_profiles' }, () => {
+        fetchCustomers(selectedLocationRef.current);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'saved_addresses' }, () => {
+        fetchCustomers(selectedLocationRef.current);
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'offers' }, fetchOffers)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'homepage_banners' }, fetchHomepageBanners)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'service_areas' }, fetchServiceAreas)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'payouts' }, fetchPayouts)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ratings' }, fetchRatings)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payouts' }, () => {
+        fetchPayouts(selectedLocationRef.current);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ratings' }, () => {
+        fetchRatings(selectedLocationRef.current);
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'platform_settings' }, fetchPlatformSettings)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, fetchNotifications)
       .subscribe();
 
     return () => {
+      clearInterval(pollInterval);
       supabase.removeChannel(channel);
     };
-  }, [fetchServices, fetchServiceCategories, fetchServiceAddons, fetchMaids, fetchBookings, fetchCustomers, fetchOffers, fetchCoupons, fetchHomepageBanners, fetchServiceAreas, fetchPayouts, fetchRatings, fetchPlatformSettings, fetchNotifications]);
+  }, [fetchServices, fetchServiceCategories, fetchServiceAddons, fetchMaids, fetchBookings, fetchCustomers, fetchOffers, fetchCoupons, fetchHomepageBanners, fetchServiceAreas, fetchPayouts, fetchRatings, fetchPlatformSettings, fetchNotifications, selectedLocation]);
 
   // ==================== NAVIGATION FUNCTIONS ====================
-  const openAssignMaid = (bookingId: string) => {
+  const openAssignMaid = useCallback((bookingId: string) => {
     setSelectedBookingId(bookingId);
-    setCurrentTab('assign-maid');
-  };
+    navigate(`/admin/bookings/assign/${bookingId}`);
+  }, [navigate]);
 
-  const openBookingDetails = (bookingId: string) => {
+  const openBookingDetails = useCallback((bookingId: string) => {
     setSelectedBookingId(bookingId);
-    setCurrentTab('booking-details');
-  };
+    navigate(`/admin/bookings/${bookingId}`);
+  }, [navigate]);
 
   // ==================== SERVICE OPERATIONS ====================
   const toggleServiceActive = async (serviceId: string) => {
@@ -1272,6 +1562,20 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       console.warn('Could not update user_profiles on maid approval:', uErr);
     }
 
+    try {
+      await supabase.from('notifications').insert({
+        recipient_id: uid,
+        recipient_role: 'maid',
+        title: 'Application Approved',
+        message: 'Your partner application has been approved.',
+        category: 'updates',
+        is_read: false,
+        created_at: approvedAtIso,
+      });
+    } catch (nErr) {
+      console.warn('Could not insert notification record:', nErr);
+    }
+
     await fetchMaids();
   };
 
@@ -1317,6 +1621,20 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       }
     } catch (uErr) {
       console.warn('Could not update user_profiles on maid rejection:', uErr);
+    }
+
+    try {
+      await supabase.from('notifications').insert({
+        recipient_id: uid,
+        recipient_role: 'maid',
+        title: 'Application Not Approved',
+        message: reason || 'Application revisions requested by Operations team.',
+        category: 'updates',
+        is_read: false,
+        created_at: rejectedAtIso,
+      });
+    } catch (nErr) {
+      console.warn('Could not insert rejection notification record:', nErr);
     }
 
     try {
@@ -1394,6 +1712,101 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     await fetchMaids();
     alert(`Correction request sent to Maid Partner. Admin notes updated.`);
+  };
+
+  const updateItemVerification = async (
+    uid: string,
+    itemPath: string,
+    status: 'verified' | 'rejected' | 'reupload_required',
+    reason?: string
+  ) => {
+    try {
+      const targetMaid = maids.find(m => m.uid === uid);
+      const currentVer: any = targetMaid?.verificationStatus || {
+        step1_personal: { status: 'pending' },
+        step2_address: { status: 'pending' },
+        step3_services: { status: 'pending' },
+        step4_documents: { status: 'pending' },
+        step5_bank: { status: 'pending' },
+        profile_photo: { status: 'pending' },
+        documents: {
+          aadhaar_front: { status: 'pending' },
+          aadhaar_back: { status: 'pending' },
+          pan_card: { status: 'pending' },
+        },
+      };
+
+      const newVer: any = JSON.parse(JSON.stringify(currentVer));
+      const now = new Date().toISOString();
+
+      if (itemPath.startsWith('documents.')) {
+        const docKey = itemPath.replace('documents.', '');
+        if (!newVer.documents) newVer.documents = {};
+        newVer.documents[docKey] = {
+          status,
+          rejectionReason: reason || null,
+          verifiedAt: status === 'verified' ? now : null,
+          verifiedBy: adminUser?.email || 'Admin',
+        };
+      } else {
+        newVer[itemPath] = {
+          status,
+          rejectionReason: reason || null,
+          verifiedAt: status === 'verified' ? now : null,
+          verifiedBy: adminUser?.email || 'Admin',
+        };
+      }
+
+      const docs = newVer.documents || {};
+      const allDocsVerified =
+        docs.aadhaar_front?.status === 'verified' &&
+        docs.aadhaar_back?.status === 'verified' &&
+        docs.pan_card?.status === 'verified';
+      if (allDocsVerified) {
+        newVer.step4_documents = { status: 'verified', verifiedAt: now };
+      } else if (
+        docs.aadhaar_front?.status === 'reupload_required' ||
+        docs.aadhaar_back?.status === 'reupload_required' ||
+        docs.pan_card?.status === 'reupload_required'
+      ) {
+        newVer.step4_documents = { status: 'reupload_required' };
+      }
+
+      const updatePayload: any = {
+        verification_status: newVer,
+        updated_at: now,
+      };
+
+      if (status === 'reupload_required' && reason) {
+        updatePayload.correction_requested = true;
+        updatePayload.admin_notes = `Re-upload required for ${itemPath.replace('documents.', '').replace('_', ' ')}: ${reason}`;
+      }
+
+      const { error } = await supabase
+        .from('maid_profiles')
+        .update(updatePayload)
+        .eq('id', uid);
+
+      if (error) {
+        setAdminError(error.message);
+        return;
+      }
+
+      setMaids(prev =>
+        prev.map(m =>
+          m.uid === uid
+            ? {
+                ...m,
+                verificationStatus: newVer,
+                adminNotes: updatePayload.admin_notes || m.adminNotes,
+                correctionRequested: updatePayload.correction_requested ?? m.correctionRequested,
+              }
+            : m
+        )
+      );
+    } catch (err: any) {
+      console.error('Error in updateItemVerification:', err);
+    }
   };
 
   const toggleMaidOnlineStatus = async (uid: string, isOnline: boolean) => {
@@ -1479,7 +1892,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const targetBooking = bookings.find(b => b.bookingId === bookingId);
     if (!targetBooking) return;
 
-    const { error } = await supabase
+    let { error } = await supabase
       .from('bookings')
       .update({
         status: 'maid_assigned',
@@ -1493,6 +1906,22 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         updated_at: new Date().toISOString(),
       })
       .or(`booking_code.eq.${bookingId},id.eq.${bookingId}`);
+
+    if (error && (error.code === '22P02' || error.message?.includes('booking_status'))) {
+      console.warn('[Approve Booking Notice] 22P02 enum error caught. Updating partner fields directly...');
+      const fallback = await supabase
+        .from('bookings')
+        .update({
+          assigned_maid_id: targetMaid.uid,
+          assigned_maid_name: targetMaid.fullName,
+          assigned_maid_phone: targetMaid.phone,
+          assigned_maid_photo_url: targetMaid.photoUrl,
+          assigned_maid_rating: targetMaid.rating,
+          updated_at: new Date().toISOString(),
+        })
+        .or(`booking_code.eq.${bookingId},id.eq.${bookingId}`);
+      error = fallback.error;
+    }
 
     if (error) {
       setAdminError(error.message);
@@ -1527,213 +1956,377 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     distanceKm?: number,
     etaMins?: number
   ): Promise<boolean> => {
-    const targetPartner = maids.find(m => m.uid === partnerId);
-    if (!targetPartner) return false;
+    setAdminError(null);
 
-    const targetBooking = bookings.find(b => b.bookingId === bookingId);
-    if (!targetBooking) return false;
-
-    // 1. Update booking assignment_status to 'partner_offered', keep status as 'pending_assignment'
-    const { error: bookingErr } = await supabase
-      .from('bookings')
-      .update({
-        assignment_status: 'partner_offered',
-        updated_at: new Date().toISOString(),
-      })
-      .or(`booking_code.eq.${bookingId},id.eq.${bookingId}`);
-
-    if (bookingErr) {
-      setAdminError(bookingErr.message);
+    // 1. Resolve and verify booking exists
+    const targetBooking = bookings.find(b => b.bookingId === bookingId || b.id === bookingId);
+    if (!targetBooking) {
+      const err = 'Booking not found.';
+      console.error('[Assign Partner Error] Booking verification failed:', { bookingId, error: err });
+      setAdminError(err);
       return false;
     }
 
-    // 2. Insert into partner_assignments table
-    try {
-      const bookingDbId = targetBooking.id;
-      if (bookingDbId) {
-        await supabase.from('partner_assignments').insert({
-          booking_id: bookingDbId,
-          partner_id: targetPartner.uid,
-          assignment_type: 'admin',
-          distance_km: distanceKm || 1.2,
-          estimated_earnings: targetBooking.totalAmount ? Math.round(targetBooking.totalAmount * 0.75) : 500,
-          response_status: 'pending',
-          offer_sent_at: new Date().toISOString(),
-        });
-      }
-    } catch (assignErr) {
-      console.warn('partner_assignments insert warning:', assignErr);
+    const bookingDbId = targetBooking.id;
+
+    // 2. Resolve and verify partner exists
+    const targetPartner = maids.find(m => m.uid === partnerId);
+    if (!targetPartner) {
+      const err = 'Partner not found.';
+      console.error('[Assign Partner Error] Partner verification failed:', { partnerId, error: err });
+      setAdminError(err);
+      return false;
     }
 
-    // 3. Send notification to partner
-    try {
-      const bookingDbId = targetBooking.id;
-      if (bookingDbId) {
-        await supabase.from('notifications').insert({
-          recipient_id: targetPartner.uid,
-          recipient_role: 'maid',
-          title: 'New Job Request',
-          message: `New assignment request for booking ${bookingId} (${targetBooking.serviceName}). Please accept or reject.`,
-          category: 'dispatch',
-          related_booking_id: bookingDbId,
-        });
-      }
-    } catch (notifErr) {
-      console.warn('Notification insert warning:', notifErr);
+    // 3. Verify partner status and eligibility
+    if (targetPartner.status !== 'approved') {
+      const err = `Partner is not eligible: Status is ${targetPartner.status || 'pending approval'}.`;
+      console.error('[Assign Partner Error] Partner approval status failed:', { partnerId, status: targetPartner.status });
+      setAdminError(err);
+      return false;
     }
 
-    await fetchBookings();
+    if (!targetPartner.isOnline || targetPartner.currentStatus === 'busy') {
+      const err = 'Partner is currently offline or busy. Please choose an online partner.';
+      console.error('[Assign Partner Error] Partner availability failed:', {
+        partnerId,
+        isOnline: targetPartner.isOnline,
+        currentStatus: targetPartner.currentStatus,
+      });
+      setAdminError(err);
+      return false;
+    }
+
+    // 4. Verify service matching between booking and partner skills/services
+    const bookingServiceName = (targetBooking.serviceName || '').toLowerCase().trim();
+    let isServiceMatched = true;
+    if (bookingServiceName) {
+      const skillsArr = Array.isArray(targetPartner.skills) ? targetPartner.skills : [];
+      const servicesArr = Array.isArray(targetPartner.servicesProvided) ? targetPartner.servicesProvided : [];
+      if (skillsArr.length > 0 || servicesArr.length > 0) {
+        const skillMatch = skillsArr.some((s: any) => {
+          const str = String(s).toLowerCase().trim();
+          return str.includes(bookingServiceName) || bookingServiceName.includes(str) || (bookingServiceName.includes('clean') && str.includes('clean'));
+        });
+        const serviceMatch = servicesArr.some((s: any) => {
+          const str = (s?.serviceName || s?.name || '').toLowerCase().trim();
+          return str.includes(bookingServiceName) || bookingServiceName.includes(str) || (bookingServiceName.includes('clean') && str.includes('clean'));
+        });
+        isServiceMatched = Boolean(skillMatch || serviceMatch);
+      }
+    }
+
+    if (!isServiceMatched) {
+      const err = `Partner does not provide the required service: ${targetBooking.serviceName}.`;
+      console.error('[Assign Partner Error] Service match failed:', {
+        bookingService: targetBooking.serviceName,
+        partnerId: targetPartner.uid,
+        partnerSkills: targetPartner.skills,
+      });
+      setAdminError(err);
+      return false;
+    }
+
+    // 5. Check for existing pending request (prevent duplicates)
+    try {
+      const { data: existing, error: checkErr } = await supabaseAdmin
+        .from('partner_assignments')
+        .select('id, response_status')
+        .eq('booking_id', bookingDbId)
+        .eq('partner_id', targetPartner.uid)
+        .eq('response_status', 'pending');
+
+      if (checkErr) {
+        console.warn('[Assign Partner Warning] Check assignment query notice:', checkErr);
+      } else if (existing && existing.length > 0) {
+        const err = 'Assignment request is already pending for this partner.';
+        console.warn('[Assign Partner Warning]', err);
+        setAdminError(err);
+        return false;
+      }
+    } catch (checkErr) {
+      console.warn('[Assign Partner Warning] Duplicate check catch:', checkErr);
+    }
+
+    const payload = {
+      booking_id: bookingDbId,
+      partner_id: targetPartner.uid,
+      assignment_type: 'admin',
+      response_status: 'pending',
+      offer_sent_at: new Date().toISOString(),
+      distance_km: distanceKm || null,
+    };
+
+    // 6. Create the real assignment request in partner_assignments using privileged client
+    const { data: assignData, error: assignErr } = await supabaseAdmin
+      .from('partner_assignments')
+      .insert(payload)
+      .select()
+      .single();
+
+    if (assignErr) {
+      console.error('[Assign Partner Error] partner_assignments INSERT failed:', {
+        bookingId: bookingDbId,
+        partnerId: targetPartner.uid,
+        authenticatedAdminId: adminUser?.id || 'admin',
+        requestPayload: payload,
+        supabaseErrorCode: assignErr.code,
+        supabaseErrorMessage: assignErr.message,
+        supabaseErrorDetails: assignErr.details,
+        supabaseErrorHint: assignErr.hint,
+      });
+      setAdminError(assignErr.message || 'Failed to create assignment request record.');
+      return false;
+    }
+
+    // 7. Update booking candidate maid details & assignment status
+    const bookingUpdatePayload: any = {
+      assignment_status: 'partner_offered',
+      assigned_maid_id: targetPartner.uid,
+      assigned_maid_name: targetPartner.fullName,
+      assigned_maid_phone: targetPartner.phone,
+      updated_at: new Date().toISOString(),
+    };
+
+    let { error: bookingErr } = await supabaseAdmin
+      .from('bookings')
+      .update(bookingUpdatePayload)
+      .eq('id', bookingDbId);
+
+    // If PostgreSQL throws 22P02 enum error due to legacy trigger on assignment_status,
+    // update candidate details without assignment_status so booking links to partner candidate cleanly
+    if (bookingErr && (bookingErr.code === '22P02' || bookingErr.message?.includes('booking_status'))) {
+      console.warn('[Assign Partner Warning] assignment_status update hit legacy trigger, applying candidate maid update:', bookingErr.message);
+      const fallbackPayload = {
+        assigned_maid_id: targetPartner.uid,
+        assigned_maid_name: targetPartner.fullName,
+        assigned_maid_phone: targetPartner.phone,
+        updated_at: new Date().toISOString(),
+      };
+      const { error: fallbackErr } = await supabaseAdmin
+        .from('bookings')
+        .update(fallbackPayload)
+        .eq('id', bookingDbId);
+
+      if (fallbackErr) {
+        console.error('[Assign Partner Error] Booking update fallback failed:', fallbackErr);
+      } else {
+        bookingErr = null;
+      }
+    }
+
+    if (bookingErr) {
+      console.error('[Assign Partner Error] bookings UPDATE failed:', {
+        bookingId: bookingDbId,
+        partnerId: targetPartner.uid,
+        authenticatedAdminId: adminUser?.id || 'admin',
+        supabaseErrorCode: bookingErr.code,
+        supabaseErrorMessage: bookingErr.message,
+        supabaseErrorDetails: bookingErr.details,
+        supabaseErrorHint: bookingErr.hint,
+      });
+      // Do not abort if partner_assignment was created, but log warning
+    }
+
+    // 8. Send notification to partner
+    try {
+      await supabaseAdmin.from('notifications').insert({
+        recipient_id: targetPartner.uid,
+        recipient_role: 'maid',
+        title: 'New Job Request',
+        body: `New assignment request for booking ${targetBooking.bookingId} (${targetBooking.serviceName}). Please accept or reject.`,
+        message: `New assignment request for booking ${targetBooking.bookingId} (${targetBooking.serviceName}). Please accept or reject.`,
+        category: 'dispatch',
+        related_booking_id: bookingDbId,
+      });
+    } catch (notifErr: any) {
+      console.warn('[Assign Partner Debug] Notification insert notice:', notifErr?.message);
+    }
+
+    console.log('[Assign Partner Success] Assignment request dispatched:', {
+      assignmentId: assignData?.id,
+      bookingId: bookingDbId,
+      partnerId: targetPartner.uid,
+      partnerName: targetPartner.fullName,
+    });
+
+    await fetchBookings(selectedLocationRef.current, true);
     return true;
   };
 
   const cancelPartnerAssignmentRequest = async (bookingId: string, partnerId: string): Promise<boolean> => {
-    const targetBooking = bookings.find(b => b.bookingId === bookingId);
+    setAdminError(null);
+    const targetBooking = bookings.find(b => b.bookingId === bookingId || b.id === bookingId);
     if (!targetBooking) return false;
 
-    const { error: bookingErr } = await supabase
+    const bookingDbId = targetBooking.id;
+
+    // 1. Update booking candidate maid fields
+    const { error: bookingErr } = await supabaseAdmin
       .from('bookings')
       .update({
-        assignment_status: 'unassigned',
+        assigned_maid_id: null,
+        assigned_maid_name: null,
+        assigned_maid_phone: null,
         updated_at: new Date().toISOString(),
       })
-      .or(`booking_code.eq.${bookingId},id.eq.${bookingId}`);
+      .eq('id', bookingDbId);
 
     if (bookingErr) {
-      setAdminError(bookingErr.message);
-      return false;
+      console.error('[Cancel Assignment Error] Booking reset failed:', bookingErr);
     }
 
+    // Attempt assignment_status reset safely
     try {
-      if (targetBooking.id) {
-        await supabase
-          .from('partner_assignments')
-          .update({
-            response_status: 'expired',
-            responded_at: new Date().toISOString(),
-          })
-          .eq('booking_id', targetBooking.id)
-          .eq('partner_id', partnerId)
-          .eq('response_status', 'pending');
-      }
+      await supabaseAdmin
+        .from('bookings')
+        .update({ assignment_status: 'unassigned' })
+        .eq('id', bookingDbId);
+    } catch {}
+
+    // 2. Expire partner_assignments
+    try {
+      await supabaseAdmin
+        .from('partner_assignments')
+        .update({
+          response_status: 'expired',
+          responded_at: new Date().toISOString(),
+        })
+        .eq('booking_id', bookingDbId)
+        .eq('partner_id', partnerId)
+        .eq('response_status', 'pending');
     } catch (err) {
-      console.warn('cancel partner_assignment warning:', err);
+      console.warn('[Cancel Assignment Warning] partner_assignments expire notice:', err);
     }
 
-    await fetchBookings();
+    await fetchBookings(selectedLocationRef.current, true);
     return true;
   };
 
-  const acceptPartnerAssignment = async (bookingId: string, partnerId: string): Promise<boolean> => {
+  const acceptPartnerAssignment = async (bookingId: string, partnerId: string, etaText?: string): Promise<boolean> => {
+    setAdminError(null);
     const targetPartner = maids.find(m => m.uid === partnerId);
     if (!targetPartner) return false;
 
-    const targetBooking = bookings.find(b => b.bookingId === bookingId);
+    const targetBooking = bookings.find(b => b.bookingId === bookingId || b.id === bookingId);
     if (!targetBooking) return false;
 
+    const bookingDbId = targetBooking.id;
     const acceptedAt = new Date().toISOString();
 
     // 1. Update booking to assigned
-    const { error: bookingErr } = await supabase
+    const updateData: any = {
+      status: 'maid_assigned',
+      assigned_maid_id: targetPartner.uid,
+      assigned_maid_name: targetPartner.fullName,
+      assigned_maid_phone: targetPartner.phone,
+      assigned_maid_photo_url: targetPartner.photoUrl,
+      assigned_maid_rating: targetPartner.rating,
+      partner_accepted_at: acceptedAt,
+      updated_at: acceptedAt,
+    };
+
+    if (etaText) {
+      updateData.partner_eta = etaText;
+    }
+
+    // Attempt update with status and approval
+    let { error: bookingErr } = await supabaseAdmin
       .from('bookings')
-      .update({
-        status: 'maid_assigned',
-        assignment_status: 'assigned',
-        admin_approval_status: 'approved',
-        assigned_maid_id: targetPartner.uid,
-        assigned_maid_name: targetPartner.fullName,
-        assigned_maid_phone: targetPartner.phone,
-        assigned_maid_photo_url: targetPartner.photoUrl,
-        assigned_maid_rating: targetPartner.rating,
-        updated_at: acceptedAt,
-      })
-      .or(`booking_code.eq.${bookingId},id.eq.${bookingId}`);
+      .update(updateData)
+      .eq('id', bookingDbId);
+
+    if (bookingErr && (bookingErr.code === '22P02' || bookingErr.message?.includes('booking_status'))) {
+      console.warn('[Accept Partner Notice] 22P02 enum error caught. Updating partner assignment fields directly...');
+      const fallbackData = { ...updateData };
+      delete fallbackData.status;
+      const fallback = await supabaseAdmin
+        .from('bookings')
+        .update(fallbackData)
+        .eq('id', bookingDbId);
+      bookingErr = fallback.error;
+    }
 
     if (bookingErr) {
+      console.error('[Accept Partner Error] Booking update failed:', bookingErr);
       setAdminError(bookingErr.message);
       return false;
     }
 
+    // Attempt assignment_status update safely
+    try {
+      await supabaseAdmin
+        .from('bookings')
+        .update({ assignment_status: 'assigned', admin_approval_status: 'approved' })
+        .eq('id', bookingDbId);
+    } catch {}
+
     // 2. Update partner_assignments
     try {
-      if (targetBooking.id) {
-        await supabase
-          .from('partner_assignments')
-          .update({
-            response_status: 'accepted',
-            responded_at: acceptedAt,
-          })
-          .eq('booking_id', targetBooking.id)
-          .eq('partner_id', partnerId);
+      const assignUpdate: any = {
+        response_status: 'accepted',
+        responded_at: acceptedAt,
+      };
+      if (etaText) assignUpdate.partner_eta = etaText;
 
-        // Expire any other pending offers for this booking
-        await supabase
-          .from('partner_assignments')
-          .update({
-            response_status: 'expired',
-          })
-          .eq('booking_id', targetBooking.id)
-          .neq('partner_id', partnerId)
-          .eq('response_status', 'pending');
-      }
-    } catch (err) {
-      console.warn('update partner_assignments warning:', err);
+      await supabaseAdmin
+        .from('partner_assignments')
+        .update(assignUpdate)
+        .eq('booking_id', bookingDbId)
+        .eq('partner_id', targetPartner.uid);
+    } catch (assignErr) {
+      console.warn('[Accept Partner Warning] partner_assignments update notice:', assignErr);
     }
 
-    // 3. Mark partner as busy / update status
-    try {
-      await supabase
-        .from('maid_profiles')
-        .update({
-          is_available: false,
-          updated_at: acceptedAt,
-        })
-        .eq('id', partnerId);
-    } catch (err) {
-      console.warn('update maid_profiles warning:', err);
-    }
-
-    await fetchBookings();
-    await fetchMaids();
+    await fetchBookings(selectedLocationRef.current, true);
     return true;
   };
 
   const declinePartnerAssignment = async (bookingId: string, partnerId: string, reason?: string): Promise<boolean> => {
-    const targetBooking = bookings.find(b => b.bookingId === bookingId);
+    setAdminError(null);
+    const targetBooking = bookings.find(b => b.bookingId === bookingId || b.id === bookingId);
     if (!targetBooking) return false;
 
+    const bookingDbId = targetBooking.id;
     const declinedAt = new Date().toISOString();
 
-    // Revert booking to unassigned pending
-    const { error: bookingErr } = await supabase
+    const { error: bookingErr } = await supabaseAdmin
       .from('bookings')
       .update({
-        assignment_status: 'unassigned',
+        assigned_maid_id: null,
+        assigned_maid_name: null,
+        assigned_maid_phone: null,
         updated_at: declinedAt,
       })
-      .or(`booking_code.eq.${bookingId},id.eq.${bookingId}`);
+      .eq('id', bookingDbId);
 
     if (bookingErr) {
+      console.error('[Decline Partner Error] Booking reset failed:', bookingErr);
       setAdminError(bookingErr.message);
       return false;
     }
 
     try {
-      if (targetBooking.id) {
-        await supabase
-          .from('partner_assignments')
-          .update({
-            response_status: 'declined',
-            responded_at: declinedAt,
-          })
-          .eq('booking_id', targetBooking.id)
-          .eq('partner_id', partnerId)
-          .eq('response_status', 'pending');
-      }
-    } catch (err) {
-      console.warn('decline partner_assignment warning:', err);
+      await supabaseAdmin
+        .from('bookings')
+        .update({ assignment_status: 'unassigned' })
+        .eq('id', bookingDbId);
+    } catch {}
+
+    try {
+      await supabaseAdmin
+        .from('partner_assignments')
+        .update({
+          response_status: 'declined',
+          responded_at: declinedAt,
+        })
+        .eq('booking_id', bookingDbId)
+        .eq('partner_id', partnerId);
+    } catch (assignErr) {
+      console.warn('[Decline Partner Warning] partner_assignments decline notice:', assignErr);
     }
 
-    await fetchBookings();
+    await fetchBookings(selectedLocationRef.current, true);
     return true;
   };
 
@@ -1783,8 +2376,8 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       time_slot: newBookingData.timeSlot || '10:00 AM',
       special_instructions: newBookingData.specialInstructions || '',
       status: 'pending_assignment' as const,
-      payment_method: 'online' as const,
-      payment_status: 'paid' as const,
+      payment_method: newBookingData.paymentMethod || 'cash',
+      payment_status: newBookingData.paymentStatus || (newBookingData.paymentMethod === 'online' ? 'paid' : 'pending'),
     };
 
     const { error } = await supabase
@@ -2365,11 +2958,13 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const exportBookingsToCSV = () => {
-    const headers = ['Booking ID', 'Customer', 'Service', 'Date', 'Time', 'Status', 'Amount', 'Assigned Maid', 'Payment Status'];
+    const headers = ['Booking ID', 'Customer', 'Service', 'Hub / City', 'Locality', 'Date', 'Time', 'Status', 'Amount', 'Assigned Maid', 'Payment Status'];
     const rows = bookings.map(b => [
       b.bookingId,
       b.customerName,
       b.serviceName,
+      b.address?.city || selectedLocation,
+      b.address?.locality || '',
       b.date,
       b.timeSlot,
       b.status,
@@ -2381,7 +2976,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `GC_Home_Bookings_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `GC_Home_${selectedLocation}_Bookings_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -2398,6 +2993,9 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     serviceCategories,
     serviceAddons,
     maids,
+    maidsLoading,
+    maidsError,
+    refreshMaids: fetchMaids,
     bookings,
     customers,
     coupons,
@@ -2450,6 +3048,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     rejectMaid,
     updateMaidKycDocStatus,
     requestMaidCorrection,
+    updateItemVerification,
     toggleMaidOnlineStatus,
     toggleMaidActiveStatus,
     exportMaidsToCSV,
@@ -2460,6 +3059,8 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     acceptPartnerAssignment,
     declinePartnerAssignment,
     refreshBookings: fetchBookings,
+    bookingsLoading,
+    bookingsError,
     autoAssignMaid,
     createNewBooking,
     rescheduleBooking,

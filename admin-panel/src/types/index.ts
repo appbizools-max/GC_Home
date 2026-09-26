@@ -2,9 +2,34 @@ export type MaidApplicationStatus = 'none' | 'pending' | 'approved' | 'rejected'
 
 export type KycDocStatus = 'verified' | 'under_review' | 'pending' | 'rejected' | 'not_submitted';
 
+export type ItemVerificationState = 'pending' | 'verified' | 'rejected' | 'reupload_required';
+
+export interface VerificationItemState {
+  status: ItemVerificationState;
+  rejectionReason?: string | null;
+  verifiedAt?: string | null;
+  verifiedBy?: string | null;
+  url?: string | null;
+}
+
+export interface VerificationStatus {
+  step1_personal?: VerificationItemState;
+  step2_address?: VerificationItemState;
+  step3_services?: VerificationItemState;
+  step4_documents?: VerificationItemState;
+  step5_bank?: VerificationItemState;
+  profile_photo?: VerificationItemState;
+  documents?: {
+    aadhaar_front?: VerificationItemState;
+    aadhaar_back?: VerificationItemState;
+    pan_card?: VerificationItemState;
+    [key: string]: VerificationItemState | undefined;
+  };
+}
+
 export interface KycDocument {
   id: string;
-  type: 'aadhaar' | 'aadhaar_back' | 'pan' | 'address_proof' | 'police_verification' | 'bank_passbook' | 'other';
+  type: 'aadhaar' | 'aadhaar_back' | 'pan' | 'address_proof' | 'bank_passbook' | 'other';
   title: string;
   fileName: string;
   fileUrl: string;
@@ -126,6 +151,8 @@ export interface MaidProfile {
   reapplicationCount?: number;
   latestAppliedAt?: string;
   alternatePhone?: string;
+  submittedAt?: string | null;
+  verificationStatus?: VerificationStatus;
 }
 
 export interface Service {

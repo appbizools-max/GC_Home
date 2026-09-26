@@ -1,6 +1,7 @@
-﻿import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import { Booking } from '../../types';
+import { formatDateDDMMYYYY, getPaymentDisplayInfo } from '../../utils/bookingDisplayUtils';
 import { PaginationControls } from '../../components/PaginationControls';
 import {
   Clock,
@@ -16,6 +17,7 @@ import {
   Eye,
   XCircle,
   ArrowUpDown,
+  Phone,
 } from 'lucide-react';
 
 // Helper: Calculate aging in minutes from createdAt
@@ -87,6 +89,7 @@ export const PendingBookingsPage: React.FC = () => {
     openAssignMaid,
     openBookingDetails,
     refreshBookings,
+    selectedLocation,
   } = useAdmin();
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -394,11 +397,13 @@ export const PendingBookingsPage: React.FC = () => {
             <ChevronRight className="w-3 h-3" />
             <span className="text-[#123D2A] font-bold">New / Pending Bookings</span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-black text-[#0A192F] tracking-tight">
-            New / Pending Bookings
-          </h1>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h1 className="text-2xl sm:text-3xl font-black text-[#0A192F] tracking-tight">
+              New / Pending Bookings
+            </h1>
+          </div>
           <p className="text-xs text-slate-500 font-medium mt-0.5">
-            Bookings waiting for partner assignment.
+            Bookings waiting for partner assignment across all locations.
           </p>
         </div>
 
@@ -692,14 +697,16 @@ export const PendingBookingsPage: React.FC = () => {
 
                     {/* Customer */}
                     <td className="py-3 px-3">
-                      <div className="flex items-center gap-2.5">
-                        <CustomerAvatar avatarUrl={b.customerAvatar} name={b.customerName} />
-                        <div>
-                          <div className="font-bold text-slate-900 leading-tight">{b.customerName}</div>
-                          <div className="text-[11px] text-slate-400 font-medium mt-0.5">
-                            {maskPhoneNumber(b.customerPhone)}
-                          </div>
-                        </div>
+                      <div>
+                        <div className="font-bold text-slate-900 leading-tight">{b.customerName}</div>
+                        <a
+                          href={`tel:${b.customerPhone}`}
+                          className="text-[11px] text-slate-500 hover:text-emerald-700 font-medium inline-flex items-center gap-1 mt-0.5"
+                          onClick={e => e.stopPropagation()}
+                        >
+                          <Phone className="w-3 h-3 text-slate-400" />
+                          {b.customerPhone}
+                        </a>
                       </div>
                     </td>
 
@@ -730,7 +737,7 @@ export const PendingBookingsPage: React.FC = () => {
                     {/* Booking Time */}
                     <td className="py-3 px-3">
                       <div className="text-slate-800 font-bold text-xs">
-                        {b.date || 'Today'}
+                        {formatDateDDMMYYYY(b.date) || 'Today'}
                       </div>
                       <div className="text-[10px] text-slate-400 font-semibold">
                         {b.timeSlot || '10:00 AM'}
@@ -755,15 +762,14 @@ export const PendingBookingsPage: React.FC = () => {
 
                     {/* Payment */}
                     <td className="py-3 px-3">
-                      {b.paymentStatus === 'paid' ? (
-                        <span className="bg-emerald-50 text-emerald-700 font-bold px-2 py-0.5 rounded-full text-[10px] border border-emerald-200/60">
-                          Paid
-                        </span>
-                      ) : (
-                        <span className="bg-amber-50 text-amber-700 font-bold px-2 py-0.5 rounded-full text-[10px] border border-amber-200/60">
-                          {b.paymentMethod === 'cod' ? 'COD' : 'Pending'}
-                        </span>
-                      )}
+                      {(() => {
+                        const info = getPaymentDisplayInfo(b.paymentStatus, b.paymentMethod);
+                        return (
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${info.statusBadgeStyle}`}>
+                            {info.statusLabel === 'Paid' ? 'Paid' : (info.isPayAfterService ? 'Pay After Service' : info.statusLabel)}
+                          </span>
+                        );
+                      })()}
                     </td>
 
                     {/* Assignment Status */}
@@ -862,7 +868,7 @@ export const PendingBookingsPage: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <span className="text-slate-500 font-semibold">Schedule:</span>
                   <span className="font-bold text-slate-800">
-                    {b.date || 'Today'} • {b.timeSlot || '10:00 AM'}
+                    {formatDateDDMMYYYY(b.date) || 'Today'} • {b.timeSlot || '10:00 AM'}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">

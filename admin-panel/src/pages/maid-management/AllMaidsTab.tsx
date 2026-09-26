@@ -1,6 +1,9 @@
-﻿import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAdmin } from '../../context/AdminContext';
 import { MaidProfile } from '../../types';
+import { PaginationControls } from '../../components/PaginationControls';
+import { downloadCSV } from '../../utils/exportUtils';
 import {
   Users,
   CheckCircle2,
@@ -20,17 +23,22 @@ import {
   Globe,
   DollarSign,
   FileCheck,
+  RefreshCw,
+  ChevronDown,
 } from 'lucide-react';
 
 interface AllMaidsTabProps {
   activeTab?: 'all' | 'pending-approval' | 'pending-kyc' | 'active' | 'inactive';
+  initialPartnerId?: string;
 }
+
+const PAGE_SIZE_OPTIONS = [15, 25, 50, 75, 100];
 
 // Resilient Avatar with initials fallback
 export const PartnerAvatar: React.FC<{ photoUrl?: string; name: string; size?: string }> = ({
   photoUrl,
   name,
-  size = 'w-10 h-10',
+  size = 'w-9 h-9',
 }) => {
   const [imageError, setImageError] = useState(false);
   const initials = (name || 'Partner')
@@ -44,7 +52,7 @@ export const PartnerAvatar: React.FC<{ photoUrl?: string; name: string; size?: s
   if (!photoUrl || imageError) {
     return (
       <div
-        className={`${size} rounded-full bg-emerald-100 text-[#123D2A] font-black flex items-center justify-center shrink-0 border border-emerald-200 text-xs shadow-xs select-none`}
+        className={`${size} rounded-full bg-emerald-100 text-[#123D2A] font-black flex items-center justify-center shrink-0 border border-emerald-200 text-xs shadow-2xs select-none`}
         title={name}
       >
         {initials}
@@ -62,38 +70,206 @@ export const PartnerAvatar: React.FC<{ photoUrl?: string; name: string; size?: s
   );
 };
 
-export const AllMaidsTab: React.FC<AllMaidsTabProps> = ({ activeTab = 'all' }) => {
-  const { maids, toggleMaidActiveStatus, approveMaid, rejectMaid } = useAdmin();
+// Formats date into standard "25 Sep 2026"
+const formatJoinedDate = (dateStr?: string | null): string => {
+  if (!dateStr) return 'Recent';
+  try {
+    const d = new Date(dateStr);
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleDateString('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      });
+    }
+  } catch {}
+  return dateStr;
+};
 
-  // Filter States
-  const [selectedStatus, setSelectedStatus] = useState<string>('All');
-  const [selectedLocation, setSelectedLocation] = useState<string>('All');
-  const [selectedService, setSelectedService] = useState<string>('All');
-  const [selectedLanguage, setSelectedLanguage] = useState<string>('All');
-  const [selectedExperience, setSelectedExperience] = useState<string>('All');
-  const [searchQuery, setSearchQuery] = useState<string>('');
+// Experience range matching helper
+const matchExperience = (exp?: string, filter?: string): boolean => {
+  if (!filter || filter === 'All') return true;
+  if (!exp) return false;
+  const num = parseInt(exp.replace(/\D/g, ''), 10);
+  if (isNaN(num)) return true;
+  if (filter === '0–1 years') return num <= 1;
+  if (filter === '1–3 years') return num >= 1 && num <= 3;
+  if (filter === '3–5 years') return num >= 3 && num <= 5;
+  if (filter === '5+ years') return num >= 5;
+  return true;
+};
+
+// Compact Interactive Services Cell (+X more popover)
+const PartnerServicesCell: React.FC<{ services: string[] }> = ({ services }) => {
+  const [open, setOpen] = useState(false);
+
+  if (services.length === 0) {
+    return <span className="text-slate-400 text-xs italic">Cleaning</span>;
+  }
+
+  const primaryServices = services.slice(0, 2);
+  const remainingCount = services.length - 2;
+
+  return (
+    <div className="relative inline-block">
+      <div className="flex flex-wrap items-center gap-1">
+        {primaryServices.map((srv, idx) => (
+          <span
+            key={idx}
+            className="font-semibold text-slate-800 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200/80 text-[11px] whitespace-nowrap"
+          >
+            {srv}
+          </span>
+        ))}
+        {remainingCount > 0 && (
+          <button
+            onClick={e => {
+              e.stopPropagation();
+              setOpen(!open);
+            }}
+            className="text-[10px] font-extrabold text-[#123D2A] bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-1.5 py-0.5 rounded-md cursor-pointer transition-colors shadow-2xs whitespace-nowrap"
+            title="Click to view all services"
+          >
+            +{remainingCount} more
+          </button>
+        )}
+      </div>
+
+      {open && remainingCount > 0 && (
+        <>
+          <div
+            className="fixed inset-0 z-30"
+            onClick={e => {
+              e.stopPropagation();
+              setOpen(false);
+            }}
+          />
+          <div className="absolute left-0 mt-1.5 w-52 bg-white rounded-xl shadow-xl border border-slate-200 p-2.5 z-40 animate-fadeIn">
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1.5 pb-1 border-b border-slate-100">
+              All Services ({services.length})
+            </span>
+            <div className="flex flex-col gap-1 max-h-40 overflow-y-auto">
+              {services.map((s, idx) => (
+                <div key={idx} className="text-xs font-semibold text-slate-800 flex items-center gap-1.5 py-0.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 shrink-0" />
+                  <span className="truncate">{s}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+export const AllMaidsTab: React.FC<AllMaidsTabProps> = ({ activeTab = 'all', initialPartnerId }) => {
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const {
+    maids,
+    maidsLoading,
+    maidsError,
+    refreshMaids,
+    services,
+    serviceAreas,
+    toggleMaidActiveStatus,
+    approveMaid,
+    rejectMaid,
+  } = useAdmin();
+
+  // Read URL query parameters for bookmarkable & refresh-persistent state
+  const pageParam = parseInt(searchParams.get('page') || '1', 10);
+  const pageSizeParam = parseInt(searchParams.get('pageSize') || '15', 10);
+  const selectedStatus = searchParams.get('status') || 'All';
+  const selectedLocation = searchParams.get('location') || 'All';
+  const selectedService = searchParams.get('service') || 'All';
+  const selectedLanguage = searchParams.get('language') || 'All';
+  const selectedExperience = searchParams.get('experience') || 'All';
+  const searchQuery = searchParams.get('q') || '';
+
+  const currentPage = isNaN(pageParam) || pageParam < 1 ? 1 : pageParam;
+  const pageSize = PAGE_SIZE_OPTIONS.includes(pageSizeParam) ? pageSizeParam : 15;
+
+  const updateUrlParams = (updates: Record<string, string | null>) => {
+    setSearchParams(prev => {
+      const newParams = new URLSearchParams(prev);
+      Object.entries(updates).forEach(([key, val]) => {
+        if (
+          val === null ||
+          val === undefined ||
+          val === '' ||
+          (key === 'status' && val === 'All') ||
+          (key === 'location' && val === 'All') ||
+          (key === 'service' && val === 'All') ||
+          (key === 'language' && val === 'All') ||
+          (key === 'experience' && val === 'All') ||
+          (key === 'page' && val === '1') ||
+          (key === 'pageSize' && val === '15')
+        ) {
+          newParams.delete(key);
+        } else {
+          newParams.set(key, val);
+        }
+      });
+      return newParams;
+    }, { replace: true });
+  };
+
+  const handlePageChange = (newPage: number) => {
+    updateUrlParams({ page: String(newPage) });
+  };
+
+  const handlePageSizeChange = (newSize: number) => {
+    // Page size change resets to page 1
+    updateUrlParams({ pageSize: String(newSize), page: '1' });
+  };
 
   // Selected Partner Drawer
   const [activeDrawerPartner, setActiveDrawerPartner] = useState<MaidProfile | null>(null);
 
-  // Pagination
-  const [currentPage, setCurrentPage] = useState<number>(1);
-  const rowsPerPage = 10;
+  useEffect(() => {
+    if (initialPartnerId && maids.length > 0) {
+      const match = maids.find(m => m.uid === initialPartnerId || m.maidId === initialPartnerId);
+      if (match) {
+        setActiveDrawerPartner(match);
+      }
+    }
+  }, [initialPartnerId, maids]);
 
-  // Extract unique locations and services from current data
-  const uniqueLocations = useMemo(() => {
+  // Dynamic Operational Cities from Supabase service_areas + partner records
+  const dynamicLocations = useMemo(() => {
     const locSet = new Set<string>();
+    // Preload known GC HOME+ operational cities
+    ['Karimnagar', 'Kazipet', 'Hanamkonda', 'Warangal', 'Hyderabad'].forEach(city => locSet.add(city));
+
+    (serviceAreas || []).forEach((sa: any) => {
+      if (sa.is_serviceable !== false && sa.is_active !== false) {
+        if (sa.city) locSet.add(sa.city);
+        if (sa.locality) locSet.add(sa.locality);
+        if (sa.locality_name) locSet.add(sa.locality_name);
+      }
+    });
+
     maids.forEach(m => {
       if (m.serviceArea?.trim()) locSet.add(m.serviceArea.trim());
       (m.preferredAreas || []).forEach(a => {
         if (a?.trim()) locSet.add(a.trim());
       });
     });
-    return Array.from(locSet).sort();
-  }, [maids]);
 
-  const uniqueServices = useMemo(() => {
+    return Array.from(locSet).filter(Boolean).sort((a, b) => a.localeCompare(b));
+  }, [serviceAreas, maids]);
+
+  // Dynamic Active Services from Supabase services catalog + partner records
+  const dynamicServices = useMemo(() => {
     const sSet = new Set<string>();
+    (services || []).forEach(s => {
+      if (s.isActive !== false && s.name?.trim()) {
+        sSet.add(s.name.trim());
+      }
+    });
+
     maids.forEach(m => {
       (m.servicesProvided || []).forEach(sp => {
         if (sp.serviceName?.trim()) sSet.add(sp.serviceName.trim());
@@ -102,8 +278,9 @@ export const AllMaidsTab: React.FC<AllMaidsTabProps> = ({ activeTab = 'all' }) =
         if (sk?.trim()) sSet.add(sk.trim());
       });
     });
-    return Array.from(sSet).sort();
-  }, [maids]);
+
+    return Array.from(sSet).filter(Boolean).sort((a, b) => a.localeCompare(b));
+  }, [services, maids]);
 
   // Check if any filters are active
   const isFilterActive =
@@ -115,33 +292,29 @@ export const AllMaidsTab: React.FC<AllMaidsTabProps> = ({ activeTab = 'all' }) =
     searchQuery.trim().length > 0;
 
   const resetFilters = () => {
-    setSelectedStatus('All');
-    setSelectedLocation('All');
-    setSelectedService('All');
-    setSelectedLanguage('All');
-    setSelectedExperience('All');
-    setSearchQuery('');
-    setCurrentPage(1);
+    const newParams = new URLSearchParams();
+    if (pageSize !== 15) {
+      newParams.set('pageSize', String(pageSize));
+    }
+    setSearchParams(newParams, { replace: true });
   };
 
-  // Helper to format compact services
-  const getServicesSummary = (m: MaidProfile): string => {
-    const serviceNames: string[] = [];
-    if (m.servicesProvided && Array.isArray(m.servicesProvided) && m.servicesProvided.length > 0) {
+  // Helper to extract full services list for a partner
+  const getPartnerServicesList = (m: MaidProfile): string[] => {
+    const list: string[] = [];
+    if (m.servicesProvided && Array.isArray(m.servicesProvided)) {
       m.servicesProvided.forEach(sp => {
-        if (sp.serviceName && !serviceNames.includes(sp.serviceName)) {
-          serviceNames.push(sp.serviceName);
+        if (sp.serviceName && !list.includes(sp.serviceName)) {
+          list.push(sp.serviceName);
         }
       });
     }
-    if (serviceNames.length === 0 && m.skills && m.skills.length > 0) {
-      m.skills.forEach(s => {
-        if (!serviceNames.includes(s)) serviceNames.push(s);
+    if (m.skills && Array.isArray(m.skills)) {
+      m.skills.forEach(sk => {
+        if (!list.includes(sk)) list.push(sk);
       });
     }
-    if (serviceNames.length === 0) return 'Cleaning';
-    if (serviceNames.length <= 2) return serviceNames.join(' · ');
-    return `${serviceNames[0]} · +${serviceNames.length - 1} more`;
+    return list.length > 0 ? list : ['Home Cleaning'];
   };
 
   // Helper to format partner availability
@@ -150,7 +323,7 @@ export const AllMaidsTab: React.FC<AllMaidsTabProps> = ({ activeTab = 'all' }) =
       return { label: 'Busy', color: 'bg-amber-50 text-amber-800 border-amber-200', dot: 'bg-amber-500' };
     }
     if (m.isOnline || m.currentStatus === 'online' || m.currentStatus === 'available') {
-      return { label: 'Available', color: 'bg-emerald-50 text-emerald-800 border-emerald-200', dot: 'bg-emerald-500' };
+      return { label: 'Online', color: 'bg-emerald-50 text-emerald-800 border-emerald-200', dot: 'bg-emerald-500' };
     }
     return { label: 'Offline', color: 'bg-slate-100 text-slate-600 border-slate-200', dot: 'bg-slate-400' };
   };
@@ -167,20 +340,17 @@ export const AllMaidsTab: React.FC<AllMaidsTabProps> = ({ activeTab = 'all' }) =
       return { label: 'Suspended', style: 'bg-rose-50 text-rose-800 border-rose-200' };
     }
     if (m.status === 'approved') {
-      if (m.isOnline) {
-        return { label: 'Active', style: 'bg-emerald-50 text-emerald-800 border-emerald-200' };
-      }
-      return { label: 'Approved', style: 'bg-teal-50 text-teal-800 border-teal-200' };
+      return { label: 'Approved', style: 'bg-emerald-50 text-emerald-800 border-emerald-200' };
     }
     return { label: m.status || 'Inactive', style: 'bg-slate-100 text-slate-700 border-slate-200' };
   };
 
-  // Filter Computation combining top tab + toolbar filters
+  // Filter Computation combining top tab + toolbar filters (AND logic)
   const filteredMaids = useMemo(() => {
     return maids.filter(m => {
       // 1. Top Tab filter
       if (activeTab === 'pending-approval') {
-        if (m.status !== 'pending') return false;
+        if (m.status !== 'pending' || !m.submittedAt) return false;
       } else if (activeTab === 'pending-kyc') {
         const isKycPending =
           m.kycStatus === 'pending' ||
@@ -189,9 +359,10 @@ export const AllMaidsTab: React.FC<AllMaidsTabProps> = ({ activeTab = 'all' }) =
           (m.status === 'pending' && m.kycStatus !== 'verified');
         if (!isKycPending) return false;
       } else if (activeTab === 'active') {
-        if (m.status !== 'approved' || !m.isOnline) return false;
+        const isOnline = m.status === 'approved' && (m.isOnline || m.currentStatus === 'online' || m.currentStatus === 'available');
+        if (!isOnline) return false;
       } else if (activeTab === 'inactive') {
-        const isInactive = m.status === 'rejected' || (m.status === 'approved' && !m.isOnline);
+        const isInactive = m.status === 'approved' && !m.isOnline && m.currentStatus !== 'online';
         if (!isInactive) return false;
       }
 
@@ -203,14 +374,14 @@ export const AllMaidsTab: React.FC<AllMaidsTabProps> = ({ activeTab = 'all' }) =
           if (!isKyc) return false;
         }
         if (selectedStatus === 'Approved' && m.status !== 'approved') return false;
-        if (selectedStatus === 'Active' && (m.status !== 'approved' || !m.isOnline)) return false;
-        if (selectedStatus === 'Inactive' && (m.status === 'approved' && m.isOnline)) return false;
+        if (selectedStatus === 'Active' && (m.status !== 'approved' || (!m.isOnline && m.currentStatus !== 'online'))) return false;
+        if (selectedStatus === 'Inactive' && (m.status === 'approved' && (m.isOnline || m.currentStatus === 'online'))) return false;
         if (selectedStatus === 'Suspended' && m.status !== 'rejected') return false;
       }
 
       if (selectedLocation !== 'All') {
         const loc = selectedLocation.toLowerCase();
-        const areaMatch = m.serviceArea?.toLowerCase().includes(loc);
+        const areaMatch = (m.serviceArea || '').toLowerCase().includes(loc);
         const prefMatch = (m.preferredAreas || []).some(a => a.toLowerCase().includes(loc));
         if (!areaMatch && !prefMatch) return false;
       }
@@ -230,17 +401,16 @@ export const AllMaidsTab: React.FC<AllMaidsTabProps> = ({ activeTab = 'all' }) =
       }
 
       if (selectedExperience !== 'All') {
-        if (selectedExperience === '1-2 Years' && !m.experience?.includes('1') && !m.experience?.includes('2')) return false;
-        if (selectedExperience === '3+ Years' && !m.experience?.includes('3') && !m.experience?.includes('4') && !m.experience?.includes('5')) return false;
+        if (!matchExperience(m.experience, selectedExperience)) return false;
       }
 
-      // 3. Search query (Partner name, Phone, Partner ID, Location)
+      // 3. Real Search Query (Name, Phone, Partner ID, Locality)
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
-        const nameMatch = m.fullName?.toLowerCase().includes(q);
-        const phoneMatch = m.phone?.toLowerCase().includes(q);
+        const nameMatch = (m.fullName || '').toLowerCase().includes(q);
+        const phoneMatch = (m.phone || '').includes(q);
         const idMatch = (m.maidId || m.uid || '').toLowerCase().includes(q);
-        const locMatch = m.serviceArea?.toLowerCase().includes(q);
+        const locMatch = (m.serviceArea || '').toLowerCase().includes(q);
         if (!nameMatch && !phoneMatch && !idMatch && !locMatch) return false;
       }
 
@@ -248,112 +418,88 @@ export const AllMaidsTab: React.FC<AllMaidsTabProps> = ({ activeTab = 'all' }) =
     });
   }, [maids, activeTab, selectedStatus, selectedLocation, selectedService, selectedLanguage, selectedExperience, searchQuery]);
 
-  // Server-like pagination calculations
-  const totalPages = Math.ceil(filteredMaids.length / rowsPerPage) || 1;
+  // Paginated dataset
   const paginatedMaids = useMemo(() => {
-    return filteredMaids.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
-  }, [filteredMaids, currentPage, rowsPerPage]);
+    return filteredMaids.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  }, [filteredMaids, currentPage, pageSize]);
 
-  // Export filtered partners to CSV
+  // Export ONLY the currently filtered partners dataset to CSV
   const handleExportCSV = () => {
-    const headers = ['Partner ID', 'Name', 'Phone', 'Status', 'Location', 'Services', 'Availability', 'Joined On'];
-    const rows = filteredMaids.map(m => [
-      `"${m.maidId || m.uid}"`,
-      `"${m.fullName}"`,
-      `"${m.phone}"`,
-      `"${m.status}"`,
-      `"${m.serviceArea || ''}"`,
-      `"${getServicesSummary(m)}"`,
-      `"${getPartnerAvailability(m).label}"`,
-      `"${m.appliedAt || ''}"`,
-    ]);
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `GC_Home_Partners_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
+    const headers = [
+      'Partner ID',
+      'Full Name',
+      'Phone',
+      'Account Status',
+      'KYC Status',
+      'Location',
+      'Services',
+      'Availability',
+      'Joined Date',
+    ];
 
-  // Determine context-appropriate empty state
-  const getEmptyStateMessage = () => {
-    if (activeTab === 'pending-approval') {
-      return {
-        title: 'No pending approvals',
-        subtitle: 'All partner applications have been reviewed.',
-      };
-    }
-    if (activeTab === 'pending-kyc') {
-      return {
-        title: 'No pending KYC',
-        subtitle: 'All partner KYC records are up to date.',
-      };
-    }
-    if (isFilterActive) {
-      return {
-        title: 'No partners found',
-        subtitle: 'Try adjusting your filters or search query.',
-      };
-    }
-    return {
-      title: 'No partners registered yet',
-      subtitle: 'New partner registrations will appear here.',
-    };
+    const rows = filteredMaids.map(m => [
+      m.maidId || m.uid,
+      m.fullName,
+      m.phone,
+      m.status,
+      m.kycStatus || 'pending',
+      m.serviceArea || 'Karimnagar',
+      getPartnerServicesList(m).join('; '),
+      getPartnerAvailability(m).label,
+      formatJoinedDate(m.appliedAt),
+    ]);
+
+    downloadCSV('GC_Home_Partners_Export', headers, rows);
   };
 
   return (
-    <div className="flex flex-col gap-4 font-sans">
-      {/* Compact Filter Toolbar */}
-      <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+    <div className="flex flex-col gap-4 font-sans select-none pb-8 text-slate-800">
+      {/* 1. Combined Filter Toolbar */}
+      <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
           {/* Status Filter */}
           <select
             value={selectedStatus}
             onChange={e => {
-              setSelectedStatus(e.target.value);
-              setCurrentPage(1);
+              updateUrlParams({ status: e.target.value, page: '1' });
             }}
-            className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:border-emerald-600 cursor-pointer"
+            className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:border-emerald-600 cursor-pointer shadow-2xs shrink-0"
           >
             <option value="All">All Status</option>
+            <option value="Approved">Approved</option>
             <option value="Pending Approval">Pending Approval</option>
             <option value="Pending KYC">Pending KYC</option>
-            <option value="Approved">Approved</option>
-            <option value="Active">Active</option>
-            <option value="Inactive">Inactive</option>
+            <option value="Active">Active (Online)</option>
+            <option value="Inactive">Inactive (Offline)</option>
             <option value="Suspended">Suspended</option>
           </select>
 
-          {/* Location Filter */}
+          {/* Location Filter (Dynamic from Admin Service Areas in Supabase) */}
           <select
             value={selectedLocation}
             onChange={e => {
-              setSelectedLocation(e.target.value);
-              setCurrentPage(1);
+              updateUrlParams({ location: e.target.value, page: '1' });
             }}
-            className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:border-emerald-600 cursor-pointer max-w-[130px] truncate"
+            className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:border-emerald-600 cursor-pointer max-w-[140px] truncate shadow-2xs shrink-0"
           >
             <option value="All">All Locations</option>
-            {uniqueLocations.map(loc => (
+            {dynamicLocations.map(loc => (
               <option key={loc} value={loc}>
                 {loc}
               </option>
             ))}
           </select>
 
-          {/* Service Filter */}
+          {/* Service Filter (Dynamic from Admin Service Catalog in Supabase) */}
           <select
             value={selectedService}
             onChange={e => {
-              setSelectedService(e.target.value);
-              setCurrentPage(1);
+              updateUrlParams({ service: e.target.value, page: '1' });
             }}
-            className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:border-emerald-600 cursor-pointer max-w-[130px] truncate"
+            className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:border-emerald-600 cursor-pointer max-w-[150px] truncate shadow-2xs shrink-0"
           >
             <option value="All">All Services</option>
-            {uniqueServices.map(srv => (
+            {dynamicServices.map(srv => (
               <option key={srv} value={srv}>
                 {srv}
               </option>
@@ -364,160 +510,231 @@ export const AllMaidsTab: React.FC<AllMaidsTabProps> = ({ activeTab = 'all' }) =
           <select
             value={selectedLanguage}
             onChange={e => {
-              setSelectedLanguage(e.target.value);
-              setCurrentPage(1);
+              updateUrlParams({ language: e.target.value, page: '1' });
             }}
-            className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:border-emerald-600 cursor-pointer"
+            className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:border-emerald-600 cursor-pointer shadow-2xs shrink-0"
           >
             <option value="All">All Languages</option>
             <option value="Telugu">Telugu</option>
             <option value="Hindi">Hindi</option>
             <option value="English">English</option>
+            <option value="Urdu">Urdu</option>
           </select>
 
           {/* Experience Filter */}
           <select
             value={selectedExperience}
             onChange={e => {
-              setSelectedExperience(e.target.value);
-              setCurrentPage(1);
+              updateUrlParams({ experience: e.target.value, page: '1' });
             }}
-            className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:border-emerald-600 cursor-pointer"
+            className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:border-emerald-600 cursor-pointer shadow-2xs shrink-0"
           >
             <option value="All">All Experience</option>
-            <option value="1-2 Years">1-2 Years</option>
-            <option value="3+ Years">3+ Years</option>
+            <option value="0–1 years">0–1 years</option>
+            <option value="1–3 years">1–3 years</option>
+            <option value="3–5 years">3–5 years</option>
+            <option value="5+ years">5+ years</option>
           </select>
 
-          {/* Search Box */}
-          <div className="relative flex-1 min-w-[200px] md:w-56">
+          {/* Search Box - Flex expands on desktop without clipping */}
+          <div className="relative flex-1 min-w-[240px] md:min-w-[300px]">
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="Search partner, phone, ID..."
+              placeholder="Search partner name, phone number, or partner ID..."
               value={searchQuery}
               onChange={e => {
-                setSearchQuery(e.target.value);
-                setCurrentPage(1);
+                updateUrlParams({ q: e.target.value, page: '1' });
               }}
-              className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder-slate-400 outline-none focus:border-emerald-600"
+              className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder-slate-400 outline-none focus:bg-white focus:border-emerald-600 transition-colors shadow-2xs"
             />
           </div>
 
-          {/* Reset Button (Only rendered when filters are active) */}
-          {isFilterActive && (
-            <button
-              onClick={resetFilters}
-              title="Reset all active filters"
-              className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer animate-fadeIn"
-            >
-              <RotateCcw className="w-3 h-3" /> Reset
-            </button>
-          )}
+          {/* Reset Filters Button (Always Visible) */}
+          <button
+            onClick={resetFilters}
+            title="Reset all active filters and return to All Partners"
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs shrink-0 ${
+              isFilterActive
+                ? 'bg-slate-200 hover:bg-slate-300 text-slate-800'
+                : 'bg-slate-100 hover:bg-slate-200 text-slate-500'
+            }`}
+          >
+            <RotateCcw className="w-3 h-3" />
+            <span>Reset Filters</span>
+          </button>
         </div>
 
-        {/* Right Action: CSV Export */}
-        <div className="flex items-center gap-2 self-end md:self-auto">
+        {/* Right Action: CSV Export (Exports filtered dataset) */}
+        <div className="flex items-center gap-2 self-end md:self-auto shrink-0">
           <button
             onClick={handleExportCSV}
             title="Export filtered partners to CSV"
             className="px-3.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-[#123D2A] border border-emerald-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
           >
-            <Download className="w-3.5 h-3.5 text-emerald-700" /> Export
+            <Download className="w-3.5 h-3.5 text-emerald-700" />
+            <span>Export CSV</span>
           </button>
         </div>
       </div>
 
-      {/* Main Partners Table (7 Compact Columns) */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      {/* 2. Main Partners Table (Compact, Real-Data, Single-Line Headers) */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
         {/* Desktop & Tablet Table */}
         <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-black text-slate-500 uppercase tracking-wider">
-                <th className="py-3.5 px-4">Partner</th>
-                <th className="py-3.5 px-4">Status</th>
-                <th className="py-3.5 px-4">Location</th>
-                <th className="py-3.5 px-4">Services</th>
-                <th className="py-3.5 px-4">Availability</th>
-                <th className="py-3.5 px-4">Joined On</th>
-                <th className="py-3.5 px-4 text-right">Action</th>
+              <tr className="bg-slate-50/90 border-b border-slate-200 text-[11px] font-black text-slate-500 uppercase tracking-wider">
+                <th className="py-3 px-3.5 w-10 text-center whitespace-nowrap">#</th>
+                <th className="py-3 px-3.5 whitespace-nowrap min-w-[200px]">PARTNER</th>
+                <th className="py-3 px-3.5 whitespace-nowrap">STATUS</th>
+                <th className="py-3 px-3.5 whitespace-nowrap">LOCATION</th>
+                <th className="py-3 px-3.5 whitespace-nowrap">SERVICES</th>
+                <th className="py-3 px-3.5 whitespace-nowrap">AVAILABILITY</th>
+                <th className="py-3 px-3.5 whitespace-nowrap">JOINED DATE</th>
+                <th className="py-3 px-3.5 whitespace-nowrap text-right min-w-[100px]">ACTION</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
-              {paginatedMaids.map(partner => {
-                const statusBadge = getPartnerStatusBadge(partner);
-                const avail = getPartnerAvailability(partner);
-                const servicesSummary = getServicesSummary(partner);
-
-                return (
-                  <tr key={partner.uid} className="hover:bg-slate-50/80 transition-colors">
-                    {/* 1. Partner Profile */}
-                    <td className="py-3 px-4">
-                      <div className="flex items-center gap-3">
-                        <PartnerAvatar photoUrl={partner.photoUrl} name={partner.fullName} size="w-9 h-9" />
-                        <div>
-                          <strong className="text-slate-900 font-bold block text-xs">{partner.fullName}</strong>
-                          <span className="text-[11px] text-slate-500 font-medium">{partner.phone}</span>
+              {/* Skeleton loading state */}
+              {maidsLoading && (
+                <>
+                  {[1, 2, 3, 4, 5].map(i => (
+                    <tr key={i} className="animate-pulse">
+                      <td className="py-3 px-3.5 text-center text-slate-300">...</td>
+                      <td className="py-3 px-3.5">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-9 h-9 rounded-full bg-slate-200" />
+                          <div className="space-y-1">
+                            <div className="h-3 w-28 bg-slate-200 rounded" />
+                            <div className="h-2.5 w-20 bg-slate-200 rounded" />
+                          </div>
                         </div>
-                      </div>
-                    </td>
+                      </td>
+                      <td className="py-3 px-3.5"><div className="h-4 w-16 bg-slate-200 rounded-full" /></td>
+                      <td className="py-3 px-3.5"><div className="h-3 w-20 bg-slate-200 rounded" /></td>
+                      <td className="py-3 px-3.5"><div className="h-3 w-24 bg-slate-200 rounded" /></td>
+                      <td className="py-3 px-3.5"><div className="h-4 w-14 bg-slate-200 rounded-full" /></td>
+                      <td className="py-3 px-3.5"><div className="h-3 w-20 bg-slate-200 rounded" /></td>
+                      <td className="py-3 px-3.5 text-right"><div className="h-6 w-14 bg-slate-200 rounded inline-block" /></td>
+                    </tr>
+                  ))}
+                </>
+              )}
 
-                    {/* 2. Status */}
-                    <td className="py-3 px-4">
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black border ${statusBadge.style}`}
-                      >
-                        {statusBadge.label}
-                      </span>
-                    </td>
+              {/* Real partner rows */}
+              {!maidsLoading &&
+                paginatedMaids.map((partner, idx) => {
+                  const statusBadge = getPartnerStatusBadge(partner);
+                  const avail = getPartnerAvailability(partner);
+                  const servicesList = getPartnerServicesList(partner);
 
-                    {/* 3. Location */}
-                    <td className="py-3 px-4 font-semibold text-slate-700">
-                      {partner.serviceArea || 'Hyderabad'}
-                    </td>
+                  return (
+                    <tr key={partner.uid} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-2.5 px-3.5 text-center text-slate-400 font-bold whitespace-nowrap">
+                        {(currentPage - 1) * pageSize + idx + 1}
+                      </td>
 
-                    {/* 4. Services */}
-                    <td className="py-3 px-4">
-                      <span className="font-semibold text-slate-800 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-100 text-[11px]">
-                        {servicesSummary}
-                      </span>
-                    </td>
+                      {/* 1. Partner Profile: Full Name, ID, Unmasked Phone */}
+                      <td className="py-2.5 px-3.5 whitespace-nowrap">
+                        <div className="flex items-center gap-2.5">
+                          <PartnerAvatar photoUrl={partner.photoUrl} name={partner.fullName} size="w-9 h-9" />
+                          <div>
+                            <strong className="text-slate-900 font-bold block text-xs tracking-tight">
+                              {partner.fullName}
+                            </strong>
+                            <span className="text-[10px] font-black text-[#123D2A] bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200 inline-block mt-0.5">
+                              {partner.maidId || partner.uid?.slice(0, 8) || 'PARTNER'}
+                            </span>
+                            <a
+                              href={`tel:${partner.phone}`}
+                              onClick={e => e.stopPropagation()}
+                              className="text-[11px] text-slate-500 font-medium hover:text-emerald-700 flex items-center gap-1 mt-0.5 transition-colors"
+                              title="Call Partner"
+                            >
+                              <Phone className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                              <span>{partner.phone}</span>
+                            </a>
+                          </div>
+                        </div>
+                      </td>
 
-                    {/* 5. Availability */}
-                    <td className="py-3 px-4">
-                      <span
-                        className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold border ${avail.color}`}
-                      >
-                        <span className={`w-1.5 h-1.5 rounded-full ${avail.dot}`} />
-                        {avail.label}
-                      </span>
-                    </td>
+                      {/* 2. Status Badge */}
+                      <td className="py-2.5 px-3.5 whitespace-nowrap">
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black border ${statusBadge.style}`}
+                        >
+                          {statusBadge.label}
+                        </span>
+                      </td>
 
-                    {/* 6. Joined On */}
-                    <td className="py-3 px-4 text-slate-500 font-medium">
-                      {partner.appliedAt ? partner.appliedAt.split('T')[0] : 'Recent'}
-                    </td>
+                      {/* 3. Location */}
+                      <td className="py-2.5 px-3.5 whitespace-nowrap font-medium text-slate-700">
+                        <div className="flex items-center gap-1.5">
+                          <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          <span>{partner.serviceArea || 'Karimnagar'}</span>
+                        </div>
+                      </td>
 
-                    {/* 7. Action */}
-                    <td className="py-3 px-4 text-right">
-                      <button
-                        onClick={() => setActiveDrawerPartner(partner)}
-                        className="px-3 py-1.5 bg-[#123D2A] hover:bg-[#184a34] text-white rounded-lg text-xs font-bold transition-all inline-flex items-center gap-1 cursor-pointer shadow-xs"
-                      >
-                        <Eye className="w-3.5 h-3.5" /> View
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
+                      {/* 4. Services Column (+X more popover) */}
+                      <td className="py-2.5 px-3.5">
+                        <PartnerServicesCell services={servicesList} />
+                      </td>
 
-              {paginatedMaids.length === 0 && (
+                      {/* 5. Availability (Clear Online / Offline badges) */}
+                      <td className="py-2.5 px-3.5 whitespace-nowrap">
+                        <span
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border ${avail.color}`}
+                        >
+                          <span className={`w-1.5 h-1.5 rounded-full ${avail.dot}`} />
+                          {avail.label}
+                        </span>
+                      </td>
+
+                      {/* 6. Joined Date (Standardized 25 Sep 2026 format) */}
+                      <td className="py-2.5 px-3.5 whitespace-nowrap text-slate-500 font-medium">
+                        {formatJoinedDate(partner.appliedAt)}
+                      </td>
+
+                      {/* 7. Action Button */}
+                      <td className="py-2.5 px-3.5 text-right whitespace-nowrap">
+                        <button
+                          onClick={() => {
+                            setActiveDrawerPartner(partner);
+                            navigate(`/admin/partners/${partner.uid}`);
+                          }}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-[#123D2A] hover:bg-[#184a34] text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-xs whitespace-nowrap active:scale-[0.98]"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>View</span>
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+
+              {/* Empty state handlers */}
+              {!maidsLoading && paginatedMaids.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-400">
+                  <td colSpan={8} className="py-12 text-center text-slate-400">
                     <Users className="w-9 h-9 mx-auto mb-2 text-slate-300" />
-                    <p className="text-sm font-bold text-slate-700">{getEmptyStateMessage().title}</p>
-                    <p className="text-xs text-slate-400 mt-0.5">{getEmptyStateMessage().subtitle}</p>
+                    <p className="text-sm font-bold text-slate-700">
+                      {maids.length === 0 ? 'No partners registered yet' : 'No matching partners found'}
+                    </p>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      {maids.length === 0
+                        ? 'New partner registrations will appear here.'
+                        : 'Try changing or clearing your filters.'}
+                    </p>
+                    {isFilterActive && (
+                      <button
+                        onClick={resetFilters}
+                        className="mt-3 inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-[#123D2A] hover:bg-[#184a34] text-white rounded-lg text-xs font-bold transition-all cursor-pointer shadow-xs"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        <span>Clear Filters</span>
+                      </button>
+                    )}
                   </td>
                 </tr>
               )}
@@ -525,102 +742,116 @@ export const AllMaidsTab: React.FC<AllMaidsTabProps> = ({ activeTab = 'all' }) =
           </table>
         </div>
 
-        {/* Mobile View: Clean Partner Cards */}
+        {/* Mobile View: Clean Partner Cards (< 768px) */}
         <div className="block md:hidden divide-y divide-slate-100">
-          {paginatedMaids.map(partner => {
-            const statusBadge = getPartnerStatusBadge(partner);
-            const avail = getPartnerAvailability(partner);
-            const servicesSummary = getServicesSummary(partner);
+          {maidsLoading && (
+            <div className="p-6 text-center text-slate-400 text-xs">
+              <div className="w-6 h-6 border-2 border-emerald-700 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+              Loading partners...
+            </div>
+          )}
 
-            return (
-              <div key={partner.uid} className="p-4 flex flex-col gap-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <PartnerAvatar photoUrl={partner.photoUrl} name={partner.fullName} size="w-10 h-10" />
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-900">{partner.fullName}</h4>
-                      <p className="text-[11px] text-slate-500">{partner.phone}</p>
+          {!maidsLoading &&
+            paginatedMaids.map(partner => {
+              const statusBadge = getPartnerStatusBadge(partner);
+              const avail = getPartnerAvailability(partner);
+              const servicesList = getPartnerServicesList(partner);
+
+              return (
+                <div key={partner.uid} className="p-4 flex flex-col gap-3 bg-white">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <PartnerAvatar photoUrl={partner.photoUrl} name={partner.fullName} size="w-10 h-10" />
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-900">{partner.fullName}</h4>
+                        <span className="text-[10px] font-black text-[#123D2A] bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200 inline-block mt-0.5">
+                          {partner.maidId || partner.uid?.slice(0, 8) || 'PARTNER'}
+                        </span>
+                        <p className="text-[11px] text-slate-500 mt-0.5">{partner.phone}</p>
+                      </div>
                     </div>
-                  </div>
-                  <span
-                    className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black border ${statusBadge.style}`}
-                  >
-                    {statusBadge.label}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                  <div>
-                    <span className="text-[10px] text-slate-400 block font-semibold">Location</span>
-                    <span className="font-bold text-slate-800">{partner.serviceArea || 'Hyderabad'}</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-slate-400 block font-semibold">Availability</span>
-                    <span className={`inline-flex items-center gap-1 font-bold ${avail.label === 'Available' ? 'text-emerald-700' : 'text-slate-600'}`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${avail.dot}`} />
-                      {avail.label}
+                    <span
+                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black border ${statusBadge.style}`}
+                    >
+                      {statusBadge.label}
                     </span>
                   </div>
-                  <div className="col-span-2">
-                    <span className="text-[10px] text-slate-400 block font-semibold">Services</span>
-                    <span className="font-bold text-slate-800">{servicesSummary}</span>
+
+                  <div className="grid grid-cols-2 gap-2 text-xs bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold">Location</span>
+                      <span className="font-bold text-slate-800">{partner.serviceArea || 'Karimnagar'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-semibold">Availability</span>
+                      <span className={`inline-flex items-center gap-1 font-bold ${avail.label === 'Online' ? 'text-emerald-700' : 'text-slate-600'}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${avail.dot}`} />
+                        {avail.label}
+                      </span>
+                    </div>
+                    <div className="col-span-2">
+                      <span className="text-[10px] text-slate-400 block font-semibold mb-1">Services</span>
+                      <PartnerServicesCell services={servicesList} />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-[11px] text-slate-400 font-medium">
+                      Joined: {formatJoinedDate(partner.appliedAt)}
+                    </span>
+                    <button
+                      onClick={() => {
+                        setActiveDrawerPartner(partner);
+                        navigate(`/admin/partners/${partner.uid}`);
+                      }}
+                      className="px-3.5 py-1.5 bg-[#123D2A] hover:bg-[#184a34] text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer shadow-xs"
+                    >
+                      <Eye className="w-3.5 h-3.5" /> View
+                    </button>
                   </div>
                 </div>
+              );
+            })}
 
-                <div className="flex items-center justify-between pt-1">
-                  <span className="text-[11px] text-slate-400 font-medium">
-                    Joined: {partner.appliedAt ? partner.appliedAt.split('T')[0] : 'Recent'}
-                  </span>
-                  <button
-                    onClick={() => setActiveDrawerPartner(partner)}
-                    className="px-3.5 py-1.5 bg-[#123D2A] text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
-                  >
-                    <Eye className="w-3.5 h-3.5" /> View
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-
-          {paginatedMaids.length === 0 && (
+          {!maidsLoading && paginatedMaids.length === 0 && (
             <div className="py-12 text-center text-slate-400 px-4">
               <Users className="w-9 h-9 mx-auto mb-2 text-slate-300" />
-              <p className="text-sm font-bold text-slate-700">{getEmptyStateMessage().title}</p>
-              <p className="text-xs text-slate-400 mt-0.5">{getEmptyStateMessage().subtitle}</p>
+              <p className="text-sm font-bold text-slate-700">
+                {maids.length === 0 ? 'No partners registered yet' : 'No matching partners found'}
+              </p>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {maids.length === 0
+                  ? 'New partner registrations will appear here.'
+                  : 'Try changing or clearing your filters.'}
+              </p>
+              {isFilterActive && (
+                <button
+                  onClick={resetFilters}
+                  className="mt-3 inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-[#123D2A] text-white rounded-lg text-xs font-bold"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Clear Filters</span>
+                </button>
+              )}
             </div>
           )}
         </div>
 
-        {/* Server-Style Pagination Bar */}
-        <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <span className="text-xs font-semibold text-slate-600">
-            Showing {filteredMaids.length > 0 ? (currentPage - 1) * rowsPerPage + 1 : 0}–
-            {Math.min(currentPage * rowsPerPage, filteredMaids.length)} of {filteredMaids.length} partners
-          </span>
-
-          <div className="flex items-center gap-1.5">
-            <button
-              disabled={currentPage === 1}
-              onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
-              className="px-3 py-1.5 bg-white border border-slate-200 text-xs font-bold rounded-lg disabled:opacity-40 hover:bg-slate-100 text-slate-700 transition-all cursor-pointer shadow-2xs"
-            >
-              Previous
-            </button>
-            <span className="px-3 py-1.5 bg-[#123D2A] text-white text-xs font-black rounded-lg shadow-2xs">
-              {currentPage} / {totalPages}
-            </span>
-            <button
-              disabled={currentPage >= totalPages}
-              onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
-              className="px-3 py-1.5 bg-white border border-slate-200 text-xs font-bold rounded-lg disabled:opacity-40 hover:bg-slate-100 text-slate-700 transition-all cursor-pointer shadow-2xs"
-            >
-              Next
-            </button>
-          </div>
+        {/* 3. Real Pagination Controls (Rows per page: 15 / 25 / 50 / 75 / 100) */}
+        <div className="p-4 bg-slate-50 border-t border-slate-200/80">
+          <PaginationControls
+            currentPage={currentPage}
+            totalItems={filteredMaids.length}
+            pageSize={pageSize}
+            onPageChange={handlePageChange}
+            pageSizeOptions={PAGE_SIZE_OPTIONS}
+            onPageSizeChange={handlePageSizeChange}
+            itemLabel="partners"
+          />
         </div>
       </div>
 
-      {/* Partner Details Drawer (Complete Profile, Documents, Performance & Actions) */}
+      {/* 4. Partner Details Drawer (Complete Profile, KYC Documents, Performance & Actions) */}
       {activeDrawerPartner && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex justify-end animate-fadeIn">
           <div className="w-full max-w-lg bg-white h-full shadow-2xl overflow-y-auto flex flex-col justify-between font-sans">
@@ -634,76 +865,67 @@ export const AllMaidsTab: React.FC<AllMaidsTabProps> = ({ activeTab = 'all' }) =
                     size="w-12 h-12"
                   />
                   <div>
-                    <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+                    <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
                       {activeDrawerPartner.fullName}
-                      <span className="text-[10px] bg-emerald-100 text-emerald-800 font-extrabold px-2 py-0.5 rounded-full">
-                        {activeDrawerPartner.maidId || activeDrawerPartner.uid}
-                      </span>
                     </h3>
-                    <p className="text-xs text-slate-500 font-medium flex items-center gap-1.5 mt-0.5">
-                      <MapPin className="w-3.5 h-3.5 text-emerald-600" />
-                      {activeDrawerPartner.serviceArea || 'Hyderabad'}
-                    </p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-[10px] font-black text-[#123D2A] bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                        {activeDrawerPartner.maidId || activeDrawerPartner.uid?.slice(0, 8)}
+                      </span>
+                      <span className="text-xs text-slate-500 font-semibold">{activeDrawerPartner.phone}</span>
+                    </div>
                   </div>
                 </div>
 
                 <button
-                  onClick={() => setActiveDrawerPartner(null)}
-                  className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 flex items-center justify-center transition-all cursor-pointer"
+                  onClick={() => {
+                    setActiveDrawerPartner(null);
+                    navigate('/admin/partners');
+                  }}
+                  className="p-2 rounded-full hover:bg-slate-200/70 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-5 h-5" />
                 </button>
               </div>
 
-              {/* Drawer Body Content */}
-              <div className="p-6 space-y-6">
-                {/* 1. Status & Approval Banner */}
-                <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-between">
-                  <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                      Partner Status
-                    </span>
-                    <span
-                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-extrabold mt-1 border ${
-                        getPartnerStatusBadge(activeDrawerPartner).style
-                      }`}
-                    >
-                      {getPartnerStatusBadge(activeDrawerPartner).label}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                      KYC Status
-                    </span>
-                    <span
-                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-extrabold mt-1 border ${
-                        activeDrawerPartner.kycStatus === 'verified'
-                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                          : 'bg-amber-50 text-amber-800 border-amber-200'
-                      }`}
-                    >
-                      {activeDrawerPartner.kycStatus === 'verified' ? 'Verified' : 'Pending Verification'}
-                    </span>
-                  </div>
+              {/* Drawer Content */}
+              <div className="p-6 flex flex-col gap-6">
+                {/* 1. Status & KYC Alert Badges */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span
+                    className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-black border ${
+                      getPartnerStatusBadge(activeDrawerPartner).style
+                    }`}
+                  >
+                    Status: {getPartnerStatusBadge(activeDrawerPartner).label}
+                  </span>
+                  <span
+                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${
+                      getPartnerAvailability(activeDrawerPartner).color
+                    }`}
+                  >
+                    <span className={`w-2 h-2 rounded-full ${getPartnerAvailability(activeDrawerPartner).dot}`} />
+                    {getPartnerAvailability(activeDrawerPartner).label}
+                  </span>
                 </div>
 
-                {/* 2. Operational KPIs & Performance */}
+                {/* 2. Key Metrics Grid */}
                 <div>
                   <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-2.5">
-                    Performance & Financials
+                    Performance & Jobs
                   </h4>
-                  <div className="grid grid-cols-2 gap-2.5">
-                    <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-100">
-                      <span className="text-[11px] font-bold text-emerald-800 block">Jobs Completed</span>
-                      <span className="text-lg font-black text-emerald-950">
+                  <div className="grid grid-cols-2 gap-3 text-center">
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                      <span className="text-[11px] font-bold text-slate-600 block">Jobs Completed</span>
+                      <span className="text-lg font-black text-slate-900">
                         {activeDrawerPartner.completedJobsCount || 0}
                       </span>
                     </div>
                     <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-100">
                       <span className="text-[11px] font-bold text-amber-800 block">Rating</span>
-                      <span className="text-lg font-black text-amber-950 flex items-center gap-1">
+                      <span className="text-lg font-black text-amber-950 flex items-center justify-center gap-1">
                         <Star className="w-4 h-4 fill-amber-500 text-amber-500" />
-                        {activeDrawerPartner.rating || 5.0}
+                        {activeDrawerPartner.rating ? activeDrawerPartner.rating.toFixed(1) : '5.0'}
                       </span>
                     </div>
                     <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
@@ -750,9 +972,9 @@ export const AllMaidsTab: React.FC<AllMaidsTabProps> = ({ activeTab = 'all' }) =
                       <strong className="text-slate-900 font-bold">{activeDrawerPartner.experience || '3+ Years'}</strong>
                     </div>
                     <div className="flex justify-between py-1">
-                      <span className="text-slate-500">Registered On</span>
+                      <span className="text-slate-500">Joined On</span>
                       <strong className="text-slate-900 font-bold">
-                        {activeDrawerPartner.appliedAt ? activeDrawerPartner.appliedAt.split('T')[0] : 'N/A'}
+                        {formatJoinedDate(activeDrawerPartner.appliedAt)}
                       </strong>
                     </div>
                   </div>
@@ -764,23 +986,14 @@ export const AllMaidsTab: React.FC<AllMaidsTabProps> = ({ activeTab = 'all' }) =
                     Services Provided
                   </h4>
                   <div className="flex flex-wrap gap-1.5">
-                    {(activeDrawerPartner.servicesProvided && activeDrawerPartner.servicesProvided.length > 0)
-                      ? activeDrawerPartner.servicesProvided.map((sp, idx) => (
-                          <span
-                            key={idx}
-                            className="px-2.5 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg text-xs font-bold"
-                          >
-                            {sp.serviceName}
-                          </span>
-                        ))
-                      : (activeDrawerPartner.skills || ['Home Cleaning']).map((sk, idx) => (
-                          <span
-                            key={idx}
-                            className="px-2.5 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg text-xs font-bold"
-                          >
-                            {sk}
-                          </span>
-                        ))}
+                    {getPartnerServicesList(activeDrawerPartner).map((srv, idx) => (
+                      <span
+                        key={idx}
+                        className="px-2.5 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg text-xs font-bold"
+                      >
+                        {srv}
+                      </span>
+                    ))}
                   </div>
 
                   {activeDrawerPartner.preferredAreas && activeDrawerPartner.preferredAreas.length > 0 && (
@@ -800,7 +1013,7 @@ export const AllMaidsTab: React.FC<AllMaidsTabProps> = ({ activeTab = 'all' }) =
                   )}
                 </div>
 
-                {/* 5. Documents & KYC Verification */}
+                {/* 5. Documents & KYC Verification (With direct view action links) */}
                 <div>
                   <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-2.5">
                     KYC Documents
@@ -810,49 +1023,58 @@ export const AllMaidsTab: React.FC<AllMaidsTabProps> = ({ activeTab = 'all' }) =
                       <span className="font-bold text-slate-800 flex items-center gap-2">
                         <ShieldCheck className="w-4 h-4 text-emerald-600" /> Aadhaar Verification
                       </span>
-                      <span
-                        className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
-                          activeDrawerPartner.aadhaarDocUrl || activeDrawerPartner.kycStatus === 'verified'
-                            ? 'text-emerald-700 bg-emerald-100'
-                            : 'text-amber-700 bg-amber-100'
-                        }`}
-                      >
-                        {activeDrawerPartner.aadhaarDocUrl || activeDrawerPartner.kycStatus === 'verified'
-                          ? 'Verified'
-                          : 'Pending'}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        {activeDrawerPartner.aadhaarDocUrl && (
+                          <a
+                            href={activeDrawerPartner.aadhaarDocUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[11px] text-emerald-800 font-bold hover:underline flex items-center gap-1"
+                          >
+                            <Eye className="w-3 h-3" /> View
+                          </a>
+                        )}
+                        <span
+                          className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                            activeDrawerPartner.aadhaarDocUrl || activeDrawerPartner.kycStatus === 'verified'
+                              ? 'text-emerald-700 bg-emerald-100'
+                              : 'text-amber-700 bg-amber-100'
+                          }`}
+                        >
+                          {activeDrawerPartner.aadhaarDocUrl || activeDrawerPartner.kycStatus === 'verified'
+                            ? 'Verified'
+                            : 'Pending'}
+                        </span>
+                      </div>
                     </div>
 
                     <div className="p-2.5 bg-slate-50 rounded-xl flex items-center justify-between border border-slate-200 text-xs">
                       <span className="font-bold text-slate-800 flex items-center gap-2">
                         <ShieldCheck className="w-4 h-4 text-emerald-600" /> PAN Card
                       </span>
-                      <span
-                        className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
-                          activeDrawerPartner.panDocUrl || activeDrawerPartner.kycStatus === 'verified'
-                            ? 'text-emerald-700 bg-emerald-100'
-                            : 'text-amber-700 bg-amber-100'
-                        }`}
-                      >
-                        {activeDrawerPartner.panDocUrl || activeDrawerPartner.kycStatus === 'verified'
-                          ? 'Verified'
-                          : 'Pending'}
-                      </span>
-                    </div>
-
-                    <div className="p-2.5 bg-slate-50 rounded-xl flex items-center justify-between border border-slate-200 text-xs">
-                      <span className="font-bold text-slate-800 flex items-center gap-2">
-                        <ShieldCheck className="w-4 h-4 text-emerald-600" /> Police Clearance
-                      </span>
-                      <span
-                        className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
-                          activeDrawerPartner.kycStatus === 'verified'
-                            ? 'text-emerald-700 bg-emerald-100'
-                            : 'text-amber-700 bg-amber-100'
-                        }`}
-                      >
-                        {activeDrawerPartner.kycStatus === 'verified' ? 'Verified' : 'Pending'}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        {activeDrawerPartner.panDocUrl && (
+                          <a
+                            href={activeDrawerPartner.panDocUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[11px] text-emerald-800 font-bold hover:underline flex items-center gap-1"
+                          >
+                            <Eye className="w-3 h-3" /> View
+                          </a>
+                        )}
+                        <span
+                          className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
+                            activeDrawerPartner.panDocUrl || activeDrawerPartner.kycStatus === 'verified'
+                              ? 'text-emerald-700 bg-emerald-100'
+                              : 'text-amber-700 bg-amber-100'
+                          }`}
+                        >
+                          {activeDrawerPartner.panDocUrl || activeDrawerPartner.kycStatus === 'verified'
+                            ? 'Verified'
+                            : 'Pending'}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -911,3 +1133,4 @@ export const AllMaidsTab: React.FC<AllMaidsTabProps> = ({ activeTab = 'all' }) =
   );
 };
 
+export default AllMaidsTab;

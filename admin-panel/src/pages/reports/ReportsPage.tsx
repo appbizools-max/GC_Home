@@ -140,7 +140,7 @@ export const ReportsPage: React.FC = () => {
               <thead>
                 <tr className="bg-slate-50 text-[11px] font-bold text-slate-500 border-b border-slate-200 uppercase">
                   <th className="py-2.5 px-3">Maid Partner</th>
-                  <th className="py-2.5 px-3">Hub Zone</th>
+                  <th className="py-2.5 px-3">Location / Area</th>
                   <th className="py-2.5 px-3">Completed</th>
                   <th className="py-2.5 px-3">Rating</th>
                 </tr>

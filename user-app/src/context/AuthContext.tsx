@@ -41,6 +41,7 @@ interface AuthContextType {
   sendLoginOtp: (phoneNumber: string) => Promise<boolean>;
   verifyLoginOtp: (otpCode: string) => Promise<{ success: boolean; message?: string }>;
   startRegistration: (draft: RegistrationDraft) => Promise<{ success: boolean; message?: string }>;
+  startCustomerRegistrationFlow: (initialPhone?: string) => void;
   verifyRegistrationOtp: (otpCode: string) => Promise<{ success: boolean; message?: string }>;
   resendLoginOtp: () => Promise<boolean>;
   completeProfileSetup: (profileData: ProfileInputData) => Promise<boolean>;
@@ -49,7 +50,7 @@ interface AuthContextType {
   logout: () => void;
   clearAuthError: () => void;
   navigateTo: (screen: string, payload?: any) => void;
-  updateUserProfile: (updates: Partial<User>) => void;
+  updateUserProfile: (updates: Partial<User>) => Promise<boolean>;
   addSavedAddress: (addressData: Omit<Address, 'id'>) => Promise<boolean>;
   updateSavedAddress: (addressId: string, updates: Partial<Address>) => Promise<boolean>;
   deleteSavedAddress: (addressId: string) => Promise<boolean>;
@@ -66,6 +67,7 @@ interface AuthContextType {
   updatePartnerProfile: (updates: Partial<MaidProfile>) => Promise<boolean>;
   confirmCustomerSlot: (bookingId: string) => Promise<void>;
   confirmMaidSlot: (bookingId: string) => Promise<void>;
+  fetchMaidProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -108,48 +110,62 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       let authoritativeRole = activeUser.role || 'customer';
       let maidStatus = activeUser.maidApplicationStatus || 'none';
 
-      // Verify authoritative profile from Supabase user_profiles
+      // Verify authoritative profile from Supabase
+      let dbUser: any = null;
       try {
-        const { data: dbUser } = await supabase
+        const { data } = await supabase
           .from('user_profiles')
           .select('*')
           .or(`id.eq.${activeUser.uid},phone.eq.${activeUser.phone}`)
           .maybeSingle();
-
-        if (dbUser) {
-          authoritativeRole = (dbUser.role as any) || authoritativeRole;
-          maidStatus = dbUser.maid_application_status || maidStatus;
-          activeUser = {
-            ...activeUser,
-            name: dbUser.name || dbUser.full_name || activeUser.name,
-            phone: dbUser.phone || activeUser.phone,
-            email: dbUser.email || activeUser.email,
-            role: authoritativeRole,
-            maidApplicationStatus: maidStatus as any,
-          };
-        }
+        dbUser = data;
       } catch (e) {
         console.warn('Supabase user profile verification notice:', e);
       }
 
-      // Check Supabase maid_profiles to verify partner approval status
-      let partnerRow: any = null;
+      let dbMaid: any = null;
       try {
-        const { data: dbMaid } = await supabase
+        const { data } = await supabase
           .from('maid_profiles')
           .select('*')
           .or(`id.eq.${activeUser.uid},user_id.eq.${activeUser.uid},phone.eq.${activeUser.phone}`)
           .maybeSingle();
-
-        if (dbMaid) {
-          partnerRow = dbMaid;
-          maidStatus = dbMaid.status || 'pending';
-          if (dbMaid.status === 'approved') {
-            authoritativeRole = 'maid';
-          }
-        }
+        dbMaid = data;
       } catch (e) {
         console.warn('Supabase maid profile check notice:', e);
+      }
+
+      // If user profile has been deleted from Supabase (e.g. database wipe/purge), purge stale local storage
+      if (!dbUser && !dbMaid) {
+        await authService.logout();
+        setUser(null);
+        setMaidProfile(null);
+        setCurrentScreen('login');
+        return;
+      }
+
+      if (dbUser) {
+        authoritativeRole = (dbUser.role as any) || authoritativeRole;
+        maidStatus = dbUser.maid_application_status || 'none';
+        activeUser = {
+          ...activeUser,
+          name: dbUser.name || dbUser.full_name || activeUser.name,
+          phone: dbUser.phone || activeUser.phone,
+          email: dbUser.email || activeUser.email,
+          role: authoritativeRole,
+          maidApplicationStatus: maidStatus as any,
+        };
+      } else if (dbMaid) {
+        authoritativeRole = 'maid';
+        maidStatus = dbMaid.status || 'pending';
+        activeUser = {
+          ...activeUser,
+          name: dbMaid.full_name || activeUser.name,
+          phone: dbMaid.phone || activeUser.phone,
+          email: dbMaid.email || activeUser.email,
+          role: 'maid',
+          maidApplicationStatus: maidStatus as any,
+        };
       }
 
       const finalUser: User = {
@@ -160,8 +176,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       setUser(finalUser);
 
-      // Route strictly based on verified role & approval state
-      if (authoritativeRole === 'maid' || authoritativeRole === 'partner' || partnerRow) {
+      // Route strictly:
+      // Customer ALWAYS routes to customer_home
+      // Partner routes to maid_home (if approved) or maid_status (if pending)
+      if (authoritativeRole === 'maid' || authoritativeRole === 'partner') {
         if (maidStatus === 'approved') {
           setCurrentScreen('maid_home');
         } else {
@@ -227,29 +245,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const phoneFilter = `id.eq.${activeUser.uid},user_id.eq.${activeUser.uid},phone.eq.${phoneToVerify},phone.eq.+91 ${last10},phone.eq.+91${last10},phone.eq.${last10}`;
 
       let maidRow: any = null;
-      try {
-        const { data: maidRows } = await supabase
-          .from('maid_profiles')
-          .select('*')
-          .or(phoneFilter)
-          .limit(1);
+      if (authoritativeRole === 'maid' || authoritativeRole === 'partner') {
+        try {
+          const { data: maidRows } = await supabase
+            .from('maid_profiles')
+            .select('*')
+            .or(phoneFilter)
+            .limit(1);
 
-        if (maidRows && maidRows.length > 0) {
-          maidRow = maidRows[0];
-          maidStatus = maidRow.status || 'pending';
-          if (maidRow.status === 'approved') {
-            authoritativeRole = 'maid';
+          if (maidRows && maidRows.length > 0) {
+            maidRow = maidRows[0];
+            maidStatus = maidRow.status || 'pending';
           }
+        } catch (e) {
+          console.warn('Partner lookup notice:', e);
         }
-      } catch (e) {
-        console.warn('Partner lookup notice:', e);
       }
 
-      const isApprovedMaid = maidStatus === 'approved' || activeUser.maidApplicationStatus === 'approved';
+      const isApprovedMaid = (authoritativeRole === 'maid' || authoritativeRole === 'partner') && maidStatus === 'approved';
 
       const finalUser: User = {
         ...activeUser,
-        role: isApprovedMaid ? 'maid' : authoritativeRole,
+        role: authoritativeRole,
         maidApplicationStatus: maidStatus as any,
       };
 
@@ -257,13 +274,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setHistory([]);
 
       // Route strictly:
-      // Customer → Customer Home
-      // Approved Maid/Partner → Maid Home
-      // Customer + Approved Maid/Partner → Maid Home
-      if (isApprovedMaid) {
-        setCurrentScreen('maid_home');
-      } else if (authoritativeRole === 'maid' || authoritativeRole === 'partner') {
-        if (maidStatus === 'approved') {
+      // Customers ALWAYS go to customer_home
+      // Approved Partners go to maid_home
+      // Pending Partners go to maid_status
+      if (authoritativeRole === 'maid' || authoritativeRole === 'partner') {
+        if (isApprovedMaid) {
           setCurrentScreen('maid_home');
         } else {
           setCurrentScreen('maid_status');
@@ -289,7 +304,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsAuthLoading(true);
     setAuthError(null);
     try {
-      const exists = await authService.checkPhoneExists(draft.phone);
+      const exists = await authService.checkCustomerPhoneExists(draft.phone);
       if (exists) {
         setIsAuthLoading(false);
         const errMsg = 'This mobile number is already registered. Please sign in to continue.';
@@ -300,6 +315,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
       }
 
+      setMaidProfile(null);
       setRegistrationDraft(draft);
       setPendingPhoneNumber(draft.phone);
 
@@ -335,13 +351,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         name,
         email: email || undefined,
         profilePhoto: undefined,
-        city: 'Hyderabad, Telangana',
-        address: 'Hyderabad, Telangana',
       }, phoneToVerify);
 
       setUser(profileRes.user);
-      if (profileRes.address) {
-        setSavedAddresses(prev => [profileRes.address, ...prev]);
+      setMaidProfile(null);
+      const newAddr = profileRes.address;
+      if (newAddr) {
+        setSavedAddresses(prev => [newAddr, ...prev]);
       }
 
       setRegistrationDraft(null);
@@ -377,6 +393,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   /**
+   * Initialize a clean customer registration flow from Login screen
+   */
+  const startCustomerRegistrationFlow = (initialPhone?: string) => {
+    setUser(null);
+    setMaidProfile(null);
+    setAuthError(null);
+    const cleanDigits = initialPhone ? initialPhone.replace(/\D/g, '').slice(-10) : '';
+    setRegistrationDraft({
+      name: '',
+      phone: cleanDigits ? `+91 ${cleanDigits}` : '',
+    });
+    setHistory([]);
+    setCurrentScreen('complete_profile');
+  };
+
+  /**
    * Save and complete user profile setup
    */
   const completeProfileSetup = async (profileData: ProfileInputData): Promise<boolean> => {
@@ -385,8 +417,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const res = await authService.createProfile(profileData, pendingPhoneNumber);
       setUser(res.user);
-      if (res.address) {
-        setSavedAddresses(prev => [res.address, ...prev]);
+      const newAddr = res.address;
+      if (newAddr) {
+        setSavedAddresses(prev => [newAddr, ...prev]);
       }
       setIsAuthLoading(false);
       // Clear history stack to finalize onboarding
@@ -400,25 +433,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const updateUserProfile = async (updates: Partial<User>) => {
-    setUser(prev => (prev ? { ...prev, ...updates } : null));
+  const updateUserProfile = async (updates: Partial<User>): Promise<boolean> => {
+    let updatedUser: User | null = null;
+    setUser(prev => {
+      if (!prev) return null;
+      updatedUser = { ...prev, ...updates };
+      authService.updateStoredUser(updatedUser).catch(() => {});
+      return updatedUser;
+    });
+
     if (user?.uid) {
       try {
         const payload: any = { updated_at: new Date().toISOString() };
-        if (updates.name !== undefined) payload.name = updates.name;
-        if (updates.email !== undefined) payload.email = updates.email;
+        if (updates.name !== undefined) {
+          payload.name = updates.name.trim();
+          payload.full_name = updates.name.trim();
+        }
+        if (updates.email !== undefined) payload.email = updates.email.trim();
+        if (updates.phone !== undefined) payload.phone = updates.phone.trim();
         if (updates.profilePhoto !== undefined) payload.profile_photo_url = updates.profilePhoto;
-        await supabase.from('user_profiles').update(payload).eq('id', user.uid);
+        const { error } = await supabase.from('user_profiles').update(payload).eq('id', user.uid);
+        if (error) {
+          console.warn('Error syncing updateUserProfile to Supabase:', error.message);
+          return false;
+        }
+        return true;
       } catch (err) {
         console.warn('Error syncing updateUserProfile to Supabase:', err);
+        return false;
       }
     }
+    return true;
   };
 
   const addSavedAddress = async (addressData: Omit<Address, 'id'>): Promise<boolean> => {
     if (!user?.uid) return false;
     try {
       const newId = 'addr_' + Math.random().toString(36).substring(2, 9) + Date.now();
+      const isFirstAddress = savedAddresses.length === 0;
+      const shouldBeDefault = Boolean(addressData.isDefault || isFirstAddress);
+
       const newAddress: Address = {
         id: newId,
         userId: user.uid,
@@ -427,17 +481,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         street: addressData.street || '',
         locality: addressData.locality || '',
         landmark: addressData.landmark || '',
-        city: addressData.city || 'Hyderabad',
-        state: addressData.state || 'Telangana',
-        pincode: addressData.pincode || '500081',
-        isDefault: addressData.isDefault || false,
+        city: addressData.city?.trim() || '',
+        state: addressData.state?.trim() || 'Telangana',
+        pincode: addressData.pincode?.trim() || '',
+        isDefault: shouldBeDefault,
       };
 
-      if (newAddress.isDefault) {
-        setSavedAddresses(prev => prev.map(a => ({ ...a, isDefault: false })));
+      if (shouldBeDefault) {
+        setSavedAddresses(prev => [newAddress, ...prev.map(a => ({ ...a, isDefault: false }))]);
+        await supabase.from('saved_addresses').update({ is_default: false }).eq('user_id', user.uid);
+      } else {
+        setSavedAddresses(prev => [newAddress, ...prev]);
       }
-
-      setSavedAddresses(prev => [newAddress, ...prev]);
 
       await supabase.from('saved_addresses').insert({
         id: newId,
@@ -450,9 +505,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         city: newAddress.city,
         state: newAddress.state,
         pincode: newAddress.pincode,
-        is_default: newAddress.isDefault,
+        is_default: shouldBeDefault,
         created_at: new Date().toISOString(),
       });
+
+      // ONLY sync to user_profiles if this is the DEFAULT address!
+      // If it's a separate non-default address (like a different booking location),
+      // the customer's Default Address is preserved without modification.
+      if (shouldBeDefault) {
+        const fullAddr = [newAddress.houseFlat, newAddress.street, newAddress.locality, newAddress.city, newAddress.pincode].filter(Boolean).join(', ');
+        await supabase.from('user_profiles').update({
+          address: fullAddr || newAddress.locality || newAddress.city || null,
+          city: newAddress.city || null,
+          state: newAddress.state || 'Telangana',
+          updated_at: new Date().toISOString(),
+        }).eq('id', user.uid);
+
+        setUser(prev => prev ? { ...prev, address: fullAddr || newAddress.locality || newAddress.city || '' } : null);
+      }
       return true;
     } catch (err) {
       console.warn('Error adding saved address:', err);
@@ -476,7 +546,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (updates.pincode !== undefined) payload.pincode = updates.pincode;
       if (updates.isDefault !== undefined) payload.is_default = updates.isDefault;
 
+      if (updates.isDefault) {
+        await supabase.from('saved_addresses').update({ is_default: false }).eq('user_id', user.uid);
+      }
+
       await supabase.from('saved_addresses').update(payload).eq('id', addressId).eq('user_id', user.uid);
+
+      const target = savedAddresses.find(a => a.id === addressId);
+      const isDefault = updates.isDefault ?? target?.isDefault;
+      if (isDefault) {
+        const merged = { ...target, ...updates };
+        const fullAddr = [merged.houseFlat, merged.street, merged.locality, merged.city, merged.pincode].filter(Boolean).join(', ');
+        await supabase.from('user_profiles').update({
+          address: fullAddr || merged.locality || merged.city || null,
+          city: merged.city || null,
+          state: merged.state || 'Telangana',
+          updated_at: new Date().toISOString(),
+        }).eq('id', user.uid);
+
+        setUser(prev => prev ? { ...prev, address: fullAddr || merged.locality || merged.city || '' } : null);
+      }
       return true;
     } catch (err) {
       console.warn('Error updating saved address:', err);
@@ -487,8 +576,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const deleteSavedAddress = async (addressId: string): Promise<boolean> => {
     if (!user?.uid) return false;
     try {
-      setSavedAddresses(prev => prev.filter(a => a.id !== addressId));
+      const remaining = savedAddresses.filter(a => a.id !== addressId);
+      const target = savedAddresses.find(a => a.id === addressId);
+      const wasDefault = Boolean(target?.isDefault);
+
+      setSavedAddresses(remaining);
       await supabase.from('saved_addresses').delete().eq('id', addressId).eq('user_id', user.uid);
+
+      if (wasDefault && remaining.length > 0) {
+        const nextDefault = remaining[0];
+        await setDefaultSavedAddress(nextDefault.id);
+      } else if (remaining.length === 0) {
+        await supabase.from('user_profiles').update({
+          address: null,
+          city: null,
+          updated_at: new Date().toISOString(),
+        }).eq('id', user.uid);
+        setUser(prev => prev ? { ...prev, address: '' } : null);
+      }
       return true;
     } catch (err) {
       console.warn('Error deleting saved address:', err);
@@ -502,6 +607,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setSavedAddresses(prev => prev.map(a => ({ ...a, isDefault: a.id === addressId })));
       await supabase.from('saved_addresses').update({ is_default: false }).eq('user_id', user.uid);
       await supabase.from('saved_addresses').update({ is_default: true }).eq('id', addressId).eq('user_id', user.uid);
+
+      const target = savedAddresses.find(a => a.id === addressId);
+      if (target) {
+        const fullAddr = [target.houseFlat, target.street, target.locality, target.city, target.pincode].filter(Boolean).join(', ');
+        await supabase.from('user_profiles').update({
+          address: fullAddr || target.locality || target.city || null,
+          city: target.city || null,
+          state: target.state || 'Telangana',
+          updated_at: new Date().toISOString(),
+        }).eq('id', user.uid);
+
+        setUser(prev => prev ? { ...prev, address: fullAddr || target.locality || target.city || '' } : null);
+      }
       return true;
     } catch (err) {
       console.warn('Error setting default address:', err);
@@ -543,6 +661,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setMaidProfile(null);
     setHistory([]);
     setCurrentScreen('login');
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.removeItem('@gc_home_plus_auth_user');
+        window.localStorage.removeItem('@gc_home_plus_onboarding_completed');
+      }
+    } catch {}
   };
 
   const navigateTo = (screen: string, payload?: any) => {
@@ -689,10 +813,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           address: {
             id: 'addr_' + (row.booking_code || row.id),
             label: row.address_label || 'Home',
+            houseFlat: row.address_house_flat || '',
             street: row.address_street || '',
             locality: row.address_locality || '',
-            city: row.address_city || 'Hyderabad',
-            pincode: row.address_pincode || '500081',
+            city: row.address_city || '',
+            pincode: row.address_pincode || '',
           },
           date: row.scheduled_date || new Date().toISOString().split('T')[0],
           timeSlot: row.time_slot || '10:00 AM',
@@ -702,8 +827,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           assignedMaidName: row.assigned_maid_name,
           assignedMaidPhone: row.assigned_maid_phone,
           assignedMaidPhoto: row.assigned_maid_photo_url,
-          paymentMethod: (row.payment_method as any) || 'upi',
-          paymentStatus: (row.payment_status as any) || 'paid',
+          paymentMethod: (row.payment_method as any) || 'cash',
+          paymentStatus: (row.payment_status as any) || 'pending',
           startOtp: row.start_otp || '1234',
           partnerPayout: row.partner_payout !== undefined && row.partner_payout !== null 
             ? Number(row.partner_payout) 
@@ -736,18 +861,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const fetchUserAddresses = useCallback(async () => {
     if (!user?.uid) return;
     try {
-      const { data } = await supabase.from('saved_addresses').select('*').eq('user_id', user.uid);
+      const { data } = await supabase
+        .from('saved_addresses')
+        .select('*')
+        .eq('user_id', user.uid)
+        .order('is_default', { ascending: false });
+
       if (data && data.length > 0) {
         const mapped: Address[] = data.map((row: any) => ({
           id: row.id,
+          userId: row.user_id,
           label: row.label || 'Home',
+          houseFlat: row.house_flat || '',
           street: row.street_address || row.street || '',
-          locality: row.locality || row.city || '',
-          city: row.city || 'Hyderabad',
-          pincode: row.pincode || '500081',
-          isDefault: row.is_default,
+          locality: row.locality || '',
+          landmark: row.landmark || '',
+          city: row.city || '',
+          state: row.state || 'Telangana',
+          pincode: row.pincode || '',
+          isDefault: Boolean(row.is_default),
         }));
         setSavedAddresses(mapped);
+      } else {
+        setSavedAddresses([]);
       }
     } catch (addrErr) {
       console.log('Error loading user addresses:', addrErr);
@@ -755,26 +891,52 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [user?.uid]);
 
   const fetchMaidProfile = useCallback(async () => {
-    if (!user?.uid) return;
+    if (!user?.uid && !user?.phone) return;
     try {
+      const cleanPhone = (user?.phone || '').replace(/\D/g, '').slice(-10);
+      const isUuid = (val?: string) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
+
+      const uidFilters: string[] = [];
+      if (isUuid(user?.uid)) {
+        uidFilters.push(`id.eq.${user.uid}`);
+      }
+      if (user?.uid) {
+        uidFilters.push(`user_id.eq.${user.uid}`);
+      }
+      const phoneFilters: string[] = [];
+      if (user?.phone) {
+        phoneFilters.push(`phone.eq.${user.phone}`);
+      }
+      if (cleanPhone) {
+        phoneFilters.push(`phone.eq.+91${cleanPhone}`);
+        phoneFilters.push(`phone.eq.${cleanPhone}`);
+      }
+      const filter = [...uidFilters, ...phoneFilters].join(',');
+      if (!filter) return;
+
       const { data, error } = await supabase
         .from('maid_profiles')
         .select('*')
-        .or(`id.eq.${user.uid},user_id.eq.${user.uid}`)
+        .or(filter)
         .limit(1);
 
       if (!error && data && data.length > 0) {
         const row = data[0];
-        let parsedSkills: any[] = [];
-        if (Array.isArray(row.skills)) {
-          parsedSkills = row.skills.map((s: any) => {
+        let parsedServices: any[] = [];
+        if (Array.isArray(row.services_provided) && row.services_provided.length > 0) {
+          parsedServices = row.services_provided.map((s: any) => {
             if (typeof s === 'string' && s.startsWith('{')) {
-              try { return JSON.parse(s); } catch { return s; }
+              try { return JSON.parse(s); } catch { return { serviceName: s }; }
             }
-            return s;
+            return typeof s === 'string' ? { serviceName: s } : s;
           });
-        } else if (Array.isArray(row.services_provided)) {
-          parsedSkills = row.services_provided;
+        } else if (Array.isArray(row.skills) && row.skills.length > 0) {
+          parsedServices = row.skills.map((s: any) => {
+            if (typeof s === 'string' && s.startsWith('{')) {
+              try { return JSON.parse(s); } catch { return { serviceName: s }; }
+            }
+            return typeof s === 'string' ? { serviceName: s } : s;
+          });
         }
 
         let parsedKycDocs = row.kyc_documents;
@@ -784,13 +946,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         const profile: MaidProfile = {
           uid: row.id || user.uid,
-          maidCode: row.maid_code || 'GC-PARTNER-1001',
-          fullName: row.full_name || user.name,
+          maidCode: row.maid_code || '',
+          fullName: row.full_name || user.name || 'Partner',
           phone: row.phone || user.phone,
           email: row.email || user.email || '',
           dob: row.dob || row.date_of_birth || '',
           gender: row.gender || '',
-          photoUrl: row.photo_url || parsedKycDocs?.profilePhotoUrl || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=400',
+          photoUrl: row.photo_url || parsedKycDocs?.profilePhotoUrl || '',
           idProofUrl: row.id_proof_url || parsedKycDocs?.aadhaarFrontUrl || '',
           emergencyContact: row.emergency_contact || (row.emergency_contact_name ? `${row.emergency_contact_name} (${row.emergency_contact_phone || ''})` : ''),
           emergencyContactName: row.emergency_contact_name,
@@ -805,11 +967,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           serviceRadiusKm: row.service_radius_km || 10,
           healthSafetyDecl: Boolean(row.health_safety_decl),
           bankDetails: {
-            accountName: row.bank_account_name || row.full_name || user.name,
+            accountName: row.bank_account_name || row.full_name || user.name || '',
             accountNumber: row.bank_account_number || '',
             ifscCode: row.bank_ifsc || '',
             bankName: row.bank_name || '',
-            upiId: row.upi_id || parsedKycDocs?.upiId,
+            upiId: row.upi_id || parsedKycDocs?.upiId || '',
           },
           status: row.status || 'pending',
           kycStatus: row.kyc_status,
@@ -823,18 +985,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           emergencyJobsAccepted: Boolean(row.emergency_jobs_accepted),
           appliedAt: row.applied_at ? new Date(row.applied_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
           approvedAt: row.approved_at,
-          servicesProvided: parsedSkills.filter((s: any) => typeof s === 'object' && s?.serviceName),
+          servicesProvided: parsedServices.map((s: any, idx: number) => ({
+            id: s.id || s.serviceId || `srv_${idx}`,
+            serviceId: s.serviceId || s.id || `srv_${idx}`,
+            serviceName: s.serviceName || s.name || 'Service',
+            category: s.category || '',
+            experienceYears: s.experienceYears || 3,
+            experienceRange: s.experienceRange || `${s.experienceYears || 3} yrs exp`,
+            description: s.description || '',
+            subServices: s.subServices || [],
+          })),
           languagesSpoken: Array.isArray(row.languages_spoken) ? row.languages_spoken : (Array.isArray(row.languages) ? row.languages : ['Telugu', 'English']),
           adminNotes: row.admin_notes,
         };
 
         setMaidProfile(profile);
 
-        if (row.status === 'approved') {
-          setUser(prev => (prev ? { ...prev, role: 'maid', maidApplicationStatus: 'approved' } : null));
-        } else {
-          setUser(prev => (prev ? { ...prev, maidApplicationStatus: row.status as any } : null));
+        // Only update user's maidApplicationStatus or maid role if user is in Partner mode
+        if (user.role === 'maid' || user.role === 'partner') {
+          if (row.status === 'approved') {
+            setUser(prev => (prev ? { ...prev, role: 'maid', maidApplicationStatus: 'approved' } : null));
+          } else {
+            setUser(prev => (prev ? { ...prev, maidApplicationStatus: row.status as any } : null));
+          }
         }
+      } else {
+        // No partner profile exists in database
+        setMaidProfile(null);
       }
     } catch (err) {
       console.warn('Error fetching maid profile:', err);
@@ -852,6 +1029,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       .channel('user_app_realtime_channel')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, () => {
         fetchSupabaseBookings();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'saved_addresses' }, () => {
+        fetchUserAddresses();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'services' }, () => {
         fetchServices();
@@ -982,8 +1162,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         scheduled_date: scheduledDate,
         time_slot: newBooking.timeSlot,
         status: 'pending_assignment',
-        payment_method: 'online',
-        payment_status: 'paid',
+        payment_method: newBooking.paymentMethod || 'cash',
+        payment_status: newBooking.paymentStatus || (newBooking.paymentMethod === 'upi' || newBooking.paymentMethod === 'card' ? 'paid' : 'pending'),
         start_otp: newBooking.startOtp,
       },
     ]).then(({ error }) => {
@@ -1123,7 +1303,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (updates.bankDetails.upiId !== undefined) payload.upi_id = updates.bankDetails.upiId;
       }
 
-      await supabase.from('maid_profiles').update(payload).or(`id.eq.${user.uid},user_id.eq.${user.uid}`);
+      const targetId = maidProfile?.uid || user.uid;
+      const isUuid = (val?: string) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
+      if (isUuid(targetId)) {
+        await supabase.from('maid_profiles').update(payload).eq('id', targetId);
+      } else if (user?.phone) {
+        await supabase.from('maid_profiles').update(payload).eq('phone', user.phone);
+      }
       return true;
     } catch (err) {
       console.warn('Error updating partner profile:', err);
@@ -1182,6 +1368,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         sendLoginOtp,
         verifyLoginOtp,
         startRegistration,
+        startCustomerRegistrationFlow,
         verifyRegistrationOtp,
         resendLoginOtp,
         completeProfileSetup,
@@ -1205,6 +1392,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         updatePartnerProfile,
         confirmCustomerSlot,
         confirmMaidSlot,
+        fetchMaidProfile,
         isMaidPartner,
         switchUserMode,
       }}

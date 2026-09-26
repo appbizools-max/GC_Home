@@ -67,11 +67,11 @@ export const INITIAL_MAID_PROFILE: MaidProfile = {
   serviceArea: 'Hyderabad',
   serviceRadiusKm: 5,
   healthSafetyDecl: true,
-  status: 'pending',
-  isOnline: true,
+  status: 'none' as any,
+  isOnline: false,
   rating: 5.0,
   totalRatingsCount: 0,
   completedJobsCount: 0,
   workingDays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
-  appliedAt: new Date().toISOString().split('T')[0]
+  appliedAt: ''
 };

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -35,16 +35,29 @@ import {
   AlertCircle,
   CreditCard,
   UserCheck,
+  User,
 } from 'lucide-react-native';
+
+import { NativeTimePicker } from '../become-maid/components/NativeTimePicker';
+import { PartnerDocumentPicker, UploadedDocItem } from '../become-maid/components/PartnerDocumentPicker';
+import { DynamicServiceSelector, SelectedServiceItem } from '../become-maid/components/DynamicServiceSelector';
 
 const STANDARD_LANGUAGES = ['Telugu', 'Hindi', 'English', 'Kannada', 'Tamil', 'Marathi'];
 const DAYS_OF_WEEK = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const EXPERIENCE_RANGES = [
+  '0–1 Years',
+  '1–2 Years',
+  '2–3 Years',
+  '3–5 Years',
+  '5–10 Years',
+  '10+ Years',
+];
 
 export const MaidProfileScreen: React.FC = () => {
-  const { maidProfile, updatePartnerProfile, logout, navigateTo, switchUserMode } = useAuth();
+  const { user, maidProfile, updatePartnerProfile, logout, navigateTo, switchUserMode } = useAuth();
 
   // Modal Editing States
-  const [activeModal, setActiveModal] = useState<'services' | 'languages' | 'availability' | 'bank' | 'info_modal' | null>(null);
+  const [activeModal, setActiveModal] = useState<'services' | 'languages' | 'availability' | 'bank' | 'documents' | 'info_modal' | null>(null);
   const [infoModalTitle, setInfoModalTitle] = useState('');
   const [infoModalContent, setInfoModalContent] = useState('');
 
@@ -54,33 +67,105 @@ export const MaidProfileScreen: React.FC = () => {
 
   // Editable Form States
   const [editServices, setEditServices] = useState<PartnerProvidedService[]>(maidProfile?.servicesProvided || []);
+  const [selectedCatalogServiceIds, setSelectedCatalogServiceIds] = useState<string[]>([]);
+  const [selectedCatalogSubServiceIds, setSelectedCatalogSubServiceIds] = useState<string[]>([]);
+  const [selectedServiceCatalogItems, setSelectedServiceCatalogItems] = useState<SelectedServiceItem[]>([]);
+
   const [editLanguages, setEditLanguages] = useState<string[]>(maidProfile?.languagesSpoken || ['Telugu', 'English']);
   const [editWorkingDays, setEditWorkingDays] = useState<string[]>(maidProfile?.workingDays || ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']);
-  const [editWorkingHours, setEditWorkingHours] = useState(maidProfile?.workingHours || '08:00 AM – 08:00 PM');
+  const [editWorkingHours, setEditWorkingHours] = useState(maidProfile?.workingHours || '09:00 AM – 06:00 PM');
+  const initialTimes = (maidProfile?.workingHours || '09:00 AM – 06:00 PM').split(/–|-/).map(s => s.trim());
+  const [editStartTime, setEditStartTime] = useState(initialTimes[0] || '09:00 AM');
+  const [editEndTime, setEditEndTime] = useState(initialTimes[1] || '06:00 PM');
   const [editRadius, setEditRadius] = useState(maidProfile?.serviceRadiusKm || 10);
   const [editEmergency, setEditEmergency] = useState(maidProfile?.emergencyJobsAccepted ?? true);
 
-  const [editBankName, setEditBankName] = useState(maidProfile?.bankDetails?.bankName || 'HDFC');
-  const [editAccountName, setEditAccountName] = useState(maidProfile?.bankDetails?.accountName || maidProfile?.fullName || 'Pavani');
-  const [editAccountNumber, setEditAccountNumber] = useState(maidProfile?.bankDetails?.accountNumber || '258025802580369');
-  const [editIfsc, setEditIfsc] = useState(maidProfile?.bankDetails?.ifscCode || 'HDFC1234');
-  const [editUpi, setEditUpi] = useState(maidProfile?.bankDetails?.upiId || 'Pavani14@ybl');
+  const [editBankName, setEditBankName] = useState(maidProfile?.bankDetails?.bankName || '');
+  const [editAccountName, setEditAccountName] = useState(maidProfile?.bankDetails?.accountName || maidProfile?.fullName || user?.name || '');
+  const [editAccountNumber, setEditAccountNumber] = useState(maidProfile?.bankDetails?.accountNumber || '');
+  const [editIfsc, setEditIfsc] = useState(maidProfile?.bankDetails?.ifscCode || '');
+  const [editUpi, setEditUpi] = useState(maidProfile?.bankDetails?.upiId || '');
+  const [editDocs, setEditDocs] = useState<UploadedDocItem[]>(maidProfile?.documents || []);
+
+  // Sync services state from maidProfile
+  useEffect(() => {
+    if (maidProfile?.servicesProvided && maidProfile.servicesProvided.length > 0) {
+      setEditServices(maidProfile.servicesProvided);
+      const sIds: string[] = [];
+      const subIds: string[] = [];
+      const items: SelectedServiceItem[] = [];
+
+      maidProfile.servicesProvided.forEach((s: any, idx: number) => {
+        const sid = s.serviceId || s.id || `srv_${idx}`;
+        if (sid) sIds.push(sid);
+        const subList = s.subServices || [];
+        const mappedSubs: { id: string; name: string }[] = [];
+        subList.forEach((sub: any) => {
+          const subId = typeof sub === 'string' ? sub : sub.id;
+          const subName = typeof sub === 'string' ? sub : sub.name;
+          if (subId) {
+            subIds.push(subId);
+            mappedSubs.push({ id: subId, name: subName || subId });
+          }
+        });
+        items.push({
+          serviceId: sid,
+          serviceName: s.serviceName || s.name || 'Service',
+          category: s.category || '',
+          subServiceIds: mappedSubs.map(m => m.id),
+          subServices: mappedSubs,
+        });
+      });
+
+      setSelectedCatalogServiceIds(sIds);
+      setSelectedCatalogSubServiceIds(subIds);
+      setSelectedServiceCatalogItems(items);
+    }
+  }, [maidProfile?.servicesProvided, activeModal]);
+
+  const handleServiceSelectorChange = (
+    serviceIds: string[],
+    items: SelectedServiceItem[],
+    subServiceIds?: string[]
+  ) => {
+    setSelectedCatalogServiceIds(serviceIds);
+    setSelectedCatalogSubServiceIds(subServiceIds || []);
+    setSelectedServiceCatalogItems(items);
+
+    const updatedServices: PartnerProvidedService[] = items.map((item, idx) => {
+      const existing = editServices.find(
+        es => ((es as any).serviceId === item.serviceId || es.id === item.serviceId || es.serviceName.toLowerCase() === item.serviceName.toLowerCase())
+      );
+      return {
+        id: item.serviceId || `srv_${idx}`,
+        serviceId: item.serviceId,
+        serviceName: item.serviceName,
+        category: item.category || '',
+        experienceYears: existing?.experienceYears || 3,
+        experienceRange: (existing as any)?.experienceRange || '2–3 Years',
+        description: existing?.description || '',
+        subServices: item.subServices || [],
+      } as any;
+    });
+
+    setEditServices(updatedServices);
+  };
 
   // Account Masking Helpers
   const maskAccountNumber = (accNo?: string) => {
-    if (!accNo) return '•••• •••• 0369';
+    if (!accNo) return 'Not added';
     const digits = accNo.replace(/\D/g, '');
-    const last4 = digits.length >= 4 ? digits.slice(-4) : '0369';
+    const last4 = digits.length >= 4 ? digits.slice(-4) : digits;
     return `•••• •••• ${last4}`;
   };
 
   const maskUpiId = (upiStr?: string) => {
-    if (!upiStr) return 'P••••@ybl';
+    if (!upiStr) return 'Not added';
     const parts = upiStr.split('@');
     if (parts.length === 2 && parts[0].length > 1) {
       return `${parts[0][0]}••••@${parts[1]}`;
     }
-    return 'P••••@ybl';
+    return upiStr;
   };
 
   // Verification Status: 'verified' | 'pending'
@@ -88,13 +173,13 @@ export const MaidProfileScreen: React.FC = () => {
 
   // Save Handlers
   const handleSaveServices = async () => {
-    if (editServices.some(s => !s.serviceName.trim())) {
-      Alert.alert('Required', 'Please enter a name for every service.');
+    if (editServices.length === 0) {
+      Alert.alert('Required', 'Please select at least one service from the catalog.');
       return;
     }
     await updatePartnerProfile({ servicesProvided: editServices });
     setActiveModal(null);
-    Alert.alert('Updated', 'Partner services updated successfully.');
+    Alert.alert('Services Updated', 'Your services have been updated successfully.');
   };
 
   const handleSaveLanguages = async () => {
@@ -140,6 +225,22 @@ export const MaidProfileScreen: React.FC = () => {
     Alert.alert('Updated', 'Bank payout details updated successfully.');
   };
 
+  const handleSaveDocuments = async () => {
+    if (editDocs.length === 0) {
+      Alert.alert('No Documents', 'Please select at least one document to upload.');
+      return;
+    }
+    await updatePartnerProfile({
+      documents: editDocs,
+      aadhaarFrontUrl: editDocs[0]?.fileUrl || null,
+      aadhaarBackUrl: editDocs[1]?.fileUrl || null,
+      panDocUrl: editDocs[2]?.fileUrl || null,
+      kycStatus: 'submitted',
+    } as any);
+    setActiveModal(null);
+    Alert.alert('Documents Saved', 'Your verification documents have been updated successfully.');
+  };
+
   const openInfoModal = (title: string, content: string) => {
     setInfoModalTitle(title);
     setInfoModalContent(content);
@@ -165,18 +266,24 @@ export const MaidProfileScreen: React.FC = () => {
         {/* 1. Header Profile Summary Card */}
         <View style={[styles.card, styles.profileCard]}>
           <View style={styles.avatarRingContainer}>
-            <Image
-              source={{
-                uri:
-                  maidProfile?.photoUrl ||
-                  'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=400',
-              }}
-              style={styles.photo}
-            />
+            {maidProfile?.photoUrl ? (
+              <Image
+                source={{ uri: maidProfile.photoUrl }}
+                style={styles.photo}
+              />
+            ) : (
+              <View style={[styles.photo, styles.photoPlaceholder]}>
+                <User size={30} color="#64748B" />
+              </View>
+            )}
             <View style={styles.availabilityBadgeRing} />
           </View>
 
-          <Text style={styles.name}>{maidProfile?.fullName || 'Pavani'}</Text>
+          {!maidProfile?.photoUrl && (
+            <Text style={styles.noPhotoTag}>Profile Photo Not Added</Text>
+          )}
+
+          <Text style={styles.name}>{maidProfile?.fullName || user?.name || 'Partner'}</Text>
 
           <View style={styles.ratingRow}>
             <Star size={14} color="#F59E0B" fill="#F59E0B" />
@@ -186,7 +293,7 @@ export const MaidProfileScreen: React.FC = () => {
           </View>
 
           <Text style={styles.partnerIdSecondaryText}>
-            Partner Ref: #{maidProfile?.maidCode || 'GC-PARTNER-3247'}
+            Partner Ref: {maidProfile?.maidCode ? `#${maidProfile.maidCode}` : 'Partner ID Pending'}
           </Text>
 
           <TouchableOpacity
@@ -210,15 +317,35 @@ export const MaidProfileScreen: React.FC = () => {
           </TouchableOpacity>
 
           <View style={styles.chipsWrap}>
-            {(maidProfile?.servicesProvided && maidProfile.servicesProvided.length > 0
-              ? maidProfile.servicesProvided
-              : [{ id: '1', serviceName: 'Painting', experienceYears: 5, experienceMonths: 0, description: '' }]
-            ).map((s, idx) => (
-              <View key={s.id || idx} style={styles.serviceChip}>
-                <Text style={styles.serviceChipTitle}>{s.serviceName || 'Custom Service'}</Text>
-                <Text style={styles.serviceChipExp}>{s.experienceYears || 1} yrs exp</Text>
+            {maidProfile?.servicesProvided && maidProfile.servicesProvided.length > 0 ? (
+              maidProfile.servicesProvided.map((s, idx) => {
+                const subList = (s as any).subServices || [];
+                return (
+                  <View key={s.id || (s as any).serviceId || idx} style={styles.serviceChip}>
+                    <Text style={styles.serviceChipTitle}>{s.serviceName || (s as any).name || 'Service'}</Text>
+                    {subList.length > 0 && (
+                      <Text style={styles.serviceSubList}>
+                        {subList.map((sub: any) => typeof sub === 'string' ? sub : sub.name).join(', ')}
+                      </Text>
+                    )}
+                    <Text style={styles.serviceChipExp}>
+                      {(s as any).experienceRange || `${s.experienceYears || 1} yrs exp`}
+                    </Text>
+                  </View>
+                );
+              })
+            ) : (
+              <View style={styles.emptyServicesBox}>
+                <Text style={styles.emptyServicesText}>No services selected yet.</Text>
+                <TouchableOpacity
+                  style={styles.addServiceBtn}
+                  onPress={() => setActiveModal('services')}
+                >
+                  <Plus size={13} color="#0E5B47" />
+                  <Text style={styles.addServiceBtnText}>Add Services</Text>
+                </TouchableOpacity>
               </View>
-            ))}
+            )}
           </View>
         </View>
 
@@ -351,7 +478,59 @@ export const MaidProfileScreen: React.FC = () => {
           </TouchableOpacity>
         </View>
 
-        {/* 6. Settings Group Section */}
+        {/* 6. Verification Documents Card (Upload Later Support) */}
+        <View style={styles.card}>
+          <TouchableOpacity style={styles.cardHeaderRow} onPress={() => setActiveModal('documents')} activeOpacity={0.7}>
+            <ShieldCheck size={16} color="#0E5B47" />
+            <Text style={styles.cardTitle}>Verification Documents</Text>
+            <TouchableOpacity style={styles.editIconBtn} onPress={() => setActiveModal('documents')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Edit2 size={13} color="#168A68" />
+            </TouchableOpacity>
+          </TouchableOpacity>
+
+          <View style={styles.availRow}>
+            <Text style={styles.availLabel}>Document Status</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <View
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: 4,
+                  backgroundColor:
+                    (editDocs.length > 0 || (maidProfile?.documents && maidProfile.documents.length > 0))
+                      ? '#16A34A'
+                      : '#F59E0B',
+                }}
+              />
+              <Text
+                style={[
+                  styles.availVal,
+                  {
+                    color:
+                      (editDocs.length > 0 || (maidProfile?.documents && maidProfile.documents.length > 0))
+                        ? '#16A34A'
+                        : '#D97706',
+                    fontWeight: '800',
+                  },
+                ]}
+              >
+                {(editDocs.length > 0 || (maidProfile?.documents && maidProfile.documents.length > 0))
+                  ? `${editDocs.length || maidProfile?.documents?.length} Document(s) Uploaded`
+                  : 'Pending (Not Uploaded)'}
+              </Text>
+            </View>
+          </View>
+
+          <TouchableOpacity style={styles.managePayoutLink} onPress={() => setActiveModal('documents')} activeOpacity={0.7}>
+            <Text style={styles.managePayoutText}>
+              {(editDocs.length > 0 || (maidProfile?.documents && maidProfile.documents.length > 0))
+                ? 'Manage verification documents →'
+                : 'Upload verification documents now →'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* 7. Settings Group Section */}
         <View style={styles.card}>
           <Text style={styles.settingsSectionHeading}>Settings</Text>
 
@@ -509,63 +688,32 @@ export const MaidProfileScreen: React.FC = () => {
         </View>
       </Modal>
 
-      {/* ── MODAL 3: EDIT SERVICES ── */}
+      {/* ── MODAL 3: EDIT SERVICES (Category -> Service -> Sub-service) ── */}
       <Modal visible={activeModal === 'services'} transparent animationType="slide" onRequestClose={() => setActiveModal(null)}>
         <View style={styles.modalOverlayBottom}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, { maxHeight: '88%' }]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Edit Services & Experience</Text>
+              <View>
+                <Text style={styles.modalTitle}>Services & Skills</Text>
+                <Text style={styles.modalSubtitle}>Select Category → Service → Sub-services</Text>
+              </View>
               <TouchableOpacity onPress={() => setActiveModal(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                 <X size={18} color="#64748B" />
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={{ maxHeight: 320 }}>
-              {editServices.map((srv, idx) => (
-                <View key={srv.id || idx} style={styles.modalServiceBox}>
-                  <Text style={styles.inputLabel}>Service #{idx + 1} Name</Text>
-                  <TextInput
-                    style={styles.textInput}
-                    value={srv.serviceName}
-                    onChangeText={txt =>
-                      setEditServices(prev => prev.map(s => (s.id === srv.id ? { ...s, serviceName: txt } : s)))
-                    }
-                  />
-
-                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.inputLabel}>Experience (Yrs)</Text>
-                      <TextInput
-                        style={styles.textInput}
-                        keyboardType="number-pad"
-                        value={String(srv.experienceYears || 0)}
-                        onChangeText={txt =>
-                          setEditServices(prev =>
-                            prev.map(s => (s.id === srv.id ? { ...s, experienceYears: parseInt(txt, 10) || 0 } : s))
-                          )
-                        }
-                      />
-                    </View>
-                  </View>
-                </View>
-              ))}
-
-              <TouchableOpacity
-                style={styles.modalAddBtn}
-                onPress={() =>
-                  setEditServices(prev => [
-                    ...prev,
-                    { id: `srv_${Date.now()}`, serviceName: '', experienceYears: 1, experienceMonths: 0, description: '' },
-                  ])
-                }
-              >
-                <Plus size={14} color="#0E5B47" />
-                <Text style={styles.modalAddBtnText}>+ Add Service</Text>
-              </TouchableOpacity>
+            <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
+              <DynamicServiceSelector
+                selectedServiceIds={selectedCatalogServiceIds}
+                selectedSubServiceIds={selectedCatalogSubServiceIds}
+                onChange={handleServiceSelectorChange}
+              />
             </ScrollView>
 
             <TouchableOpacity style={styles.saveModalBtn} onPress={handleSaveServices}>
-              <Text style={styles.saveModalBtnText}>Save Services</Text>
+              <Text style={styles.saveModalBtnText}>
+                Save Services ({selectedCatalogServiceIds.length} Selected)
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -638,8 +786,19 @@ export const MaidProfileScreen: React.FC = () => {
               })}
             </View>
 
-            <Text style={styles.inputLabel}>Working Hours</Text>
-            <TextInput style={styles.textInput} value={editWorkingHours} onChangeText={setEditWorkingHours} />
+            <Text style={styles.inputLabel}>Working Hours (Analog Clock)</Text>
+            <NativeTimePicker
+              startTime={editStartTime}
+              endTime={editEndTime}
+              onStartTimeChange={(time24, display12) => {
+                setEditStartTime(display12);
+                setEditWorkingHours(`${display12} – ${editEndTime}`);
+              }}
+              onEndTimeChange={(time24, display12) => {
+                setEditEndTime(display12);
+                setEditWorkingHours(`${editStartTime} – ${display12}`);
+              }}
+            />
 
             <TouchableOpacity style={styles.saveModalBtn} onPress={handleSaveAvailability}>
               <Text style={styles.saveModalBtnText}>Save Availability</Text>
@@ -673,6 +832,32 @@ export const MaidProfileScreen: React.FC = () => {
 
             <TouchableOpacity style={styles.saveModalBtn} onPress={handleSaveBank}>
               <Text style={styles.saveModalBtnText}>Save Payout Details</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── MODAL 7: EDIT DOCUMENTS ── */}
+      <Modal visible={activeModal === 'documents'} transparent animationType="slide" onRequestClose={() => setActiveModal(null)}>
+        <View style={styles.modalOverlayBottom}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Upload Verification Documents</Text>
+              <TouchableOpacity onPress={() => setActiveModal(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <X size={18} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 380 }}>
+              <PartnerDocumentPicker
+                documents={editDocs}
+                onDocumentsChange={setEditDocs}
+                partnerIdentifier={maidProfile?.phone || maidProfile?.fullName || 'Partner'}
+              />
+            </ScrollView>
+
+            <TouchableOpacity style={styles.saveModalBtn} onPress={handleSaveDocuments}>
+              <Text style={styles.saveModalBtnText}>Save Documents</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -721,6 +906,61 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   photo: { width: 68, height: 68, borderRadius: 34, borderWidth: 2, borderColor: '#FFFFFF' },
+  photoPlaceholder: {
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  noPhotoTag: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#DC2626',
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    marginTop: 4,
+  },
+  serviceSubList: {
+    fontSize: 10,
+    color: '#047857',
+    marginTop: 2,
+    fontStyle: 'italic',
+  },
+  emptyServicesBox: {
+    width: '100%',
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  emptyServicesText: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  addServiceBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EAF8F1',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  addServiceBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#0E5B47',
+  },
+  modalSubtitle: {
+    fontSize: 11,
+    color: '#64748B',
+    fontWeight: '500',
+    marginTop: 2,
+  },
   availabilityBadgeRing: {
     position: 'absolute',
     top: -2,
@@ -845,5 +1085,28 @@ const styles = StyleSheet.create({
   infoModalBody: { fontSize: 12.5, color: '#475569', textAlign: 'center', lineHeight: 18, marginBottom: 16 },
   infoModalCloseBtn: { backgroundColor: '#0E5B47', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12 },
   infoModalCloseText: { fontSize: 12.5, fontWeight: '800', color: '#FFFFFF' },
+
+  /* Experience Range Chips */
+  rangeOptionChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+  },
+  rangeOptionChipSelected: {
+    borderColor: '#168A68',
+    backgroundColor: '#DCFCE7',
+  },
+  rangeOptionChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  rangeOptionChipTextSelected: {
+    color: '#065F46',
+    fontWeight: '800',
+  },
 });
 

@@ -1,6 +1,5 @@
 import React from 'react';
 import {
-  Plus,
   Compass,
   Zap,
   UserCheck,
@@ -10,23 +9,14 @@ import {
 } from 'lucide-react';
 
 interface QuickAccessPanelProps {
-  onNewBooking: () => void;
+  onNewBooking?: () => void;
   onNavigateTab: (tab: string) => void;
 }
 
 export const QuickAccessPanel: React.FC<QuickAccessPanelProps> = ({
-  onNewBooking,
   onNavigateTab,
 }) => {
   const actions = [
-    {
-      id: 'new_booking',
-      title: 'New Booking',
-      desc: 'Create customer order',
-      icon: Plus,
-      color: 'bg-emerald-500 text-white hover:bg-emerald-600',
-      action: onNewBooking,
-    },
     {
       id: 'dispatch',
       title: 'Dispatch Queue',
@@ -78,7 +68,7 @@ export const QuickAccessPanel: React.FC<QuickAccessPanelProps> = ({
         <span className="text-[11px] font-semibold text-slate-400">Essential Shortcuts</span>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {actions.map(act => {
           const Icon = act.icon;
           return (

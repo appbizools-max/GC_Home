@@ -311,6 +311,8 @@ export const MaidHomeScreen: React.FC = () => {
 
   const [selectedJobDetails, setSelectedJobDetails] = useState<Booking | null>(null);
   const [acceptingJobId, setAcceptingJobId] = useState<string | null>(null);
+  const [etaModalTargetJob, setEtaModalTargetJob] = useState<Booking | null>(null);
+  const [selectedEtaOption, setSelectedEtaOption] = useState<string>('20 min');
 
   // Pulse animation for online indicator
   const pulseAnim = React.useRef(new Animated.Value(0.4)).current;
@@ -430,16 +432,13 @@ export const MaidHomeScreen: React.FC = () => {
   }, [isOnline, maidProfile?.uid]);
 
   // Filter Jobs:
-  // 1. New Jobs = bookings with status 'pending_assignment' where admin has sent an offer to this partner
-  //    OR any booking with assignment_status 'partner_offered' and this partner has a pending assignment
+  // 1. New Jobs = Only bookings where Admin has explicitly dispatched the offer to this partner
   const newJobs = isOnline
     ? bookings.filter(
         b =>
           !declinedBookingIds.includes(b.bookingId) &&
-          (
-            b.status === 'pending_assignment' ||
-            (b.assignmentStatus === 'partner_offered' && b.assignedMaidId === maidId)
-          )
+          (b.assignmentStatus === 'partner_offered' || b.assignmentStatus === 'pending_acceptance') &&
+          (b.assignedMaidId === maidId || (b as any).assigned_maid_id === maidId || b.assignedMaidPhone === maidProfile?.phone)
       )
     : [];
 
@@ -527,11 +526,12 @@ export const MaidHomeScreen: React.FC = () => {
     return { icon: '✨', label: 'Service' };
   };
 
-  // Accept Job Handler
-  const handleAcceptJob = async (job: Booking) => {
+  // Accept Job Handler (saves partner-provided ETA)
+  const handleAcceptJob = async (job: Booking, partnerEta?: string) => {
     setAcceptingJobId(job.bookingId);
     try {
       const acceptedAtIso = new Date().toISOString();
+      const etaToSave = partnerEta || '20 min';
 
       // 1. Update local state
       updateBookingStatus(job.bookingId, 'maid_assigned', {
@@ -539,42 +539,65 @@ export const MaidHomeScreen: React.FC = () => {
         assignedMaidName: maidProfile?.fullName || 'Partner',
         assignedMaidPhone: maidProfile?.phone || '',
         assignedMaidPhoto: maidProfile?.photoUrl || '',
+        partnerEta: etaToSave,
       });
 
-      // 2. Update Supabase bookings table
+      // 2. Resolve booking UUID from database
       if (job.bookingId) {
-        await supabase
+        const { data: bRow } = await supabase
           .from('bookings')
-          .update({
-            status: 'maid_assigned',
-            assignment_status: 'assigned',
-            assigned_maid_id: maidId,
-            assigned_maid_name: maidProfile?.fullName || 'Partner',
-            assigned_maid_phone: maidProfile?.phone || '',
-            assigned_maid_photo_url: maidProfile?.photoUrl || '',
-            assigned_maid_rating: maidProfile?.rating || 5.0,
-            partner_accepted_at: acceptedAtIso,
-            updated_at: acceptedAtIso,
-          })
-          .or(`booking_code.eq.${job.bookingId},id.eq.${job.bookingId}`);
+          .select('id')
+          .or(`booking_code.eq.${job.bookingId},id.eq.${job.bookingId}`)
+          .maybeSingle();
+
+        const targetUuid = bRow?.id || job.bookingId;
+
+        // Update bookings table
+        const bookingUpdateData: any = {
+          status: 'maid_assigned',
+          assignment_status: 'assigned',
+          assigned_maid_id: maidId,
+          assigned_maid_name: maidProfile?.fullName || 'Partner',
+          assigned_maid_phone: maidProfile?.phone || '',
+          assigned_maid_photo_url: maidProfile?.photoUrl || '',
+          assigned_maid_rating: maidProfile?.rating || 5.0,
+          partner_accepted_at: acceptedAtIso,
+          partner_eta: etaToSave,
+          updated_at: acceptedAtIso,
+        };
+
+        const { error: bUpdateErr } = await supabase
+          .from('bookings')
+          .update(bookingUpdateData)
+          .eq('id', targetUuid);
+
+        if (bUpdateErr) {
+          console.warn('[MaidHomeScreen Warning] Full booking update warning:', bUpdateErr.message);
+          // Fallback update without status enum if legacy trigger interferes
+          await supabase
+            .from('bookings')
+            .update({
+              assigned_maid_id: maidId,
+              assigned_maid_name: maidProfile?.fullName || 'Partner',
+              assigned_maid_phone: maidProfile?.phone || '',
+              partner_accepted_at: acceptedAtIso,
+              partner_eta: etaToSave,
+              updated_at: acceptedAtIso,
+            })
+            .eq('id', targetUuid);
+        }
 
         // 3. Update partner_assignments table
         try {
-          const { data: bRow } = await supabase
-            .from('bookings')
-            .select('id')
-            .or(`booking_code.eq.${job.bookingId},id.eq.${job.bookingId}`)
-            .maybeSingle();
-
-          const dbBookingId = bRow?.id || job.bookingId;
-          if (dbBookingId && maidId) {
+          if (targetUuid && maidId) {
             await supabase
               .from('partner_assignments')
               .update({
                 response_status: 'accepted',
                 responded_at: acceptedAtIso,
+                partner_eta: etaToSave,
               })
-              .eq('booking_id', dbBookingId)
+              .eq('booking_id', targetUuid)
               .eq('partner_id', maidId);
 
             // Expire other pending offers for this booking
@@ -583,7 +606,7 @@ export const MaidHomeScreen: React.FC = () => {
               .update({
                 response_status: 'expired',
               })
-              .eq('booking_id', dbBookingId)
+              .eq('booking_id', targetUuid)
               .neq('partner_id', maidId)
               .eq('response_status', 'pending');
           }
@@ -593,7 +616,7 @@ export const MaidHomeScreen: React.FC = () => {
       }
 
       setShowStatusToast({
-        message: `Job accepted! Added to Upcoming.`,
+        message: `Job accepted! ETA set to ${etaToSave}. Added to Upcoming.`,
         type: 'success',
       });
 
@@ -653,13 +676,18 @@ export const MaidHomeScreen: React.FC = () => {
         }
 
         // Keep booking unassigned in database so Admin can assign to another partner
-        await supabase
-          .from('bookings')
-          .update({
-            assignment_status: 'unassigned',
-            updated_at: declinedAtIso,
-          })
-          .or(`booking_code.eq.${targetJob.bookingId},id.eq.${targetJob.bookingId}`);
+        if (dbBookingId) {
+          await supabase
+            .from('bookings')
+            .update({
+              assignment_status: 'unassigned',
+              assigned_maid_id: null,
+              assigned_maid_name: null,
+              assigned_maid_phone: null,
+              updated_at: declinedAtIso,
+            })
+            .eq('id', dbBookingId);
+        }
       } catch (err) {
         console.warn('partner_assignments decline notice:', err);
       }
@@ -705,13 +733,23 @@ export const MaidHomeScreen: React.FC = () => {
 
       // Revert AuthContext & Supabase state
       updateBookingStatus(jobToRestore.bookingId, 'pending_assignment');
-      await supabase
+      
+      const { data: bRow } = await supabase
         .from('bookings')
-        .update({
-          status: 'pending_assignment',
-          updated_at: new Date().toISOString(),
-        })
-        .or(`booking_code.eq.${jobToRestore.bookingId},id.eq.${jobToRestore.bookingId}`);
+        .select('id')
+        .or(`booking_code.eq.${jobToRestore.bookingId},id.eq.${jobToRestore.bookingId}`)
+        .maybeSingle();
+
+      const dbBookingId = bRow?.id || jobToRestore.bookingId;
+      if (dbBookingId) {
+        await supabase
+          .from('bookings')
+          .update({
+            status: 'pending_assignment',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', dbBookingId);
+      }
 
       setShowStatusToast({
         message: 'Decline undone. Request restored to New Jobs.',
@@ -746,7 +784,7 @@ export const MaidHomeScreen: React.FC = () => {
 
             <View style={styles.profileMeta}>
               <Text style={styles.profileName} numberOfLines={1}>
-                {maidProfile?.fullName || 'Pavani'}
+                {maidProfile?.fullName || user?.name || 'Partner'}
               </Text>
               <View style={styles.ratingRow}>
                 <Star size={13} color="#F59E0B" fill="#F59E0B" />
@@ -920,7 +958,10 @@ export const MaidHomeScreen: React.FC = () => {
                       formatDateLabel={formatDateLabel}
                       onSelectDetails={setSelectedJobDetails}
                       onDeclinePress={handleTriggerDecline}
-                      onAcceptPress={handleAcceptJob}
+                      onAcceptPress={(job) => {
+                        setEtaModalTargetJob(job);
+                        setSelectedEtaOption('20 min');
+                      }}
                       isAccepting={isAcceptingThis}
                       isDeclining={isDecliningThis}
                       resetSwipeTrigger={resetSwipeTrigger}
@@ -1189,7 +1230,14 @@ export const MaidHomeScreen: React.FC = () => {
 
                 <TouchableOpacity
                   style={styles.acceptBtn}
-                  onPress={() => handleAcceptJob(selectedJobDetails)}
+                  onPress={() => {
+                    const target = selectedJobDetails;
+                    setSelectedJobDetails(null);
+                    if (target) {
+                      setEtaModalTargetJob(target);
+                      setSelectedEtaOption('20 min');
+                    }
+                  }}
                   activeOpacity={0.88}
                 >
                   <CheckCircle size={16} color="#FFFFFF" />
@@ -1199,6 +1247,79 @@ export const MaidHomeScreen: React.FC = () => {
             </View>
           </View>
         )}
+      </Modal>
+
+      {/* ── MODAL 4: PARTNER ETA SELECTION MODAL ── */}
+      <Modal
+        visible={!!etaModalTargetJob}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setEtaModalTargetJob(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { paddingHorizontal: 20, paddingVertical: 24 }]}>
+            <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#E8F8EE', alignItems: 'center', justifyContent: 'center', alignSelf: 'center', marginBottom: 12 }}>
+              <Clock size={26} color="#0E5B47" />
+            </View>
+
+            <Text style={styles.modalTitle}>Estimated Arrival Time (ETA)</Text>
+            <Text style={styles.modalSubtext}>
+              Please select how quickly you can reach the customer address. This ETA will be shared with Dispatch.
+            </Text>
+
+            {/* ETA Selection Chips */}
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginVertical: 18 }}>
+              {['10 min', '15 min', '20 min', '25 min', '30 min', '45 min', '60 min'].map((eta) => {
+                const isSelected = selectedEtaOption === eta;
+                return (
+                  <TouchableOpacity
+                    key={eta}
+                    onPress={() => setSelectedEtaOption(eta)}
+                    activeOpacity={0.8}
+                    style={{
+                      paddingHorizontal: 16,
+                      paddingVertical: 10,
+                      borderRadius: 20,
+                      borderWidth: 1.5,
+                      borderColor: isSelected ? '#0E5B47' : '#CBD5E1',
+                      backgroundColor: isSelected ? '#E8F8EE' : '#F8FAFC',
+                    }}
+                  >
+                    <Text style={{ fontSize: 14, fontWeight: '700', color: isSelected ? '#0E5B47' : '#475569' }}>
+                      {eta}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <View style={styles.modalActionsRow}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setEtaModalTargetJob(null)}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.acceptBtn, { flex: 1.5, height: 46, marginHorizontal: 0 }]}
+                onPress={() => {
+                  const target = etaModalTargetJob;
+                  const chosenEta = selectedEtaOption;
+                  setEtaModalTargetJob(null);
+                  if (target) {
+                    handleAcceptJob(target, chosenEta);
+                  }
+                }}
+                activeOpacity={0.88}
+              >
+                <CheckCircle size={16} color="#FFFFFF" />
+                <Text style={styles.acceptBtnText}>Confirm ({selectedEtaOption})</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
 
       <SlotConfirmationModal

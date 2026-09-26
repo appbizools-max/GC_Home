@@ -1,101 +1,263 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useAdmin } from '../../context/AdminContext';
 import { supabase } from '../../config/supabase';
+import { formatDateDDMMYYYY, getPaymentDisplayInfo, getPartnerEstimatedEarnings } from '../../utils/bookingDisplayUtils';
 import {
   ChevronRight,
   User,
   Phone,
-  Mail,
   MapPin,
   Clock,
-  CreditCard,
   Calendar,
   CheckCircle2,
   RefreshCw,
   XCircle,
-  MessageSquare,
   Star,
-  FileText,
-  Camera,
   Navigation,
-  Edit2,
   AlertCircle,
-  Plus,
-  Minus,
+  Package,
+  ShieldCheck,
+  UserCheck,
+  DollarSign,
+  HeartHandshake,
 } from 'lucide-react';
 
+interface BookingItem {
+  id: string;
+  service_id?: string;
+  service_name: string;
+  quantity: number;
+  unit_price: number;
+  subtotal: number;
+}
+
 export const BookingDetailsPage: React.FC = () => {
+  const { bookingId } = useParams<{ bookingId?: string }>();
+  const navigate = useNavigate();
   const {
+    bookings,
     selectedBooking,
     openAssignMaid,
     setRescheduleModalOpen,
     setCancelModalOpen,
-    setCurrentTab,
   } = useAdmin();
 
-  const [activePhotoTab, setActivePhotoTab] = useState<'before' | 'after'>('before');
+  const [directBooking, setDirectBooking] = useState<any>(null);
+  const [fetchingDirect, setFetchingDirect] = useState<boolean>(false);
+  const [bookingItems, setBookingItems] = useState<BookingItem[]>([]);
   const [timelineLogs, setTimelineLogs] = useState<any[]>([]);
-  const [photos, setPhotos] = useState<any[]>([]);
   const [customerReview, setCustomerReview] = useState<{ rating: number; comment?: string; reviewed_at?: string } | null>(null);
-  const [loadingExtra, setLoadingExtra] = useState<boolean>(false);
+  const [assignedPartnerProfile, setAssignedPartnerProfile] = useState<any>(null);
+  const [customerStats, setCustomerStats] = useState<{ totalBookings: number; totalSpent: number; customerType: string }>({
+    totalBookings: 1,
+    totalSpent: 0,
+    customerType: 'First-time Customer',
+  });
 
-  if (!selectedBooking) {
-    return (
-      <div className="p-8 text-center text-slate-500 font-sans">
-        <p className="text-sm font-bold">No booking details available.</p>
-        <button
-          onClick={() => setCurrentTab('all-bookings')}
-          className="mt-4 bg-[#123D2A] text-white px-4 py-2 rounded-xl text-xs font-bold cursor-pointer"
-        >
-          Return to All Bookings
-        </button>
-      </div>
-    );
-  }
+  // 1. Resolve booking from context or direct fetch
+  const b =
+    (selectedBooking && (!bookingId || selectedBooking.bookingId === bookingId || selectedBooking.id === bookingId))
+      ? selectedBooking
+      : (bookingId ? bookings.find(item => item.bookingId === bookingId || item.id === bookingId) : null) || directBooking;
 
-  const b = selectedBooking;
+  // 2. Fallback fetch if opened directly via URL or on refresh
+  useEffect(() => {
+    if (!b && bookingId) {
+      setFetchingDirect(true);
+      supabase
+        .from('bookings')
+        .select('*')
+        .or(`booking_code.eq.${bookingId},id.eq.${bookingId}`)
+        .maybeSingle()
+        .then(({ data, error }) => {
+          setFetchingDirect(false);
+          if (data && !error) {
+            setDirectBooking({
+              id: data.id,
+              bookingId: data.booking_code || data.id,
+              customerId: data.customer_id,
+              customerName: data.customer_name || 'Customer',
+              customerPhone: data.customer_phone || '',
+              customerEmail: data.customer_email || '',
+              serviceId: data.service_id,
+              serviceName: data.service_name || 'Home Cleaning',
+              servicePrice: Number(data.service_price || data.total_amount || 0),
+              totalAmount: Number(data.total_amount || 0),
+              serviceDuration: data.service_duration || '3 Hours',
+              address: {
+                id: 'addr_' + (data.booking_code || data.id),
+                label: data.address_label || 'Home',
+                street: data.address_street || '',
+                locality: data.address_locality || '',
+                city: data.address_city || 'Karimnagar',
+                pincode: data.address_pincode || '',
+              },
+              date: data.scheduled_date || '',
+              timeSlot: data.time_slot || '10:00 AM',
+              specialInstructions: data.special_instructions,
+              status: data.status || 'pending_assignment',
+              adminApprovalStatus: data.admin_approval_status || 'pending',
+              assignmentStatus: data.assignment_status || 'unassigned',
+              categoryName: data.category_name || 'General',
+              selectedAddOns: Array.isArray(data.selected_addons) ? data.selected_addons : [],
+              assignedMaidId: data.assigned_maid_id,
+              assignedMaidName: data.assigned_maid_name,
+              assignedMaidPhone: data.assigned_maid_phone,
+              assignedMaidPhotoUrl: data.assigned_maid_photo_url,
+              assignedMaidRating: data.assigned_maid_rating ? Number(data.assigned_maid_rating) : undefined,
+              paymentMethod: data.payment_method || 'cash',
+              paymentStatus: data.payment_status || 'pending',
+              transactionId: data.transaction_id,
+              paidAt: data.paid_at,
+              cancellationReason: data.cancellation_reason,
+              rescheduleReason: data.reschedule_reason,
+              createdAt: data.created_at,
+              partner_accepted_at: data.partner_accepted_at,
+              partner_arrived_at: data.partner_arrived_at,
+              partner_en_route_at: data.partner_en_route_at,
+              service_started_at: data.service_started_at,
+              completed_at: data.completed_at,
+              otp_verified: data.otp_verified,
+              otp_verified_at: data.otp_verified_at,
+              partner_distance_km: data.partner_distance_km,
+              partner_eta_minutes: data.partner_eta_minutes,
+              tip_amount: data.tip_amount,
+              partner_earnings: data.partner_earnings,
+              discount_amount: data.discount_amount,
+              coupon_code: data.coupon_code,
+              platform_fee: data.platform_fee,
+              tax_amount: data.tax_amount,
+            });
+          }
+        });
+    }
+  }, [b, bookingId]);
 
+  // 3. Realtime subscription for this specific booking
+  useEffect(() => {
+    const targetCode = bookingId || b?.bookingId;
+    if (!targetCode) return;
+
+    const channel = supabase
+      .channel(`booking-details-realtime-${targetCode}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'bookings',
+        },
+        payload => {
+          const row: any = payload.new;
+          if (row && (row.booking_code === targetCode || row.id === targetCode || row.id === b?.id)) {
+            setDirectBooking((prev: any) => ({
+              ...(prev || {}),
+              ...row,
+              bookingId: row.booking_code || row.id,
+              customerName: row.customer_name || prev?.customerName,
+              customerPhone: row.customer_phone || prev?.customerPhone,
+              customerEmail: row.customer_email || prev?.customerEmail,
+              serviceName: row.service_name || prev?.serviceName,
+              totalAmount: Number(row.total_amount || prev?.totalAmount || 0),
+              date: row.scheduled_date || prev?.date,
+              timeSlot: row.time_slot || prev?.timeSlot,
+              specialInstructions: row.special_instructions,
+              status: row.status || prev?.status,
+              paymentMethod: row.payment_method || prev?.paymentMethod,
+              paymentStatus: row.payment_status || prev?.paymentStatus,
+              transactionId: row.transaction_id || prev?.transactionId,
+              paidAt: row.paid_at || prev?.paidAt,
+              assignedMaidId: row.assigned_maid_id,
+              assignedMaidName: row.assigned_maid_name,
+              assignedMaidPhone: row.assigned_maid_phone,
+              partner_accepted_at: row.partner_accepted_at,
+              partner_arrived_at: row.partner_arrived_at,
+              partner_en_route_at: row.partner_en_route_at,
+              service_started_at: row.service_started_at,
+              completed_at: row.completed_at,
+              otp_verified: row.otp_verified,
+              otp_verified_at: row.otp_verified_at,
+              tip_amount: row.tip_amount,
+              partner_earnings: row.partner_earnings,
+            }));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [bookingId, b?.bookingId, b?.id]);
+
+  // 4. Fetch Deep Real Data: items, partner profile, customer history, timeline logs, ratings
   useEffect(() => {
     if (!b) return;
-    const fetchBookingDeepData = async () => {
-      setLoadingExtra(true);
+    const fetchDeepData = async () => {
       try {
         const bookingDbId = b.id;
 
-        // 1. Fetch live timeline logs
-        let logsQuery = supabase.from('booking_timeline_logs').select('*');
+        // A. Multi-Service items from booking_items table
         if (bookingDbId) {
-          logsQuery = logsQuery.eq('booking_id', bookingDbId);
-        }
-        const { data: logsData } = await logsQuery.order('created_at', { ascending: true });
-        if (logsData && logsData.length > 0) {
-          setTimelineLogs(logsData);
-        } else if (b.timelineLogs && b.timelineLogs.length > 0) {
-          setTimelineLogs(b.timelineLogs);
-        } else {
-          setTimelineLogs([
-            {
-              id: 't_init',
-              title: 'Booking Created',
-              created_at: b.createdAt,
-              details: `Booking placed for ${b.serviceName} (${b.timeSlot})`,
-              actor_type: 'customer',
-            },
-          ]);
-        }
-
-        // 2. Fetch live photos
-        if (bookingDbId) {
-          const { data: photosData } = await supabase
-            .from('booking_photos')
+          const { data: items } = await supabase
+            .from('booking_items')
             .select('*')
             .eq('booking_id', bookingDbId);
-          if (photosData && photosData.length > 0) {
-            setPhotos(photosData);
+          if (items && items.length > 0) {
+            setBookingItems(items);
           }
         }
 
-        // 3. Fetch live customer review/rating
+        // B. Assigned Partner Profile from maid_profiles
+        if (b.assignedMaidId) {
+          const { data: partnerData } = await supabase
+            .from('maid_profiles')
+            .select('*')
+            .or(`id.eq.${b.assignedMaidId},maid_code.eq.${b.assignedMaidId}`)
+            .maybeSingle();
+          if (partnerData) {
+            setAssignedPartnerProfile(partnerData);
+          }
+        } else {
+          setAssignedPartnerProfile(null);
+        }
+
+        // C. Customer History stats
+        if (b.customerId || b.customerPhone) {
+          const custQuery = supabase
+            .from('bookings')
+            .select('id, total_amount, payment_status, status');
+          if (b.customerId) {
+            custQuery.eq('customer_id', b.customerId);
+          } else {
+            custQuery.eq('customer_phone', b.customerPhone);
+          }
+          const { data: cBookings } = await custQuery;
+          if (cBookings) {
+            const count = cBookings.length;
+            const paid = cBookings.filter(bk => bk.payment_status === 'paid' && bk.status !== 'cancelled');
+            const spend = paid.reduce((acc, bk) => acc + (Number(bk.total_amount) || 0), 0);
+            let cType = 'First-time Customer';
+            if (spend > 5000 || count >= 5) cType = 'VIP Member';
+            else if (count > 1) cType = 'Regular Customer';
+            setCustomerStats({ totalBookings: count, totalSpent: spend, customerType: cType });
+          }
+        }
+
+        // D. Timeline Logs from booking_timeline_logs table
+        if (bookingDbId) {
+          const { data: logs } = await supabase
+            .from('booking_timeline_logs')
+            .select('*')
+            .eq('booking_id', bookingDbId)
+            .order('created_at', { ascending: true });
+          if (logs && logs.length > 0) {
+            setTimelineLogs(logs);
+          }
+        }
+
+        // E. Customer Review & Rating from ratings table
         if (bookingDbId) {
           const { data: ratingData } = await supabase
             .from('ratings')
@@ -106,39 +268,201 @@ export const BookingDetailsPage: React.FC = () => {
             setCustomerReview({
               rating: ratingData.rating,
               comment: ratingData.comment,
-              reviewed_at: ratingData.reviewed_at,
+              reviewed_at: ratingData.reviewed_at || ratingData.created_at,
             });
           }
         }
       } catch (err) {
         console.warn('BookingDetailsPage deep data fetch notice:', err);
-      } finally {
-        setLoadingExtra(false);
       }
     };
 
-    fetchBookingDeepData();
-  }, [b?.bookingId, b?.id]);
+    fetchDeepData();
+  }, [b?.bookingId, b?.id, b?.assignedMaidId, b?.customerId, b?.customerPhone]);
+
+  if (fetchingDirect) {
+    return (
+      <div className="p-16 text-center text-slate-500 font-sans flex flex-col items-center justify-center gap-3">
+        <div className="w-8 h-8 border-3 border-[#123D2A] border-t-transparent rounded-full animate-spin"></div>
+        <p className="text-xs font-bold text-slate-600">Loading booking details...</p>
+      </div>
+    );
+  }
+
+  if (!b) {
+    return (
+      <div className="p-12 text-center text-slate-500 font-sans max-w-md mx-auto">
+        <AlertCircle className="w-10 h-10 text-amber-500 mx-auto mb-3" />
+        <h3 className="text-base font-extrabold text-slate-800">Booking Not Found</h3>
+        <p className="text-xs text-slate-500 mt-1">
+          {bookingId ? `Could not locate booking "${bookingId}".` : 'No booking details selected.'}
+        </p>
+        <button
+          onClick={() => navigate('/admin/bookings')}
+          className="mt-4 bg-[#123D2A] hover:bg-[#184a34] text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-sm"
+        >
+          Return to All Bookings
+        </button>
+      </div>
+    );
+  }
+
+  const paymentInfo = getPaymentDisplayInfo(b.paymentStatus, b.paymentMethod);
+  const isPartnerAssigned = Boolean(b.assignedMaidId || b.assignedMaidName);
+
+  // Helper to format ISO timestamps nicely
+  const formatTimestamp = (dateStr?: string | null): string => {
+    if (!dateStr) return '';
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return dateStr;
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+      let hours = d.getHours();
+      const minutes = String(d.getMinutes()).padStart(2, '0');
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      hours = hours % 12;
+      hours = hours ? hours : 12;
+      return `${day}-${month}-${year} ${String(hours).padStart(2, '0')}:${minutes} ${ampm}`;
+    } catch {
+      return dateStr;
+    }
+  };
+
+  // Build Real Timeline Events (Only events that actually occurred)
+  const realTimelineEvents: { id: string; title: string; time: string; details?: string; actor?: string }[] = [];
+
+  if (b.createdAt) {
+    realTimelineEvents.push({
+      id: 'evt_created',
+      title: 'Booking Created',
+      time: formatTimestamp(b.createdAt),
+      details: `Booking placed for ${b.serviceName}`,
+      actor: 'Customer',
+    });
+  }
+
+  if (b.partner_search_started_at || (b.assignmentStatus && b.assignmentStatus !== 'unassigned')) {
+    realTimelineEvents.push({
+      id: 'evt_dispatch',
+      title: 'Assignment Requested',
+      time: formatTimestamp(b.partner_search_started_at || b.createdAt),
+      details: b.assignedMaidName ? `Assigned to ${b.assignedMaidName}` : 'Partner dispatch initiated',
+      actor: 'Admin / System',
+    });
+  }
+
+  if (b.partner_accepted_at) {
+    realTimelineEvents.push({
+      id: 'evt_accepted',
+      title: 'Partner Accepted',
+      time: formatTimestamp(b.partner_accepted_at),
+      details: `${b.assignedMaidName || 'Partner'} accepted the booking request`,
+      actor: 'Partner',
+    });
+  }
+
+  if (b.partner_en_route_at) {
+    realTimelineEvents.push({
+      id: 'evt_en_route',
+      title: 'Partner En Route',
+      time: formatTimestamp(b.partner_en_route_at),
+      details: 'Partner started journey towards service address',
+      actor: 'Partner',
+    });
+  }
+
+  if (b.partner_arrived_at) {
+    realTimelineEvents.push({
+      id: 'evt_arrived',
+      title: 'Partner Arrived',
+      time: formatTimestamp(b.partner_arrived_at),
+      details: 'Partner confirmed arrival at customer location',
+      actor: 'Partner',
+    });
+  }
+
+  if (b.otp_verified_at) {
+    realTimelineEvents.push({
+      id: 'evt_otp_verified',
+      title: 'Service Start OTP Verified',
+      time: formatTimestamp(b.otp_verified_at),
+      details: 'Customer OTP verified securely by partner',
+      actor: 'Partner & Customer',
+    });
+  }
+
+  if (b.service_started_at) {
+    realTimelineEvents.push({
+      id: 'evt_started',
+      title: 'Service Started',
+      time: formatTimestamp(b.service_started_at),
+      details: 'Cleaning job commenced',
+      actor: 'Partner',
+    });
+  }
+
+  if (b.completed_at) {
+    realTimelineEvents.push({
+      id: 'evt_completed',
+      title: 'Service Completed',
+      time: formatTimestamp(b.completed_at),
+      details: 'Service marked complete by partner',
+      actor: 'Partner',
+    });
+  }
+
+  if (b.status === 'cancelled') {
+    realTimelineEvents.push({
+      id: 'evt_cancelled',
+      title: 'Booking Cancelled',
+      time: formatTimestamp(b.updated_at || b.createdAt),
+      details: b.cancellationReason ? `Reason: ${b.cancellationReason}` : 'Booking was cancelled',
+      actor: 'System / Customer',
+    });
+  }
+
+  if (b.paymentStatus === 'paid' && b.paidAt) {
+    realTimelineEvents.push({
+      id: 'evt_paid',
+      title: 'Payment Collected',
+      time: formatTimestamp(b.paidAt),
+      details: `Full payment of ₹${b.totalAmount} collected via ${paymentInfo.methodLabel}`,
+      actor: 'Payment Gateway',
+    });
+  }
+
+  // Merge any distinct database timeline logs
+  (timelineLogs || []).forEach((log: any, idx: number) => {
+    if (log.title && !realTimelineEvents.some(e => e.title.toLowerCase() === log.title.toLowerCase())) {
+      realTimelineEvents.push({
+        id: log.id || `log_${idx}`,
+        title: log.title,
+        time: formatTimestamp(log.created_at),
+        details: log.details,
+        actor: log.actor_name || log.actor_type,
+      });
+    }
+  });
 
   return (
-    <div className="flex flex-col gap-6 font-sans text-slate-800 select-none pb-8">
+    <div className="flex flex-col gap-6 font-sans text-slate-800 select-none pb-12">
       {/* Breadcrumb & Header Bar */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 text-xs font-semibold text-slate-400 mb-1">
-            <span>Dashboard</span>
+            <span onClick={() => navigate('/admin/dashboard')} className="hover:text-slate-600 cursor-pointer">Dashboard</span>
             <ChevronRight className="w-3 h-3" />
-            <span>Bookings</span>
+            <span onClick={() => navigate('/admin/bookings')} className="hover:text-slate-600 cursor-pointer">Bookings</span>
             <ChevronRight className="w-3 h-3" />
-            <span>All Bookings</span>
-            <ChevronRight className="w-3 h-3" />
-            <span className="text-[#123D2A] font-bold">Booking Details</span>
+            <span className="text-[#123D2A] font-bold">{b.bookingId}</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-black text-[#0A192F] tracking-tight">
             Booking Details
           </h1>
           <p className="text-xs text-slate-500 font-medium mt-0.5">
-            View complete information and track the booking status.
+            Realtime verified lifecycle, customer, partner, and payment records for this booking.
           </p>
         </div>
 
@@ -149,7 +473,7 @@ export const BookingDetailsPage: React.FC = () => {
             className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-extrabold px-3.5 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow-sm cursor-pointer"
           >
             <RefreshCw className="w-3.5 h-3.5 text-[#123D2A]" />
-            <span>Reassign Maid</span>
+            <span>{isPartnerAssigned ? 'Reassign Partner' : 'Assign Partner'}</span>
           </button>
 
           <button
@@ -168,444 +492,450 @@ export const BookingDetailsPage: React.FC = () => {
             <span>Cancel Booking</span>
           </button>
 
-          <button className="bg-[#123D2A] hover:bg-[#184a34] text-white font-extrabold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow-md cursor-pointer">
+          <button
+            onClick={() => window.open(`tel:${b.customerPhone}`)}
+            className="bg-[#123D2A] hover:bg-[#184a34] text-white font-extrabold px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow-md cursor-pointer"
+          >
             <Phone className="w-3.5 h-3.5" />
             <span>Contact Customer</span>
           </button>
         </div>
       </div>
 
-      {/* Booking Identifier & Status Pill */}
-      <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-sm flex flex-col gap-5">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <h2 className="text-xl font-black text-[#0A192F] tracking-tight">{b.bookingId}</h2>
-            <span className="bg-sky-50 text-sky-700 border border-sky-200/60 font-extrabold px-3 py-1 rounded-full text-xs">
-              {b.status.replace('_', ' ').toUpperCase()}
-            </span>
-          </div>
-          <div className="text-xs text-slate-500 font-medium">
-            Booked on {b.createdTimeFormatted || '16 Sep 2026, 10:15 AM'}
-          </div>
+      {/* Booking Identifier & Status Banner */}
+      <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <h2 className="text-xl font-black text-[#0A192F] tracking-tight">{b.bookingId}</h2>
+          <span className="bg-slate-100 text-slate-800 border border-slate-300 font-black px-3 py-1 rounded-full text-xs uppercase tracking-wide">
+            {b.status.replace(/_/g, ' ')}
+          </span>
+          <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${paymentInfo.statusBadgeStyle}`}>
+            {paymentInfo.statusLabel} ({paymentInfo.methodLabel})
+          </span>
         </div>
-
-        {/* Horizontal Lifecycle Stepper */}
-        <div className="pt-2 pb-4">
-          <div className="grid grid-cols-7 gap-2 relative items-center text-center">
-            {/* Step 1: Created */}
-            <div className="flex flex-col items-center relative z-10">
-              <div className="w-8 h-8 rounded-full bg-[#123D2A] text-white flex items-center justify-center font-bold text-xs shadow-md">
-                <CheckCircle2 className="w-4 h-4" />
-              </div>
-              <span className="text-[11px] font-extrabold text-slate-900 mt-2">Created</span>
-              <span className="text-[10px] text-slate-400 font-medium">10:15 AM</span>
-            </div>
-
-            {/* Step 2: Payment Confirmed */}
-            <div className="flex flex-col items-center relative z-10">
-              <div className="w-8 h-8 rounded-full bg-[#123D2A] text-white flex items-center justify-center font-bold text-xs shadow-md">
-                <CheckCircle2 className="w-4 h-4" />
-              </div>
-              <span className="text-[11px] font-extrabold text-slate-900 mt-2">
-                Payment Confirmed
-              </span>
-              <span className="text-[10px] text-slate-400 font-medium">10:18 AM</span>
-            </div>
-
-            {/* Step 3: Maid Assigned */}
-            <div className="flex flex-col items-center relative z-10">
-              <div className="w-8 h-8 rounded-full bg-[#123D2A] text-white flex items-center justify-center font-bold text-xs shadow-md">
-                <CheckCircle2 className="w-4 h-4" />
-              </div>
-              <span className="text-[11px] font-extrabold text-slate-900 mt-2">
-                Maid Assigned
-              </span>
-              <span className="text-[10px] text-slate-400 font-medium">10:25 AM</span>
-            </div>
-
-            {/* Step 4: En Route */}
-            <div className="flex flex-col items-center relative z-10">
-              <div className="w-8 h-8 rounded-full bg-[#123D2A] text-white flex items-center justify-center font-bold text-xs shadow-md">
-                <CheckCircle2 className="w-4 h-4" />
-              </div>
-              <span className="text-[11px] font-extrabold text-slate-900 mt-2">En Route</span>
-              <span className="text-[10px] text-slate-400 font-medium">10:35 AM</span>
-            </div>
-
-            {/* Step 5: Arrived */}
-            <div className="flex flex-col items-center relative z-10">
-              <div className="w-8 h-8 rounded-full bg-[#123D2A] text-white flex items-center justify-center font-bold text-xs shadow-md">
-                <CheckCircle2 className="w-4 h-4" />
-              </div>
-              <span className="text-[11px] font-extrabold text-slate-900 mt-2">Arrived</span>
-              <span className="text-[10px] text-slate-400 font-medium">11:05 AM</span>
-            </div>
-
-            {/* Step 6: Cleaning Started */}
-            <div className="flex flex-col items-center relative z-10">
-              <div className="w-8 h-8 rounded-full bg-[#123D2A] text-white flex items-center justify-center font-bold text-xs shadow-md ring-4 ring-emerald-100 animate-pulse">
-                <CheckCircle2 className="w-4 h-4" />
-              </div>
-              <span className="text-[11px] font-extrabold text-[#123D2A] mt-2">
-                Cleaning Started
-              </span>
-              <span className="text-[10px] text-slate-400 font-medium">11:10 AM</span>
-            </div>
-
-            {/* Step 7: Completed */}
-            <div className="flex flex-col items-center relative z-10 opacity-40">
-              <div className="w-8 h-8 rounded-full bg-slate-200 text-slate-500 flex items-center justify-center font-bold text-xs">
-                7
-              </div>
-              <span className="text-[11px] font-bold text-slate-600 mt-2">Completed</span>
-              <span className="text-[10px] text-slate-400 font-medium">--:--</span>
-            </div>
-          </div>
+        <div className="text-xs text-slate-500 font-medium">
+          Booked on {formatTimestamp(b.createdAt)}
         </div>
       </div>
 
-      {/* 3 Column Content Layout */}
+      {/* 3 Column Grid Content Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left Column (Customer, Payment & Notes) - 4 Cols */}
+        {/* Left Column (Customer Details, Address, Notes) - 4 Cols */}
         <div className="lg:col-span-4 flex flex-col gap-6">
-          {/* Customer Details Card */}
+          {/* Customer Details Card (Strictly Real Data, No Dummy Email) */}
           <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm flex flex-col gap-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-sm font-extrabold text-[#0A192F]">Customer Details</h3>
-              <button className="text-slate-400 hover:text-slate-600">
-                <Edit2 className="w-3.5 h-3.5" />
-              </button>
+              <span className="text-[10px] font-bold text-slate-400">Verified Profile</span>
             </div>
 
-            <div className="flex items-center gap-3">
-              {b.customerAvatar ? (
-                <img
-                  src={b.customerAvatar}
-                  alt={b.customerName}
-                  className="w-12 h-12 rounded-full object-cover shadow-sm"
-                />
-              ) : (
-                <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-700 font-black flex items-center justify-center text-sm">
-                  {b.customerName[0]}
-                </div>
-              )}
-              <div>
-                <h4 className="text-sm font-extrabold text-slate-900">{b.customerName}</h4>
-                <div className="text-xs text-slate-500 font-medium">{b.customerPhone}</div>
-                <div className="text-xs text-slate-400 font-medium">{b.customerEmail || 'priya.sharma@gmail.com'}</div>
-              </div>
+            <div>
+              <h4 className="text-base font-extrabold text-slate-900">{b.customerName || 'Registered Customer'}</h4>
+              <a
+                href={`tel:${b.customerPhone}`}
+                className="text-xs text-slate-600 font-bold hover:text-emerald-700 flex items-center gap-1.5 mt-1"
+              >
+                <Phone className="w-3.5 h-3.5 text-slate-400" />
+                {b.customerPhone || 'Phone not available'}
+              </a>
+              {/* Only display email if customer explicitly entered a real email */}
+              {b.customerEmail &&
+                !b.customerEmail.includes('customer@gchome.com') &&
+                !b.customerEmail.includes('example.com') && (
+                  <div className="text-xs text-slate-500 font-medium mt-0.5">
+                    {b.customerEmail}
+                  </div>
+                )}
             </div>
 
             <div className="border-t border-slate-100 pt-3">
-              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                Address
+              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1 flex items-center gap-1">
+                <MapPin className="w-3.5 h-3.5 text-emerald-700" />
+                Booking Address
               </div>
               <div className="text-xs font-bold text-slate-800 leading-snug">
-                {b.address.street}, {b.address.locality}
+                {b.address?.street ? `${b.address.street}, ` : ''}
+                {b.address?.locality || 'Locality not specified'}
               </div>
-              <div className="text-xs text-slate-500 font-medium">
-                {b.address.city} - {b.address.pincode}
+              <div className="text-xs text-slate-500 font-medium mt-0.5">
+                {b.address?.city || 'Karimnagar'} {b.address?.pincode ? `- ${b.address.pincode}` : ''}
               </div>
-              <button className="text-[11px] font-bold text-[#123D2A] hover:underline flex items-center gap-1 mt-1 cursor-pointer">
-                <span>View on Map</span>
-              </button>
             </div>
 
             <div className="border-t border-slate-100 pt-3 flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-500">Customer Type</span>
-              <span className="bg-emerald-50 text-emerald-800 font-bold px-2.5 py-0.5 rounded-full text-[10px]">
-                {b.customerType || 'Regular Customer'} ({b.customerTotalBookings || 8} Bookings)
+              <span className="text-xs font-bold text-slate-500">Customer History</span>
+              <span className="bg-emerald-50 text-emerald-900 border border-emerald-200 font-bold px-2.5 py-0.5 rounded-full text-[10px]">
+                {customerStats.customerType} ({customerStats.totalBookings} Booking{customerStats.totalBookings > 1 ? 's' : ''})
               </span>
             </div>
           </div>
 
-          {/* Payment Details Card */}
+          {/* Payment & Financial Breakdown Card */}
           <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm flex flex-col gap-3">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-sm font-extrabold text-[#0A192F]">Payment Details</h3>
-              <span className="bg-emerald-50 text-emerald-700 font-extrabold px-2.5 py-0.5 rounded-full text-[10px]">
-                {b.paymentStatus === 'paid' ? 'Paid' : b.paymentStatus === 'refunded' ? 'Refunded' : 'Pending'}
+              <h3 className="text-sm font-extrabold text-[#0A192F]">Payment & Financials</h3>
+              <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border ${paymentInfo.statusBadgeStyle}`}>
+                {paymentInfo.statusLabel}
               </span>
             </div>
 
             <div className="text-xs space-y-2 font-medium text-slate-600">
               <div className="flex justify-between">
                 <span>Payment Method:</span>
-                <span className="font-extrabold text-slate-900 uppercase">{b.paymentMethod || 'Online'}</span>
+                <span className="font-extrabold text-slate-900">{paymentInfo.methodLabel}</span>
               </div>
               <div className="flex justify-between">
-                <span>Service Price:</span>
-                <span className="font-bold text-slate-800">₹{b.servicePrice || (b.totalAmount ? Math.round(b.totalAmount * 0.8) : 0)}</span>
+                <span>Base Service Price:</span>
+                <span className="font-bold text-slate-800">
+                  ₹{Number(b.servicePrice || b.totalAmount || 0).toLocaleString()}
+                </span>
               </div>
+
               {b.couponCode && (
                 <div className="flex justify-between text-emerald-700 font-bold">
-                  <span>Coupon ({b.couponCode}):</span>
+                  <span>Coupon Discount ({b.couponCode}):</span>
                   <span>- ₹{b.discountAmount || 0}</span>
                 </div>
               )}
-              {b.platformFee !== undefined && b.platformFee > 0 && (
-                <div className="flex justify-between text-slate-600">
+
+              {b.platformFee !== undefined && Number(b.platformFee) > 0 && (
+                <div className="flex justify-between">
                   <span>Platform Fee:</span>
                   <span>₹{b.platformFee}</span>
                 </div>
               )}
-              {b.taxAmount !== undefined && b.taxAmount > 0 && (
-                <div className="flex justify-between text-slate-600">
-                  <span>GST (18%):</span>
+
+              {b.taxAmount !== undefined && Number(b.taxAmount) > 0 && (
+                <div className="flex justify-between">
+                  <span>GST / Tax:</span>
                   <span>₹{b.taxAmount}</span>
                 </div>
               )}
+
               <div className="flex justify-between pt-2 border-t border-slate-100">
-                <span className="font-extrabold text-slate-900">Total Amount:</span>
-                <span className="font-black text-slate-900 text-sm">₹{b.totalAmount}</span>
+                <span className="font-extrabold text-slate-900">Customer Total:</span>
+                <span className="font-black text-slate-900 text-sm">₹{Number(b.totalAmount || 0).toLocaleString()}</span>
               </div>
-              <div className="flex justify-between">
+
+              <div className="flex justify-between pt-1 border-t border-slate-100 text-emerald-900">
+                <span className="font-bold">Partner Estimated Payout:</span>
+                <span className="font-black">
+                  ₹{b.partner_earnings ? Number(b.partner_earnings).toLocaleString() : getPartnerEstimatedEarnings(b.totalAmount).toLocaleString()}
+                </span>
+              </div>
+
+              {b.tip_amount && Number(b.tip_amount) > 0 && (
+                <div className="flex justify-between text-[#123D2A] font-bold">
+                  <span>Customer Tip:</span>
+                  <span>₹{Number(b.tip_amount).toLocaleString()}</span>
+                </div>
+              )}
+
+              <div className="flex justify-between pt-2 border-t border-slate-100">
                 <span>Transaction ID:</span>
-                <span className="font-bold text-slate-700">{b.transactionId || '7260916102458'}</span>
+                <span className="font-bold text-slate-700">{b.transactionId || 'Not available'}</span>
               </div>
               <div className="flex justify-between">
                 <span>Paid On:</span>
-                <span className="font-bold text-slate-700">{b.paidAt || '16 Sep 2026, 10:18 AM'}</span>
+                <span className="font-bold text-slate-700">
+                  {b.paidAt ? formatTimestamp(b.paidAt) : (b.paymentStatus === 'paid' ? 'Paid' : 'Not paid yet')}
+                </span>
               </div>
             </div>
           </div>
 
-          {/* Customer Notes */}
+          {/* Customer Special Instructions (Real Data Only) */}
           <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm">
-            <h3 className="text-sm font-extrabold text-[#0A192F] mb-3">Customer Notes</h3>
-            <div className="bg-slate-50 border border-slate-200/60 rounded-2xl p-3.5 text-xs text-slate-700 font-medium leading-relaxed">
-              {b.specialInstructions ||
-                'Please focus on kitchen and living room. Bring your own cleaning supplies. Door code: 4321'}
-            </div>
+            <h3 className="text-sm font-extrabold text-[#0A192F] mb-3">Special Instructions</h3>
+            {b.specialInstructions && b.specialInstructions.trim() ? (
+              <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 text-xs text-slate-800 font-medium leading-relaxed italic">
+                "{b.specialInstructions}"
+              </div>
+            ) : (
+              <div className="p-4 bg-slate-50 border border-slate-200/60 rounded-2xl text-xs text-slate-400 font-medium">
+                No special instructions provided.
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Middle Column (Service, Assigned Maid & Live Map) - 4 Cols */}
+        {/* Middle Column (Services, Add-ons, Partner Details, Distance/ETA) - 4 Cols */}
         <div className="lg:col-span-4 flex flex-col gap-6">
-          {/* Service Details Card */}
+          {/* Service Details Card (Completely Dynamic & Supports Multi-Services) */}
           <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm flex flex-col gap-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-sm font-extrabold text-[#0A192F]">Service Details</h3>
-              <button className="text-slate-400 hover:text-slate-600">
-                <Edit2 className="w-3.5 h-3.5" />
-              </button>
+              <h3 className="text-sm font-extrabold text-[#0A192F]">Booked Services</h3>
+              <span className="text-[10px] font-bold text-slate-400">{b.categoryName || 'Cleaning'}</span>
             </div>
 
-            <div>
-              <h4 className="text-base font-extrabold text-slate-900">{b.serviceName}</h4>
-              <p className="text-xs text-slate-500 font-medium">Full home cleaning service</p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-2xl text-xs font-medium">
+            {/* If multi-service cart was used, display all items */}
+            {bookingItems.length > 0 ? (
+              <div className="space-y-2">
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                  Services ({bookingItems.length})
+                </span>
+                {bookingItems.map((item, idx) => (
+                  <div
+                    key={item.id || idx}
+                    className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 flex items-center justify-between text-xs"
+                  >
+                    <div>
+                      <strong className="text-slate-900 block font-bold">{item.service_name}</strong>
+                      <span className="text-slate-400 text-[11px]">Quantity: × {item.quantity || 1}</span>
+                    </div>
+                    <span className="font-black text-slate-900">
+                      ₹{Number(item.subtotal || item.unit_price || 0).toLocaleString()}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
               <div>
-                <span className="text-slate-400 font-bold block text-[10px]">Duration</span>
-                <span className="font-extrabold text-slate-900">{b.serviceDuration || '3 Hours'}</span>
+                <h4 className="text-base font-extrabold text-slate-900">{b.serviceName || 'Home Cleaning'}</h4>
+                <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-2xl text-xs font-medium mt-2">
+                  <div>
+                    <span className="text-slate-400 font-bold block text-[10px]">Estimated Duration</span>
+                    <span className="font-extrabold text-slate-900">{b.serviceDuration || '3 Hours'}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 font-bold block text-[10px]">Price</span>
+                    <span className="font-extrabold text-slate-900">
+                      ₹{Number(b.servicePrice || b.totalAmount || 0).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
               </div>
-              <div>
-                <span className="text-slate-400 font-bold block text-[10px]">Price</span>
-                <span className="font-extrabold text-slate-900">₹{b.servicePrice}</span>
-              </div>
+            )}
+
+            {/* Selected Add-ons (Explicit List or Clear 'No Add-ons') */}
+            <div>
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
+                Selected Add-ons
+              </span>
+              {(b.selectedAddOns || []).length > 0 ? (
+                <div className="space-y-1.5">
+                  {b.selectedAddOns.map((addon: any, idx: number) => {
+                    const name = addon.name || addon.addonName || addon.title || 'Add-on';
+                    const qty = addon.quantity || addon.qty || 1;
+                    const price = addon.price ? Number(addon.price) : 0;
+                    return (
+                      <div
+                        key={idx}
+                        className="p-2.5 bg-slate-50 rounded-xl border border-slate-200/60 flex items-center justify-between text-xs"
+                      >
+                        <span className="font-semibold text-slate-800">• {name} × {qty}</span>
+                        {price > 0 && (
+                          <span className="font-bold text-[#123D2A]">₹{(price * qty).toLocaleString()}</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="p-3 bg-slate-50 border border-slate-200/60 rounded-xl text-xs text-slate-500 font-medium">
+                  No add-ons selected
+                </div>
+              )}
             </div>
 
-            <div>
+            {/* Schedule Section */}
+            <div className="border-t border-slate-100 pt-3">
               <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                Service Date & Time
+                Scheduled Slot
               </span>
-              <div className="text-xs font-bold text-slate-900">
-                {b.date}, {b.timeSlot}
-              </div>
-            </div>
-
-            <div>
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                Special Instructions
-              </span>
-              <div className="text-xs text-slate-600 font-medium">
-                Focus on kitchen, living room and bedrooms.
+              <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-emerald-700" />
+                {formatDateDDMMYYYY(b.date)}, {b.timeSlot || 'Anytime'}
               </div>
             </div>
           </div>
 
-          {/* Assigned Maid Card */}
+          {/* Assigned Partner Card (Real Data Only, No Fake Maid) */}
           <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm flex flex-col gap-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-sm font-extrabold text-[#0A192F]">Assigned Maid</h3>
+              <h3 className="text-sm font-extrabold text-[#0A192F]">Assigned Partner</h3>
               <button
                 onClick={() => openAssignMaid(b.bookingId)}
                 className="text-xs font-bold text-[#123D2A] hover:underline cursor-pointer"
               >
-                Change
+                {isPartnerAssigned ? 'Change' : 'Assign'}
               </button>
             </div>
 
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <img
-                  src={b.assignedMaidPhotoUrl || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=400'}
-                  alt={b.assignedMaidName || 'Pavani M.'}
-                  className="w-12 h-12 rounded-full object-cover shadow-sm"
-                />
-                <div>
-                  <h4 className="text-sm font-extrabold text-slate-900">
-                    {b.assignedMaidName || 'Pavani M.'}
-                  </h4>
-                  <div className="text-xs text-amber-600 font-bold flex items-center gap-1">
-                    <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                    <span>{b.assignedMaidRating || 4.9} (320 reviews)</span>
-                  </div>
-                  <div className="text-xs text-slate-500 font-medium">
-                    {b.assignedMaidPhone || '+91 91234 56789'}
-                  </div>
-                </div>
-              </div>
-
-              <span className="bg-emerald-50 text-emerald-700 font-extrabold px-2.5 py-1 rounded-full text-[10px]">
-                ● Online
-              </span>
-            </div>
-
-            <div className="grid grid-cols-3 gap-2 bg-slate-50 p-3 rounded-2xl text-center text-xs font-bold">
-              <div>
-                <div className="text-slate-900 font-black">320</div>
-                <div className="text-[10px] text-slate-400 font-semibold">Jobs Completed</div>
-              </div>
-              <div>
-                <div className="text-slate-900 font-black">2.1 km</div>
-                <div className="text-[10px] text-slate-400 font-semibold">Distance</div>
-              </div>
-              <div>
-                <div className="text-slate-900 font-black">12 mins</div>
-                <div className="text-[10px] text-slate-400 font-semibold">ETA</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Live Location Map */}
-          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-extrabold text-[#0A192F]">Live Location</h3>
-              <button className="text-xs font-bold text-[#123D2A] hover:underline flex items-center gap-1">
-                <Navigation className="w-3.5 h-3.5" />
-                <span>Track Live</span>
-              </button>
-            </div>
-
-            <div
-              className="rounded-2xl border border-slate-200/80 bg-cover bg-center h-44 relative flex items-center justify-center p-4 overflow-hidden"
-              style={{
-                backgroundImage: `url('https://images.unsplash.com/photo-1524661135-423995f22d0b?auto=format&fit=crop&q=80&w=800')`,
-              }}
-            >
-              <div className="absolute inset-0 bg-slate-900/10 backdrop-blur-[1px]"></div>
-
-              <div className="absolute top-1/3 left-1/2 -translate-x-1/2 bg-blue-600 text-white font-extrabold px-2.5 py-1 rounded-xl shadow-lg text-[10px] flex items-center gap-1">
-                <MapPin className="w-3.5 h-3.5" />
-                <span>Customer (Kondapur)</span>
-              </div>
-
-              <div className="absolute bottom-1/4 left-1/3 bg-white/95 text-slate-900 font-extrabold px-2.5 py-1 rounded-xl shadow-lg text-[10px] flex items-center gap-1.5 border border-slate-200">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
-                <span>Pavani M. • En Route 12 mins</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Right Column (Booking Timeline, Before/After Photos, Review) - 4 Cols */}
-        <div className="lg:col-span-4 flex flex-col gap-6">
-          {/* Booking Timeline */}
-          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm flex flex-col gap-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-sm font-extrabold text-[#0A192F]">Booking Timeline</h3>
-              <span className="text-[11px] font-bold text-slate-400">
-                {timelineLogs.length} Events
-              </span>
-            </div>
-
-            <div className="flex flex-col gap-4 relative pl-4 border-l-2 border-slate-100 text-xs max-h-72 overflow-y-auto pr-1">
-              {timelineLogs.map((log: any, idx: number) => (
-                <div key={log.id || idx} className="relative">
-                  <span className="absolute -left-[21px] top-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-4 ring-white"></span>
-                  <div className="font-extrabold text-slate-900">{log.title || log.status_to || 'Update'}</div>
-                  <div className="text-[10px] text-slate-400 font-medium">
-                    {log.created_at ? new Date(log.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : log.timestamp || 'Recorded'}
-                    {log.actor_name ? ` by ${log.actor_name}` : log.actor_type ? ` (${log.actor_type})` : ''}
-                  </div>
-                  {log.details && (
-                    <div className="text-[11px] text-slate-600 mt-0.5">{log.details}</div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Before & After Photos */}
-          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm flex flex-col gap-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-sm font-extrabold text-[#0A192F]">Before & After Photos</h3>
-              <span className="text-[11px] font-bold text-[#123D2A]">
-                {photos.length} Uploaded
-              </span>
-            </div>
-
-            {/* Photo Tabs */}
-            <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl text-xs font-bold">
-              <button
-                onClick={() => setActivePhotoTab('before')}
-                className={`flex-1 py-1.5 rounded-lg transition-all cursor-pointer ${
-                  activePhotoTab === 'before' ? 'bg-white text-[#123D2A] shadow-sm' : 'text-slate-500'
-                }`}
-              >
-                Before ({photos.filter(p => p.photo_type === 'before').length})
-              </button>
-              <button
-                onClick={() => setActivePhotoTab('after')}
-                className={`flex-1 py-1.5 rounded-lg transition-all cursor-pointer ${
-                  activePhotoTab === 'after' ? 'bg-white text-[#123D2A] shadow-sm' : 'text-slate-500'
-                }`}
-              >
-                After ({photos.filter(p => p.photo_type === 'after').length})
-              </button>
-            </div>
-
-            {/* Photo Gallery Grid */}
-            {photos.filter(p => p.photo_type === activePhotoTab).length > 0 ? (
-              <div className="grid grid-cols-2 gap-3">
-                {photos
-                  .filter(p => p.photo_type === activePhotoTab)
-                  .map((photo: any, pIdx: number) => (
-                    <div key={photo.id || pIdx} className="rounded-2xl overflow-hidden border border-slate-200 shadow-sm relative group">
-                      <img
-                        src={photo.file_url || photo.url}
-                        alt={photo.label || 'Job Photo'}
-                        className="w-full h-24 object-cover"
-                      />
-                      <div className="p-2 bg-white">
-                        <div className="text-[10px] font-bold text-slate-900 truncate">{photo.label || 'Clean Area'}</div>
-                        <div className="text-[9px] text-slate-400">
-                          {photo.uploaded_at ? new Date(photo.uploaded_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Verified'}
-                        </div>
-                      </div>
+            {isPartnerAssigned ? (
+              <>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-sm font-extrabold text-slate-900">{b.assignedMaidName}</h4>
+                    {b.assignedMaidPhone && (
+                      <a
+                        href={`tel:${b.assignedMaidPhone}`}
+                        className="text-xs text-slate-500 hover:text-emerald-700 font-semibold flex items-center gap-1 mt-0.5"
+                      >
+                        <Phone className="w-3 h-3 text-slate-400" />
+                        {b.assignedMaidPhone}
+                      </a>
+                    )}
+                    <div className="text-[11px] text-amber-600 font-bold flex items-center gap-1 mt-1">
+                      <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                      <span>
+                        {assignedPartnerProfile?.rating
+                          ? `${assignedPartnerProfile.rating.toFixed(1)} (${assignedPartnerProfile.totalRatingsCount || 0} reviews)`
+                          : 'No reviews yet'}
+                      </span>
                     </div>
-                  ))}
-              </div>
+                  </div>
+
+                  <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 font-extrabold px-2.5 py-1 rounded-full text-[10px]">
+                    {b.assignmentStatus === 'accepted' || b.partner_accepted_at ? 'Accepted' : 'Assigned'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 bg-slate-50 p-3 rounded-2xl text-center text-xs font-bold">
+                  <div>
+                    <div className="text-slate-900 font-black">
+                      {assignedPartnerProfile?.completedJobsCount ?? 0}
+                    </div>
+                    <div className="text-[10px] text-slate-400 font-semibold">Jobs Completed</div>
+                  </div>
+                  <div>
+                    <div className="text-slate-900 font-black">
+                      {assignedPartnerProfile?.isOnline ? 'Online' : 'Offline'}
+                    </div>
+                    <div className="text-[10px] text-slate-400 font-semibold">Availability</div>
+                  </div>
+                </div>
+              </>
             ) : (
-              <div className="p-6 text-center bg-slate-50 border border-slate-100 rounded-2xl">
-                <Camera className="w-6 h-6 text-slate-300 mx-auto mb-1.5" />
-                <p className="text-xs font-bold text-slate-400">
-                  No {activePhotoTab} photos uploaded yet.
-                </p>
-                <p className="text-[10px] text-slate-400 mt-0.5">
-                  Maid partner uploads photos via mobile app during service.
-                </p>
+              <div className="p-6 text-center bg-slate-50 border border-slate-200 rounded-2xl flex flex-col items-center gap-2">
+                <User className="w-8 h-8 text-slate-300" />
+                <h4 className="text-sm font-bold text-slate-700">No partner assigned yet</h4>
+                <p className="text-xs text-slate-400">This booking is awaiting partner allocation.</p>
+                <button
+                  onClick={() => openAssignMaid(b.bookingId)}
+                  className="mt-2 bg-[#123D2A] hover:bg-[#184a34] text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+                >
+                  <UserCheck className="w-3.5 h-3.5" /> Assign Partner
+                </button>
               </div>
             )}
           </div>
 
-          {/* Customer Review Card */}
-          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm">
-            <h3 className="text-sm font-extrabold text-[#0A192F] mb-3">Customer Review</h3>
-            {customerReview ? (
+          {/* Clean Partner → Customer Travel Card (Replaces Fake Live Map) */}
+          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm flex flex-col gap-3">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-sm font-extrabold text-[#0A192F] flex items-center gap-1.5">
+                <Navigation className="w-3.5 h-3.5 text-[#123D2A]" />
+                Partner → Customer Travel
+              </h3>
+              <span className="text-[10px] text-slate-400 font-bold">Location Data</span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-2xl text-center text-xs">
+              <div>
+                <span className="text-[10px] text-slate-400 font-bold block mb-1">Distance</span>
+                <span className="text-sm font-black text-slate-900">
+                  {b.partner_distance_km ? `${b.partner_distance_km} km` : 'Not available'}
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] text-slate-400 font-bold block mb-1">Estimated Arrival</span>
+                <span className="text-sm font-black text-slate-900">
+                  {b.partner_eta_minutes ? `${b.partner_eta_minutes} mins` : 'Not available'}
+                </span>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-slate-400 font-medium text-center">
+              {b.partner_distance_km
+                ? 'Calculated from actual partner & customer coordinates.'
+                : 'Partner location unavailable until live dispatch is initiated.'}
+            </p>
+          </div>
+        </div>
+
+        {/* Right Column (OTP Status, Real Booking Timeline, Reviews) - 4 Cols */}
+        <div className="lg:col-span-4 flex flex-col gap-6">
+          {/* Service Start OTP Verification Card */}
+          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm flex flex-col gap-3">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-sm font-extrabold text-[#0A192F] flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-emerald-700" />
+                Service Start OTP
+              </h3>
+              {b.otp_verified || ['ongoing', 'in_progress', 'cleaning_started', 'completed'].includes(b.status) ? (
+                <span className="bg-emerald-50 text-emerald-900 border border-emerald-300 font-black px-2.5 py-0.5 rounded-full text-[10px] flex items-center gap-1">
+                  ✓ Verified
+                </span>
+              ) : (
+                <span className="bg-amber-50 text-amber-900 border border-amber-300 font-extrabold px-2.5 py-0.5 rounded-full text-[10px]">
+                  Not verified
+                </span>
+              )}
+            </div>
+
+            <div className="text-xs text-slate-600 space-y-1.5">
+              {b.otp_verified_at ? (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Verified At:</span>
+                    <span className="font-bold text-slate-800">{formatTimestamp(b.otp_verified_at)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Verified By:</span>
+                    <span className="font-bold text-slate-800">Assigned Partner via Mobile OTP</span>
+                  </div>
+                </>
+              ) : (
+                <p className="text-slate-400 font-medium">
+                  Partner enters the customer's secure OTP in Partner App upon arrival to begin service.
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Real Auditable Booking Timeline (Strictly Real Events, No Fake Timestamps) */}
+          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm flex flex-col gap-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-sm font-extrabold text-[#0A192F]">Booking Timeline</h3>
+              <span className="text-[11px] font-bold text-slate-400">
+                {realTimelineEvents.length} Event{realTimelineEvents.length > 1 ? 's' : ''}
+              </span>
+            </div>
+
+            <div className="flex flex-col gap-4 relative pl-4 border-l-2 border-slate-100 text-xs max-h-80 overflow-y-auto pr-1">
+              {realTimelineEvents.map((evt, idx) => (
+                <div key={evt.id || idx} className="relative">
+                  <span className="absolute -left-[21px] top-0.5 w-2.5 h-2.5 rounded-full bg-emerald-600 ring-4 ring-white"></span>
+                  <div className="font-extrabold text-slate-900">{evt.title}</div>
+                  <div className="text-[10px] text-slate-400 font-medium">
+                    {evt.time} {evt.actor ? `• ${evt.actor}` : ''}
+                  </div>
+                  {evt.details && (
+                    <div className="text-[11px] text-slate-600 mt-0.5 leading-snug">{evt.details}</div>
+                  )}
+                </div>
+              ))}
+
+              {realTimelineEvents.length === 0 && (
+                <div className="py-6 text-center text-slate-400">
+                  <Clock className="w-6 h-6 mx-auto mb-1 text-slate-300" />
+                  <p className="text-xs font-semibold">No timeline events recorded yet.</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Customer Review & Tip Structure */}
+          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm flex flex-col gap-3">
+            <h3 className="text-sm font-extrabold text-[#0A192F]">Customer Review</h3>
+
+            {b.status !== 'completed' && b.status !== 'customer_confirmed' ? (
+              <div className="p-4 bg-slate-50 border border-slate-200/60 rounded-2xl text-center text-slate-400 text-xs font-medium">
+                <Star className="w-6 h-6 mx-auto mb-1.5 text-slate-300" />
+                Review will become available after the service is completed.
+              </div>
+            ) : customerReview ? (
               <div className="bg-emerald-50/60 border border-emerald-100 rounded-2xl p-4 text-center">
                 <div className="flex justify-center gap-1 text-amber-400 mb-2">
                   {[1, 2, 3, 4, 5].map(i => (
@@ -617,29 +947,39 @@ export const BookingDetailsPage: React.FC = () => {
                     />
                   ))}
                 </div>
-                <p className="text-xs text-slate-700 font-bold italic">
-                  "{customerReview.comment || 'Service completed satisfactorily.'}"
-                </p>
+                {customerReview.comment ? (
+                  <p className="text-xs text-slate-800 font-bold italic">
+                    "{customerReview.comment}"
+                  </p>
+                ) : (
+                  <p className="text-xs text-slate-600 font-medium">
+                    Rated {customerReview.rating} out of 5 stars (no written comment).
+                  </p>
+                )}
                 <div className="text-[10px] text-slate-400 font-medium mt-1">
-                  Verified Review • {customerReview.rating} out of 5 stars
+                  Verified Review • {formatTimestamp(customerReview.reviewed_at)}
                 </div>
               </div>
             ) : (
-              <div className="bg-slate-50 border border-slate-200/60 rounded-2xl p-4 text-center">
-                <div className="flex justify-center gap-1 text-slate-300 mb-2">
-                  {[1, 2, 3, 4, 5].map(i => (
-                    <Star key={i} className="w-5 h-5 fill-slate-200 text-slate-300" />
-                  ))}
-                </div>
-                <p className="text-xs text-slate-400 font-medium">
-                  Rating will be available after the service is completed.
-                </p>
+              <div className="p-4 bg-slate-50 border border-slate-200/60 rounded-2xl text-center text-slate-400 text-xs font-medium">
+                <Star className="w-6 h-6 mx-auto mb-1.5 text-slate-300" />
+                Service completed. Customer has not submitted a review yet.
               </div>
             )}
+
+            {/* Tip for Partner */}
+            <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+              <span className="text-slate-500 font-bold flex items-center gap-1">
+                <HeartHandshake className="w-3.5 h-3.5 text-emerald-700" />
+                Tip for Partner:
+              </span>
+              <span className="font-black text-[#123D2A]">
+                {b.tip_amount && Number(b.tip_amount) > 0 ? `₹${b.tip_amount}` : 'No tip added'}
+              </span>
+            </div>
           </div>
         </div>
       </div>
     </div>
   );
 };
-

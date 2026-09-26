@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAdmin } from '../context/AdminContext';
 import { GCLogo } from './common/GCLogo';
 import {
@@ -21,13 +22,16 @@ import {
 } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
   const {
     currentTab,
     setCurrentTab,
     logoutAdmin,
     getDashboardMetrics,
     sidebarCollapsed,
-    toggleSidebarCollapse
+    toggleSidebarCollapse,
+    unreadNotificationsCount,
   } = useAdmin();
 
   const metrics = getDashboardMetrics();
@@ -36,14 +40,65 @@ export const Sidebar: React.FC = () => {
   const [servicesExpanded, setServicesExpanded] = useState(false);
   const [financialsExpanded, setFinancialsExpanded] = useState(false);
 
-  const isBookingActive = (tabId: string) => currentTab === tabId;
+  // Auto-expand sidebar sections based on current URL path
+  useEffect(() => {
+    const path = location.pathname;
+    if (path.startsWith('/admin/bookings')) {
+      setBookingsExpanded(true);
+    }
+    if (path.startsWith('/admin/partners') || path.startsWith('/admin/maids')) {
+      setMaidsExpanded(true);
+    }
+    if (
+      path.startsWith('/admin/services') ||
+      path.startsWith('/admin/categories') ||
+      path.startsWith('/admin/addons') ||
+      path.startsWith('/admin/offers') ||
+      path.startsWith('/admin/banners')
+    ) {
+      setServicesExpanded(true);
+    }
+    if (
+      path.startsWith('/admin/payments') ||
+      path.startsWith('/admin/payouts') ||
+      path.startsWith('/admin/financials') ||
+      path.startsWith('/admin/revenue')
+    ) {
+      setFinancialsExpanded(true);
+    }
+  }, [location.pathname]);
+
+  const isPathActive = (path: string, exact = false) => {
+    if (exact) return location.pathname === path;
+    if (path === '/admin/dashboard') return location.pathname === '/admin/dashboard' || location.pathname === '/admin';
+    return location.pathname === path || location.pathname.startsWith(path + '/');
+  };
+
+  const handleNavClick = (tab: string, path: string) => {
+    setCurrentTab(tab);
+    navigate(path);
+    if (typeof window !== 'undefined' && window.innerWidth < 768 && !sidebarCollapsed) {
+      toggleSidebarCollapse();
+    }
+  };
 
   return (
-    <aside
-      className={`${
-        sidebarCollapsed ? 'w-[72px]' : 'w-[260px]'
-      } bg-[#123D2A] text-white flex flex-col h-screen flex-shrink-0 font-sans select-none transition-all duration-300 ease-in-out overflow-y-auto overflow-x-hidden no-scrollbar`}
-    >
+    <>
+      {/* Mobile Drawer Backdrop */}
+      {!sidebarCollapsed && (
+        <div
+          onClick={toggleSidebarCollapse}
+          className="fixed inset-0 bg-slate-950/50 backdrop-blur-xs z-40 md:hidden animate-fadeIn"
+          title="Close Navigation Drawer"
+        />
+      )}
+      <aside
+        className={`${
+          sidebarCollapsed
+            ? 'hidden md:flex w-[72px]'
+            : 'fixed inset-y-0 left-0 z-50 md:static md:flex w-[260px] shadow-2xl md:shadow-none'
+        } bg-[#123D2A] text-white flex flex-col h-screen flex-shrink-0 font-sans select-none transition-all duration-300 ease-in-out overflow-y-auto overflow-x-hidden no-scrollbar`}
+      >
       {/* Brand Header */}
       <div className="px-4 py-3.5 border-b border-emerald-900/60 flex items-center justify-between min-h-[64px]">
         {!sidebarCollapsed ? (
@@ -84,15 +139,16 @@ export const Sidebar: React.FC = () => {
       <nav className="flex-1 px-2.5 py-4 flex flex-col gap-1 text-sm">
         {/* 1. Dashboard */}
         <button
-          onClick={() => setCurrentTab('dashboard')}
+          onClick={() => {
+            setCurrentTab('dashboard');
+            navigate('/admin/dashboard');
+          }}
           title={sidebarCollapsed ? "Dashboard" : undefined}
-          className={`w-full flex items-center ${
-            sidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
-          } py-2.5 rounded-xl font-semibold transition-all cursor-pointer ${
-            currentTab === 'dashboard'
+          className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
+            } py-2.5 rounded-xl font-semibold transition-all cursor-pointer ${isPathActive('/admin/dashboard', true)
               ? 'bg-[#184a34] text-white shadow-sm'
               : 'text-emerald-100/70 hover:bg-emerald-900/40 hover:text-white'
-          }`}
+            }`}
         >
           <LayoutDashboard className="w-4.5 h-4.5 text-emerald-200 shrink-0" />
           {!sidebarCollapsed && <span>Dashboard</span>}
@@ -100,15 +156,16 @@ export const Sidebar: React.FC = () => {
 
         {/* 2. Dispatch */}
         <button
-          onClick={() => setCurrentTab('dispatch')}
+          onClick={() => {
+            setCurrentTab('dispatch');
+            navigate('/admin/dispatch');
+          }}
           title={sidebarCollapsed ? "Dispatch" : undefined}
-          className={`w-full flex items-center ${
-            sidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
-          } py-2.5 rounded-xl font-semibold transition-all cursor-pointer ${
-            currentTab === 'dispatch'
+          className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
+            } py-2.5 rounded-xl font-semibold transition-all cursor-pointer ${isPathActive('/admin/dispatch', true)
               ? 'bg-[#184a34] text-white shadow-sm'
               : 'text-emerald-100/70 hover:bg-emerald-900/40 hover:text-white'
-          }`}
+            }`}
         >
           <Compass className="w-4.5 h-4.5 text-emerald-200 shrink-0" />
           {!sidebarCollapsed && <span>Dispatch</span>}
@@ -122,13 +179,11 @@ export const Sidebar: React.FC = () => {
               setBookingsExpanded(!bookingsExpanded);
             }}
             title={sidebarCollapsed ? "Bookings" : undefined}
-            className={`w-full flex items-center ${
-              sidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3'
-            } py-2.5 rounded-xl font-semibold transition-all cursor-pointer ${
-              currentTab.includes('booking')
+            className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3'
+              } py-2.5 rounded-xl font-semibold transition-all cursor-pointer ${location.pathname.startsWith('/admin/bookings')
                 ? 'bg-[#184a34] text-white'
                 : 'text-emerald-100/70 hover:bg-emerald-900/40 hover:text-white'
-            }`}
+              }`}
           >
             <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
               <Calendar className="w-4.5 h-4.5 text-emerald-200 shrink-0" />
@@ -154,23 +209,27 @@ export const Sidebar: React.FC = () => {
           {bookingsExpanded && !sidebarCollapsed && (
             <div className="pl-8 pt-1 flex flex-col gap-1 text-xs">
               <button
-                onClick={() => setCurrentTab('all-bookings')}
-                className={`w-full text-left py-2 px-3 rounded-lg font-medium transition-all cursor-pointer ${
-                  isBookingActive('all-bookings')
-                    ? 'bg-emerald-800/60 text-white font-bold'
-                    : 'text-emerald-200/70 hover:text-white'
-                }`}
+                onClick={() => {
+                  setCurrentTab('all-bookings');
+                  navigate('/admin/bookings');
+                }}
+                className={`w-full text-left py-2 px-3 rounded-lg font-medium transition-all cursor-pointer ${isPathActive('/admin/bookings', true)
+                  ? 'bg-emerald-800/60 text-white font-bold'
+                  : 'text-emerald-200/70 hover:text-white'
+                  }`}
               >
                 <span>All Bookings</span>
               </button>
 
               <button
-                onClick={() => setCurrentTab('pending-bookings')}
-                className={`w-full flex items-center justify-between py-2 px-3 rounded-lg font-medium transition-all cursor-pointer ${
-                  isBookingActive('pending-bookings')
-                    ? 'bg-emerald-800/60 text-white font-bold'
-                    : 'text-emerald-200/70 hover:text-white'
-                }`}
+                onClick={() => {
+                  setCurrentTab('pending-bookings');
+                  navigate('/admin/bookings/pending');
+                }}
+                className={`w-full flex items-center justify-between py-2 px-3 rounded-lg font-medium transition-all cursor-pointer ${isPathActive('/admin/bookings/pending')
+                  ? 'bg-emerald-800/60 text-white font-bold'
+                  : 'text-emerald-200/70 hover:text-white'
+                  }`}
               >
                 <span>New / Pending</span>
                 {(metrics.pendingAssignmentsCount || 0) > 0 && (
@@ -179,45 +238,53 @@ export const Sidebar: React.FC = () => {
               </button>
 
               <button
-                onClick={() => setCurrentTab('ongoing-bookings')}
-                className={`w-full text-left py-2 px-3 rounded-lg font-medium transition-all cursor-pointer ${
-                  isBookingActive('ongoing-bookings')
-                    ? 'bg-emerald-800/60 text-white font-bold'
-                    : 'text-emerald-200/70 hover:text-white'
-                }`}
+                onClick={() => {
+                  setCurrentTab('ongoing-bookings');
+                  navigate('/admin/bookings/ongoing');
+                }}
+                className={`w-full text-left py-2 px-3 rounded-lg font-medium transition-all cursor-pointer ${isPathActive('/admin/bookings/ongoing')
+                  ? 'bg-emerald-800/60 text-white font-bold'
+                  : 'text-emerald-200/70 hover:text-white'
+                  }`}
               >
                 <span>Ongoing</span>
               </button>
 
               <button
-                onClick={() => setCurrentTab('completed-bookings')}
-                className={`w-full text-left py-2 px-3 rounded-lg font-medium transition-all cursor-pointer ${
-                  isBookingActive('completed-bookings')
-                    ? 'bg-emerald-800/60 text-white font-bold'
-                    : 'text-emerald-200/70 hover:text-white'
-                }`}
+                onClick={() => {
+                  setCurrentTab('completed-bookings');
+                  navigate('/admin/bookings/completed');
+                }}
+                className={`w-full text-left py-2 px-3 rounded-lg font-medium transition-all cursor-pointer ${isPathActive('/admin/bookings/completed')
+                  ? 'bg-emerald-800/60 text-white font-bold'
+                  : 'text-emerald-200/70 hover:text-white'
+                  }`}
               >
                 <span>Completed</span>
               </button>
 
               <button
-                onClick={() => setCurrentTab('cancelled-bookings')}
-                className={`w-full text-left py-2 px-3 rounded-lg font-medium transition-all cursor-pointer ${
-                  isBookingActive('cancelled-bookings')
-                    ? 'bg-emerald-800/60 text-white font-bold'
-                    : 'text-emerald-200/70 hover:text-white'
-                }`}
+                onClick={() => {
+                  setCurrentTab('cancelled-bookings');
+                  navigate('/admin/bookings/cancelled');
+                }}
+                className={`w-full text-left py-2 px-3 rounded-lg font-medium transition-all cursor-pointer ${isPathActive('/admin/bookings/cancelled')
+                  ? 'bg-emerald-800/60 text-white font-bold'
+                  : 'text-emerald-200/70 hover:text-white'
+                  }`}
               >
                 <span>Cancelled</span>
               </button>
 
               <button
-                onClick={() => setCurrentTab('rescheduled-bookings')}
-                className={`w-full text-left py-2 px-3 rounded-lg font-medium transition-all cursor-pointer ${
-                  isBookingActive('rescheduled-bookings')
-                    ? 'bg-emerald-800/60 text-white font-bold'
-                    : 'text-emerald-200/70 hover:text-white'
-                }`}
+                onClick={() => {
+                  setCurrentTab('rescheduled-bookings');
+                  navigate('/admin/bookings/rescheduled');
+                }}
+                className={`w-full text-left py-2 px-3 rounded-lg font-medium transition-all cursor-pointer ${isPathActive('/admin/bookings/rescheduled')
+                  ? 'bg-emerald-800/60 text-white font-bold'
+                  : 'text-emerald-200/70 hover:text-white'
+                  }`}
               >
                 <span>Rescheduled</span>
               </button>
@@ -233,13 +300,11 @@ export const Sidebar: React.FC = () => {
               setMaidsExpanded(!maidsExpanded);
             }}
             title={sidebarCollapsed ? "Partners" : undefined}
-            className={`w-full flex items-center ${
-              sidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3'
-            } py-2.5 rounded-xl font-semibold transition-all cursor-pointer ${
-              currentTab.includes('maid') || currentTab === 'maids' || currentTab === 'pending-approvals' || currentTab === 'pending-kyc'
+            className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3'
+              } py-2.5 rounded-xl font-semibold transition-all cursor-pointer ${location.pathname.startsWith('/admin/partners') || location.pathname.startsWith('/admin/maids')
                 ? 'bg-[#184a34] text-white shadow-sm'
                 : 'text-emerald-100/70 hover:bg-emerald-900/40 hover:text-white'
-            }`}
+              }`}
           >
             <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
               <UserCheck className="w-4.5 h-4.5 text-emerald-200 shrink-0" />
@@ -265,56 +330,66 @@ export const Sidebar: React.FC = () => {
           {maidsExpanded && !sidebarCollapsed && (
             <div className="pl-8 pt-1 flex flex-col gap-1 text-xs">
               <button
-                onClick={() => setCurrentTab('maids')}
-                className={`w-full text-left py-1.5 px-3 rounded-lg font-medium transition-all cursor-pointer ${
-                  currentTab === 'maids' || currentTab === 'all-maids'
-                    ? 'bg-emerald-800/60 text-white font-bold'
-                    : 'text-emerald-200/70 hover:text-white'
-                }`}
+                onClick={() => {
+                  setCurrentTab('maids');
+                  navigate('/admin/partners');
+                }}
+                className={`w-full text-left py-1.5 px-3 rounded-lg font-medium transition-all cursor-pointer ${isPathActive('/admin/partners', true)
+                  ? 'bg-emerald-800/60 text-white font-bold'
+                  : 'text-emerald-200/70 hover:text-white'
+                  }`}
               >
                 All Partners
               </button>
 
               <button
-                onClick={() => setCurrentTab('pending-approvals')}
-                className={`w-full text-left py-1.5 px-3 rounded-lg font-medium transition-all cursor-pointer ${
-                  currentTab === 'pending-approvals' || currentTab === 'pending-maid-details'
-                    ? 'bg-emerald-800/60 text-white font-bold'
-                    : 'text-emerald-200/70 hover:text-white'
-                }`}
+                onClick={() => {
+                  setCurrentTab('pending-approvals');
+                  navigate('/admin/partners/pending');
+                }}
+                className={`w-full text-left py-1.5 px-3 rounded-lg font-medium transition-all cursor-pointer ${isPathActive('/admin/partners/pending')
+                  ? 'bg-emerald-800/60 text-white font-bold'
+                  : 'text-emerald-200/70 hover:text-white'
+                  }`}
               >
                 Pending Approvals
               </button>
 
               <button
-                onClick={() => setCurrentTab('pending-kyc')}
-                className={`w-full text-left py-1.5 px-3 rounded-lg font-medium transition-all cursor-pointer ${
-                  currentTab === 'pending-kyc'
-                    ? 'bg-emerald-800/60 text-white font-bold'
-                    : 'text-emerald-200/70 hover:text-white'
-                }`}
+                onClick={() => {
+                  setCurrentTab('pending-kyc');
+                  navigate('/admin/partners/pending-kyc');
+                }}
+                className={`w-full text-left py-1.5 px-3 rounded-lg font-medium transition-all cursor-pointer ${isPathActive('/admin/partners/pending-kyc')
+                  ? 'bg-emerald-800/60 text-white font-bold'
+                  : 'text-emerald-200/70 hover:text-white'
+                  }`}
               >
                 Pending KYC
               </button>
 
               <button
-                onClick={() => setCurrentTab('active-maids')}
-                className={`w-full text-left py-1.5 px-3 rounded-lg font-medium transition-all cursor-pointer ${
-                  currentTab === 'active-maids'
-                    ? 'bg-emerald-800/60 text-white font-bold'
-                    : 'text-emerald-200/70 hover:text-white'
-                }`}
+                onClick={() => {
+                  setCurrentTab('active-maids');
+                  navigate('/admin/partners/approved');
+                }}
+                className={`w-full text-left py-1.5 px-3 rounded-lg font-medium transition-all cursor-pointer ${isPathActive('/admin/partners/approved')
+                  ? 'bg-emerald-800/60 text-white font-bold'
+                  : 'text-emerald-200/70 hover:text-white'
+                  }`}
               >
                 Active Partners
               </button>
 
               <button
-                onClick={() => setCurrentTab('inactive-maids')}
-                className={`w-full text-left py-1.5 px-3 rounded-lg font-medium transition-all cursor-pointer ${
-                  currentTab === 'inactive-maids'
-                    ? 'bg-emerald-800/60 text-white font-bold'
-                    : 'text-emerald-200/70 hover:text-white'
-                }`}
+                onClick={() => {
+                  setCurrentTab('inactive-maids');
+                  navigate('/admin/partners/inactive');
+                }}
+                className={`w-full text-left py-1.5 px-3 rounded-lg font-medium transition-all cursor-pointer ${isPathActive('/admin/partners/inactive')
+                  ? 'bg-emerald-800/60 text-white font-bold'
+                  : 'text-emerald-200/70 hover:text-white'
+                  }`}
               >
                 Inactive Partners
               </button>
@@ -324,15 +399,16 @@ export const Sidebar: React.FC = () => {
 
         {/* 5. Customers */}
         <button
-          onClick={() => setCurrentTab('customers')}
+          onClick={() => {
+            setCurrentTab('customers');
+            navigate('/admin/customers');
+          }}
           title={sidebarCollapsed ? "Customers" : undefined}
-          className={`w-full flex items-center ${
-            sidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
-          } py-2.5 rounded-xl font-semibold transition-all cursor-pointer ${
-            currentTab === 'customers'
+          className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
+            } py-2.5 rounded-xl font-semibold transition-all cursor-pointer ${isPathActive('/admin/customers')
               ? 'bg-[#184a34] text-white shadow-sm'
               : 'text-emerald-100/70 hover:bg-emerald-900/40 hover:text-white'
-          }`}
+            }`}
         >
           <Users className="w-4.5 h-4.5 text-emerald-200 shrink-0" />
           {!sidebarCollapsed && <span>Customers</span>}
@@ -344,18 +420,24 @@ export const Sidebar: React.FC = () => {
             onClick={() => {
               if (sidebarCollapsed) toggleSidebarCollapse();
               setServicesExpanded(!servicesExpanded);
-              if (currentTab !== 'services' && currentTab !== 'service-categories' && currentTab !== 'service-addons') {
-                setCurrentTab('services');
+              if (
+                !location.pathname.startsWith('/admin/services') &&
+                !location.pathname.startsWith('/admin/categories') &&
+                !location.pathname.startsWith('/admin/addons')
+              ) {
+                navigate('/admin/services');
               }
             }}
             title={sidebarCollapsed ? "Services Catalog" : undefined}
-            className={`w-full flex items-center ${
-              sidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3'
-            } py-2.5 rounded-xl font-semibold transition-all cursor-pointer ${
-              currentTab.includes('service') || currentTab === 'categories' || currentTab === 'addons'
+            className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3'
+              } py-2.5 rounded-xl font-semibold transition-all cursor-pointer ${location.pathname.startsWith('/admin/services') ||
+                location.pathname.startsWith('/admin/categories') ||
+                location.pathname.startsWith('/admin/addons') ||
+                location.pathname.startsWith('/admin/offers') ||
+                location.pathname.startsWith('/admin/banners')
                 ? 'bg-[#184a34] text-white shadow-sm'
                 : 'text-emerald-100/70 hover:bg-emerald-900/40 hover:text-white'
-            }`}
+              }`}
           >
             <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
               <Sparkles className="w-4.5 h-4.5 text-emerald-200 shrink-0" />
@@ -374,34 +456,40 @@ export const Sidebar: React.FC = () => {
           {servicesExpanded && !sidebarCollapsed && (
             <div className="pl-8 pt-1 flex flex-col gap-1 text-xs">
               <button
-                onClick={() => setCurrentTab('service-categories')}
-                className={`w-full text-left py-1.5 px-3 rounded-lg font-medium transition-all cursor-pointer ${
-                  currentTab === 'service-categories' || currentTab === 'categories'
-                    ? 'bg-emerald-800/60 text-white font-bold'
-                    : 'text-emerald-200/70 hover:text-white'
-                }`}
+                onClick={() => {
+                  setCurrentTab('service-categories');
+                  navigate('/admin/categories');
+                }}
+                className={`w-full text-left py-1.5 px-3 rounded-lg font-medium transition-all cursor-pointer ${isPathActive('/admin/categories')
+                  ? 'bg-emerald-800/60 text-white font-bold'
+                  : 'text-emerald-200/70 hover:text-white'
+                  }`}
               >
                 Categories
               </button>
 
               <button
-                onClick={() => setCurrentTab('services')}
-                className={`w-full text-left py-1.5 px-3 rounded-lg font-medium transition-all cursor-pointer ${
-                  currentTab === 'services'
-                    ? 'bg-emerald-800/60 text-white font-bold'
-                    : 'text-emerald-200/70 hover:text-white'
-                }`}
+                onClick={() => {
+                  setCurrentTab('services');
+                  navigate('/admin/services');
+                }}
+                className={`w-full text-left py-1.5 px-3 rounded-lg font-medium transition-all cursor-pointer ${isPathActive('/admin/services', true)
+                  ? 'bg-emerald-800/60 text-white font-bold'
+                  : 'text-emerald-200/70 hover:text-white'
+                  }`}
               >
                 Services
               </button>
 
               <button
-                onClick={() => setCurrentTab('service-addons')}
-                className={`w-full text-left py-1.5 px-3 rounded-lg font-medium transition-all cursor-pointer ${
-                  currentTab === 'service-addons' || currentTab === 'addons'
-                    ? 'bg-emerald-800/60 text-white font-bold'
-                    : 'text-emerald-200/70 hover:text-white'
-                }`}
+                onClick={() => {
+                  setCurrentTab('service-addons');
+                  navigate('/admin/addons');
+                }}
+                className={`w-full text-left py-1.5 px-3 rounded-lg font-medium transition-all cursor-pointer ${isPathActive('/admin/addons')
+                  ? 'bg-emerald-800/60 text-white font-bold'
+                  : 'text-emerald-200/70 hover:text-white'
+                  }`}
               >
                 Add-ons
               </button>
@@ -411,15 +499,16 @@ export const Sidebar: React.FC = () => {
 
         {/* 7. Service Areas */}
         <button
-          onClick={() => setCurrentTab('service-areas')}
+          onClick={() => {
+            setCurrentTab('service-areas');
+            navigate('/admin/service-areas');
+          }}
           title={sidebarCollapsed ? "Service Areas" : undefined}
-          className={`w-full flex items-center ${
-            sidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
-          } py-2.5 rounded-xl font-semibold transition-all cursor-pointer ${
-            currentTab === 'service-areas' || currentTab === 'service_areas'
+          className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
+            } py-2.5 rounded-xl font-semibold transition-all cursor-pointer ${isPathActive('/admin/service-areas')
               ? 'bg-[#184a34] text-white shadow-sm'
               : 'text-emerald-100/70 hover:bg-emerald-900/40 hover:text-white'
-          }`}
+            }`}
         >
           <MapPin className="w-4.5 h-4.5 text-emerald-200 shrink-0" />
           {!sidebarCollapsed && <span>Service Areas</span>}
@@ -427,15 +516,16 @@ export const Sidebar: React.FC = () => {
 
         {/* 8. Chat / Support */}
         <button
-          onClick={() => setCurrentTab('chat')}
+          onClick={() => {
+            setCurrentTab('chat');
+            navigate('/admin/chat');
+          }}
           title={sidebarCollapsed ? "Chat / Support" : undefined}
-          className={`w-full flex items-center ${
-            sidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
-          } py-2.5 rounded-xl font-semibold transition-all cursor-pointer ${
-            currentTab === 'chat' || currentTab === 'chat-management'
+          className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
+            } py-2.5 rounded-xl font-semibold transition-all cursor-pointer ${isPathActive('/admin/chat')
               ? 'bg-[#184a34] text-white shadow-sm'
               : 'text-emerald-100/70 hover:bg-emerald-900/40 hover:text-white'
-          }`}
+            }`}
         >
           <MessageSquare className="w-4.5 h-4.5 text-emerald-200 shrink-0" />
           {!sidebarCollapsed && <span>Chat / Support</span>}
@@ -449,13 +539,14 @@ export const Sidebar: React.FC = () => {
               setFinancialsExpanded(!financialsExpanded);
             }}
             title={sidebarCollapsed ? "Financials" : undefined}
-            className={`w-full flex items-center ${
-              sidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3'
-            } py-2.5 rounded-xl font-semibold transition-all cursor-pointer ${
-              currentTab === 'financials' || currentTab === 'payment-reports' || currentTab === 'partner-payouts' || currentTab === 'transactions' || currentTab === 'revenue'
+            className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3'
+              } py-2.5 rounded-xl font-semibold transition-all cursor-pointer ${location.pathname.startsWith('/admin/payments') ||
+                location.pathname.startsWith('/admin/payouts') ||
+                location.pathname.startsWith('/admin/financials') ||
+                location.pathname.startsWith('/admin/revenue')
                 ? 'bg-[#184a34] text-white shadow-sm'
                 : 'text-emerald-100/70 hover:bg-emerald-900/40 hover:text-white'
-            }`}
+              }`}
           >
             <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
               <DollarSign className="w-4.5 h-4.5 text-emerald-200 shrink-0" />
@@ -474,34 +565,40 @@ export const Sidebar: React.FC = () => {
           {financialsExpanded && !sidebarCollapsed && (
             <div className="pl-8 pt-1 flex flex-col gap-1 text-xs">
               <button
-                onClick={() => setCurrentTab('payment-reports')}
-                className={`w-full text-left py-1.5 px-3 rounded-lg font-medium transition-all cursor-pointer ${
-                  currentTab === 'payment-reports' || currentTab === 'payments'
-                    ? 'bg-emerald-800/60 text-white font-bold'
-                    : 'text-emerald-200/70 hover:text-white'
-                }`}
+                onClick={() => {
+                  setCurrentTab('payment-reports');
+                  navigate('/admin/payments');
+                }}
+                className={`w-full text-left py-1.5 px-3 rounded-lg font-medium transition-all cursor-pointer ${isPathActive('/admin/payments')
+                  ? 'bg-emerald-800/60 text-white font-bold'
+                  : 'text-emerald-200/70 hover:text-white'
+                  }`}
               >
                 Payments
               </button>
 
               <button
-                onClick={() => setCurrentTab('partner-payouts')}
-                className={`w-full text-left py-1.5 px-3 rounded-lg font-medium transition-all cursor-pointer ${
-                  currentTab === 'partner-payouts' || currentTab === 'payouts'
-                    ? 'bg-emerald-800/60 text-white font-bold'
-                    : 'text-emerald-200/70 hover:text-white'
-                }`}
+                onClick={() => {
+                  setCurrentTab('partner-payouts');
+                  navigate('/admin/payouts');
+                }}
+                className={`w-full text-left py-1.5 px-3 rounded-lg font-medium transition-all cursor-pointer ${isPathActive('/admin/payouts')
+                  ? 'bg-emerald-800/60 text-white font-bold'
+                  : 'text-emerald-200/70 hover:text-white'
+                  }`}
               >
                 Partner Payouts
               </button>
 
               <button
-                onClick={() => setCurrentTab('transactions')}
-                className={`w-full text-left py-1.5 px-3 rounded-lg font-medium transition-all cursor-pointer ${
-                  currentTab === 'transactions' || currentTab === 'revenue'
-                    ? 'bg-emerald-800/60 text-white font-bold'
-                    : 'text-emerald-200/70 hover:text-white'
-                }`}
+                onClick={() => {
+                  setCurrentTab('transactions');
+                  navigate('/admin/financials');
+                }}
+                className={`w-full text-left py-1.5 px-3 rounded-lg font-medium transition-all cursor-pointer ${isPathActive('/admin/financials')
+                  ? 'bg-emerald-800/60 text-white font-bold'
+                  : 'text-emerald-200/70 hover:text-white'
+                  }`}
               >
                 Transactions
               </button>
@@ -511,38 +608,34 @@ export const Sidebar: React.FC = () => {
 
         {/* 10. Notifications */}
         <button
-          onClick={() => setCurrentTab('notifications')}
+          onClick={() => handleNavClick('notifications', '/admin/notifications')}
           title={sidebarCollapsed ? "Notifications" : undefined}
-          className={`w-full flex items-center ${
-            sidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3'
-          } py-2.5 rounded-xl font-semibold transition-all cursor-pointer ${
-            currentTab === 'notifications'
+          className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-0' : 'justify-between px-3'
+            } py-2.5 rounded-xl font-semibold transition-all cursor-pointer ${isPathActive('/admin/notifications')
               ? 'bg-[#184a34] text-white shadow-sm'
               : 'text-emerald-100/70 hover:bg-emerald-900/40 hover:text-white'
-          }`}
+            }`}
         >
           <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3'}`}>
             <Bell className="w-4.5 h-4.5 text-emerald-200 shrink-0" />
             {!sidebarCollapsed && <span>Notifications</span>}
           </div>
-          {!sidebarCollapsed && (
-            <span className="bg-rose-500 text-white w-4.5 h-4.5 rounded-full text-[10px] font-extrabold flex items-center justify-center">
-              3
+          {!sidebarCollapsed && (unreadNotificationsCount || 0) > 0 && (
+            <span className="bg-rose-500 text-white min-w-[18px] h-4.5 px-1.5 rounded-full text-[10px] font-extrabold flex items-center justify-center">
+              {unreadNotificationsCount}
             </span>
           )}
         </button>
 
         {/* 11. Reports */}
         <button
-          onClick={() => setCurrentTab('reports')}
+          onClick={() => handleNavClick('reports', '/admin/reports')}
           title={sidebarCollapsed ? "Reports" : undefined}
-          className={`w-full flex items-center ${
-            sidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
-          } py-2.5 rounded-xl font-semibold transition-all cursor-pointer ${
-            currentTab === 'reports'
+          className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
+            } py-2.5 rounded-xl font-semibold transition-all cursor-pointer ${isPathActive('/admin/reports')
               ? 'bg-[#184a34] text-white shadow-sm'
               : 'text-emerald-100/70 hover:bg-emerald-900/40 hover:text-white'
-          }`}
+            }`}
         >
           <BarChart2 className="w-4.5 h-4.5 text-emerald-200 shrink-0" />
           {!sidebarCollapsed && <span>Reports</span>}
@@ -550,15 +643,13 @@ export const Sidebar: React.FC = () => {
 
         {/* 12. Settings */}
         <button
-          onClick={() => setCurrentTab('settings')}
+          onClick={() => handleNavClick('settings', '/admin/settings')}
           title={sidebarCollapsed ? "Settings" : undefined}
-          className={`w-full flex items-center ${
-            sidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
-          } py-2.5 rounded-xl font-semibold transition-all cursor-pointer ${
-            currentTab === 'settings'
+          className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'
+            } py-2.5 rounded-xl font-semibold transition-all cursor-pointer ${isPathActive('/admin/settings')
               ? 'bg-[#184a34] text-white shadow-sm'
               : 'text-emerald-100/70 hover:bg-emerald-900/40 hover:text-white'
-          }`}
+            }`}
         >
           <Settings className="w-4.5 h-4.5 text-emerald-200 shrink-0" />
           {!sidebarCollapsed && <span>Settings</span>}
@@ -603,5 +694,6 @@ export const Sidebar: React.FC = () => {
         )}
       </div>
     </aside>
+    </>
   );
 };

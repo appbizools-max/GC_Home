@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -13,11 +13,9 @@ import {
   Modal,
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
-import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../../config/supabase';
 import {
   Settings,
-  Camera,
   MapPin,
   Star,
   Calendar,
@@ -47,6 +45,7 @@ import { AddressFormModal } from '../../components/ui/AddressFormModal';
 import { Address } from '../../types';
 import { SettingsRow } from './components/SettingsRow';
 import { LogoutModal } from './components/LogoutModal';
+import { EditProfileModal } from './components/EditProfileModal';
 import appJson from '../../../app.json';
 
 export const UserProfileScreen: React.FC = () => {
@@ -63,11 +62,73 @@ export const UserProfileScreen: React.FC = () => {
     deleteSavedAddress,
     setDefaultSavedAddress,
   } = useAuth();
-  const userName = user?.name && user.name !== 'User' ? user.name : 'Pavani M';
-  const userEmail = user?.email || 'madathala.pavani.5@gmail.com';
-  const userPhone = user?.phone || '+91 9390420247';
-  const userLocation = 'Kondapur, Hyderabad';
-  const appVersion = appJson?.expo?.version || '2.0.0';
+  const userName = user?.name && user.name !== 'User' ? user.name : 'Customer';
+  const userEmail = user?.email || '';
+  const userPhone = user?.phone || '';
+  const primaryAddr = savedAddresses.find(a => a.isDefault) || savedAddresses[0];
+  const userLocation = primaryAddr ? (primaryAddr.locality || primaryAddr.street || primaryAddr.city || 'Address not added') : 'Address not added';
+  const fullAddressText = primaryAddr ? [primaryAddr.houseFlat, primaryAddr.street, primaryAddr.locality, primaryAddr.city, primaryAddr.pincode].filter(Boolean).join(', ') : 'Address not added';
+  const appVersion = appJson?.expo?.version || '1.0.0';
+
+  // Dynamic Service Cities configured & managed from Admin Panel (Supabase service_areas)
+  const [serviceCities, setServiceCities] = useState<string[]>([]);
+  const [loadingCities, setLoadingCities] = useState<boolean>(true);
+
+  const fetchServiceCities = useCallback(async () => {
+    try {
+      setLoadingCities(true);
+      const { data, error } = await supabase
+        .from('service_areas')
+        .select('city, is_serviceable, is_active')
+        .order('city', { ascending: true });
+
+      if (!error && data) {
+        const uniqueCities = Array.from(
+          new Set(
+            data
+              .filter(
+                (item: any) =>
+                  item.is_serviceable !== false &&
+                  item.is_active !== false &&
+                  item.city &&
+                  typeof item.city === 'string' &&
+                  item.city.trim().length > 0
+              )
+              .map((item: any) => item.city.trim())
+          )
+        ).sort((a, b) => a.localeCompare(b));
+
+        setServiceCities(uniqueCities);
+      }
+    } catch (e) {
+      console.warn('Failed to load dynamic service cities:', e);
+    } finally {
+      setLoadingCities(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchServiceCities();
+
+    // Realtime synchronization with Admin Panel updates to service_areas
+    const channel = supabase
+      .channel('user_app_service_areas_realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'service_areas' },
+        () => {
+          fetchServiceCities();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchServiceCities]);
+
+  // Personal Info Modal State
+  const [isEditProfileModalVisible, setIsEditProfileModalVisible] = useState(false);
 
   // Address Modal State
   const [isAddressModalVisible, setIsAddressModalVisible] = useState(false);
@@ -91,130 +152,27 @@ export const UserProfileScreen: React.FC = () => {
   const [isLogoutModalVisible, setIsLogoutModalVisible] = useState(false);
 
   const handleEditProfile = () => {
-    Alert.prompt
-      ? Alert.prompt(
-        'Edit Name',
-        'Enter your updated display name:',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Save',
-            onPress: (newName?: string) => {
-              if (newName?.trim()) {
-                updateUserProfile({ name: newName.trim() });
-                Alert.alert('Profile Updated', `Name updated to ${newName.trim()}`);
-              }
-            },
-          },
-        ],
-        'plain-text',
-        userName
-      )
-      : Alert.alert('Edit Profile', 'Profile Details:\n\n• Name: ' + userName + '\n• Phone: ' + userPhone + '\n• Email: ' + userEmail);
+    setIsEditProfileModalVisible(true);
   };
 
-  const savePhotoToStorage = async (uri: string, base64?: string): Promise<string> => {
-    const ext = 'jpg';
-    const filePath = `profile-photos/customer/${user?.uid || 'user'}_${Date.now()}.${ext}`;
-
+  const handleSavePersonalProfile = async (data: { name: string; email: string; phone: string }): Promise<boolean> => {
     try {
-      let body: any;
-      if (Platform.OS === 'web') {
-        const response = await fetch(uri);
-        body = await response.blob();
-      } else if (base64) {
-        const byteCharacters = atob(base64);
-        const byteNumbers = new Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i);
-        }
-        body = new Uint8Array(byteNumbers);
-      } else {
-        const response = await fetch(uri);
-        body = await response.blob();
-      }
-
-      const { data, error } = await supabase.storage.from('gc-home-assets').upload(filePath, body, {
-        contentType: 'image/jpeg',
-        upsert: true,
+      const ok = await updateUserProfile({
+        name: data.name,
+        email: data.email,
+        phone: data.phone,
       });
-
-      if (!error && data) {
-        const { data: urlData } = supabase.storage.from('gc-home-assets').getPublicUrl(filePath);
-        if (urlData?.publicUrl) return urlData.publicUrl;
+      if (ok) {
+        Alert.alert('Profile Updated', 'Your personal information has been saved successfully.');
+        return true;
       }
-
-      if (base64) return `data:image/jpeg;base64,${base64}`;
-      return uri;
+      return false;
     } catch {
-      if (base64) return `data:image/jpeg;base64,${base64}`;
-      return uri;
+      return false;
     }
   };
 
-  const handleAvatarChange = () => {
-    Alert.alert('Change Profile Photo', 'Select photo source:', [
-      {
-        text: 'Take Photo (Front Camera)',
-        onPress: async () => {
-          try {
-            if (Platform.OS !== 'web') {
-              const { status } = await ImagePicker.requestCameraPermissionsAsync();
-              if (status !== 'granted') {
-                Alert.alert('Camera Permission Required', 'Camera permission is required to take your photo.');
-                return;
-              }
-            }
-            const result = await ImagePicker.launchCameraAsync({
-              cameraType: ImagePicker.CameraType.front,
-              allowsEditing: true,
-              aspect: [1, 1],
-              quality: 0.75,
-              base64: true,
-            });
-            if (!result.canceled && result.assets && result.assets.length > 0) {
-              const asset = result.assets[0];
-              const finalUrl = await savePhotoToStorage(asset.uri, asset.base64 || undefined);
-              updateUserProfile({ profilePhoto: finalUrl });
-              Alert.alert('Success', 'Profile photo updated successfully.');
-            }
-          } catch (e: any) {
-            Alert.alert('Camera Error', e?.message || 'Unable to open camera.');
-          }
-        },
-      },
-      {
-        text: 'Choose from Gallery',
-        onPress: async () => {
-          try {
-            if (Platform.OS !== 'web') {
-              const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-              if (status !== 'granted') {
-                Alert.alert('Gallery Permission Required', 'Gallery permission is required to choose a photo.');
-                return;
-              }
-            }
-            const result = await ImagePicker.launchImageLibraryAsync({
-              mediaTypes: ImagePicker.MediaTypeOptions.Images,
-              allowsEditing: true,
-              aspect: [1, 1],
-              quality: 0.75,
-              base64: true,
-            });
-            if (!result.canceled && result.assets && result.assets.length > 0) {
-              const asset = result.assets[0];
-              const finalUrl = await savePhotoToStorage(asset.uri, asset.base64 || undefined);
-              updateUserProfile({ profilePhoto: finalUrl });
-              Alert.alert('Success', 'Profile photo updated successfully.');
-            }
-          } catch (e: any) {
-            Alert.alert('Gallery Error', e?.message || 'Unable to open gallery.');
-          }
-        },
-      },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
-  };
+
 
   const handleHelpAndSupport = () => {
     navigateTo('help');
@@ -256,26 +214,11 @@ export const UserProfileScreen: React.FC = () => {
         {/* Profile Card */}
         <View style={styles.profileCard}>
           <View style={styles.avatarContainer}>
-            {user?.profilePhoto ? (
-              <Image
-                source={{ uri: user.profilePhoto }}
-                style={styles.avatarImg}
-              />
-            ) : (
-              <View style={[styles.avatarImg, styles.avatarPlaceholder]}>
-                <User size={38} color="#94A3B8" />
-              </View>
-            )}
-            <TouchableOpacity
-              style={styles.cameraBadge}
-              onPress={handleAvatarChange}
-              activeOpacity={0.85}
-              accessibilityRole="button"
-              accessibilityLabel="Change profile photo"
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Camera size={13} color="#FFFFFF" strokeWidth={2.4} />
-            </TouchableOpacity>
+            <View style={[styles.avatarImg, styles.avatarPlaceholder]}>
+              <Text style={styles.avatarInitialText}>
+                {userName ? userName.charAt(0).toUpperCase() : 'C'}
+              </Text>
+            </View>
           </View>
 
           <View style={styles.profileInfoCol}>
@@ -288,12 +231,19 @@ export const UserProfileScreen: React.FC = () => {
             <Text style={styles.profileMeta}>
               {userPhone}
             </Text>
-            <View style={styles.locationRow}>
+            <TouchableOpacity
+              style={styles.locationRow}
+              onPress={() => setIsAddressModalVisible(true)}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={`Address: ${userLocation}. Tap to manage addresses.`}
+            >
               <MapPin size={13} color="#0D8846" />
               <Text style={styles.locationText} numberOfLines={1}>
                 {userLocation}
               </Text>
-            </View>
+              <ChevronRight size={12} color="#0D8846" />
+            </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.editProfileLink}
@@ -411,7 +361,10 @@ export const UserProfileScreen: React.FC = () => {
             icon={SlidersHorizontal}
             title="App Settings"
             description="Language, theme, preferences"
-            onPress={() => setIsSettingsModalVisible(true)}
+            onPress={() => {
+              fetchServiceCities();
+              setIsSettingsModalVisible(true);
+            }}
             isLast
           />
         </View>
@@ -454,9 +407,21 @@ export const UserProfileScreen: React.FC = () => {
         {/* Version Footer */}
         <View style={styles.versionFooter}>
           <Text style={styles.versionAppName}>GC Home Plus</Text>
-          <Text style={styles.versionNumber}>Version {appVersion}</Text>
+          <Text style={styles.versionNumber}>v{appVersion}</Text>
         </View>
       </ScrollView>
+
+      {/* Edit Personal Information Modal */}
+      <EditProfileModal
+        visible={isEditProfileModalVisible}
+        initialName={userName}
+        initialEmail={userEmail}
+        initialPhone={userPhone}
+        currentAddressText={fullAddressText}
+        onManageAddress={() => setIsAddressModalVisible(true)}
+        onSave={handleSavePersonalProfile}
+        onClose={() => setIsEditProfileModalVisible(false)}
+      />
 
       {/* Logout Confirmation Dialog */}
       <LogoutModal
@@ -809,13 +774,22 @@ export const UserProfileScreen: React.FC = () => {
               </View>
 
               <View style={styles.settingsRow}>
-                <Text style={styles.settingsLabel}>Service City</Text>
-                <Text style={styles.settingsVal}>Hyderabad</Text>
+                <Text style={styles.settingsLabel}>Service Cities</Text>
+                {loadingCities ? (
+                  <Text style={[styles.settingsVal, { color: '#94A3B8' }]}>Checking...</Text>
+                ) : (
+                  <Text
+                    style={[styles.settingsVal, { flex: 1, textAlign: 'right', marginLeft: 12 }]}
+                    numberOfLines={2}
+                  >
+                    {serviceCities.length > 0 ? serviceCities.join(', ') : 'None configured'}
+                  </Text>
+                )}
               </View>
 
               <View style={styles.settingsRow}>
                 <Text style={styles.settingsLabel}>App Version</Text>
-                <Text style={styles.settingsVal}>v2.4.0 (Latest)</Text>
+                <Text style={styles.settingsVal}>v{appVersion}</Text>
               </View>
             </View>
 
@@ -894,23 +868,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#E2E8F0',
   },
   avatarPlaceholder: {
-    backgroundColor: '#F1F5F9',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cameraBadge: {
-    position: 'absolute',
-    bottom: -1,
-    right: -1,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
     backgroundColor: '#0D8846',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-    elevation: 3,
+  },
+  avatarInitialText: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
   profileInfoCol: {
     flex: 1,

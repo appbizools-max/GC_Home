@@ -143,12 +143,10 @@ export const PartnerDocumentPicker: React.FC<PartnerDocumentPickerProps> = ({
       const response = await fetch(fileUri);
       body = await response.blob();
     } else if (base64) {
-      const byteCharacters = atob(base64);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
-      }
-      body = new Uint8Array(byteNumbers);
+      // React Native (Hermes/JSC) does not have atob — use fetch with data URI instead
+      const dataUri = `data:${mimeType || 'image/jpeg'};base64,${base64}`;
+      const response = await fetch(dataUri);
+      body = await response.blob();
     } else {
       const response = await fetch(fileUri);
       body = await response.blob();

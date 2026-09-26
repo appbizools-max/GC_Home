@@ -39,6 +39,7 @@ export interface AddressEntryFormProps {
   extraHeaderContent?: React.ReactNode;
   extraFooterContent?: React.ReactNode;
   cityOptions?: string[];
+  onInputFocus?: (event: any) => void;
 }
 
 export const AddressEntryForm: React.FC<AddressEntryFormProps> = ({
@@ -53,6 +54,7 @@ export const AddressEntryForm: React.FC<AddressEntryFormProps> = ({
   extraHeaderContent,
   extraFooterContent,
   cityOptions,
+  onInputFocus,
 }) => {
   // Address Fields
   const [houseFlat, setHouseFlat] = useState(initialValues?.houseFlat || '');
@@ -265,6 +267,7 @@ export const AddressEntryForm: React.FC<AddressEntryFormProps> = ({
           placeholder="Enter house / flat / door number"
           placeholderTextColor="#94A3B8"
           value={houseFlat}
+          onFocus={onInputFocus}
           onChangeText={text => {
             setHouseFlat(text);
             if (errors.houseFlat) setErrors(prev => ({ ...prev, houseFlat: '' }));
@@ -281,6 +284,7 @@ export const AddressEntryForm: React.FC<AddressEntryFormProps> = ({
           placeholder="Enter street or road"
           placeholderTextColor="#94A3B8"
           value={street}
+          onFocus={onInputFocus}
           onChangeText={text => {
             setStreet(text);
             if (errors.street) setErrors(prev => ({ ...prev, street: '' }));
@@ -297,6 +301,7 @@ export const AddressEntryForm: React.FC<AddressEntryFormProps> = ({
           placeholder="Enter area or locality"
           placeholderTextColor="#94A3B8"
           value={locality}
+          onFocus={onInputFocus}
           onChangeText={text => {
             setLocality(text);
             if (errors.locality) setErrors(prev => ({ ...prev, locality: '' }));
@@ -334,6 +339,7 @@ export const AddressEntryForm: React.FC<AddressEntryFormProps> = ({
           keyboardType="numeric"
           maxLength={6}
           value={pincode}
+          onFocus={onInputFocus}
           onChangeText={handlePincodeChange}
         />
         {errors.pincode ? <Text style={styles.errorText}>{errors.pincode}</Text> : null}
@@ -438,6 +444,7 @@ export const AddressEntryForm: React.FC<AddressEntryFormProps> = ({
               placeholder="Enter city"
               placeholderTextColor="#94A3B8"
               value={city}
+              onFocus={onInputFocus}
               onChangeText={text => {
                 setCity(text);
                 if (errors.city) setErrors(prev => ({ ...prev, city: '' }));
@@ -457,6 +464,7 @@ export const AddressEntryForm: React.FC<AddressEntryFormProps> = ({
             placeholder="Enter district"
             placeholderTextColor="#94A3B8"
             value={district}
+            onFocus={onInputFocus}
             onChangeText={setDistrict}
           />
         </View>
@@ -468,6 +476,7 @@ export const AddressEntryForm: React.FC<AddressEntryFormProps> = ({
             placeholder="Enter state"
             placeholderTextColor="#94A3B8"
             value={state}
+            onFocus={onInputFocus}
             onChangeText={text => {
               setState(text);
               if (errors.state) setErrors(prev => ({ ...prev, state: '' }));
@@ -485,6 +494,7 @@ export const AddressEntryForm: React.FC<AddressEntryFormProps> = ({
           placeholder="e.g. Near Bus Stand / Temple / Landmark"
           placeholderTextColor="#94A3B8"
           value={landmark}
+          onFocus={onInputFocus}
           onChangeText={setLandmark}
         />
       </View>

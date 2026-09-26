@@ -25,16 +25,16 @@ export const AddressInputModal: React.FC<AddressInputModalProps> = ({
   onSave,
   onClose,
 }) => {
-  const [flatNumber, setFlatNumber] = useState('123, 4th Cross');
-  const [streetArea, setStreetArea] = useState('HSR Layout, Sector 2');
-  const [pincode, setPincode] = useState('560102');
-  const [landmark, setLandmark] = useState('Near BDA Complex');
+  const [flatNumber, setFlatNumber] = useState('');
+  const [streetArea, setStreetArea] = useState('');
+  const [pincode, setPincode] = useState('');
+  const [landmark, setLandmark] = useState('');
 
   const handleConfirm = () => {
     const parts = [
       flatNumber.trim(),
       streetArea.trim(),
-      selectedCity || 'Bengaluru, Karnataka',
+      selectedCity?.trim() || '',
       pincode.trim() ? `- ${pincode.trim()}` : '',
     ].filter(Boolean);
 

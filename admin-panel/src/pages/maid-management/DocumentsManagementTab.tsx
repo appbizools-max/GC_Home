@@ -47,6 +47,8 @@ export const DocumentsManagementTab: React.FC = () => {
       verifiedBy: doc.verifiedBy || (doc.status === 'verified' ? 'Admin' : '-'),
       fileSize: doc.fileSize || '150 KB',
       fileUrl: doc.fileUrl,
+      phone: m.phone,
+      location: m.city || m.locality || m.serviceArea || 'Telangana',
     }));
   });
 
@@ -360,9 +362,9 @@ export const DocumentsManagementTab: React.FC = () => {
                       <span className="text-[10px] bg-emerald-100 text-emerald-800 font-extrabold px-2 py-0.5 rounded-full">Verified</span>
                     </div>
                     <p className="text-xs text-slate-500 font-medium mt-0.5">Maid ID: {selectedDrawerDoc.maidId}</p>
-                    <p className="text-xs text-slate-500 font-medium">+91 91234 56789</p>
+                    <p className="text-xs text-slate-500 font-medium">{selectedDrawerDoc.phone || 'Phone unavailable'}</p>
                     <p className="text-xs text-slate-500 font-medium flex items-center gap-1 mt-0.5">
-                      <MapPin className="w-3 h-3 text-emerald-600" /> Kondapur, Hyderabad
+                      <MapPin className="w-3 h-3 text-emerald-600" /> {selectedDrawerDoc.location || 'Telangana'}
                     </p>
                   </div>
                 </div>

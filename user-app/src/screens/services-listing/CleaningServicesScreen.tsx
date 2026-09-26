@@ -221,16 +221,22 @@ export const CleaningServicesScreen: React.FC<CleaningServicesScreenProps> = ({
     const channel = supabase
       .channel('cleaning_services_realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'services' }, () => {
-        loadServices(true);
+        loadServices(true, true);
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'service_categories' }, () => {
-        loadServices(true);
-        loadCategories();
+        loadServices(true, true);
+        loadCategories(true);
       })
       .subscribe();
 
+    const unsubscribe = homeService.subscribe(() => {
+      loadServices(true, true);
+      loadCategories(true);
+    });
+
     return () => {
       supabase.removeChannel(channel);
+      unsubscribe();
     };
   }, []);
 

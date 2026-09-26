@@ -1,4 +1,5 @@
 import { Booking, MaidProfile, Customer } from '../types';
+import { formatDateDDMMYYYY } from './bookingDisplayUtils';
 
 /**
  * Downloads a CSV file with given filename, column headers, and 2D row data array.
@@ -102,24 +103,30 @@ export function exportCustomersToCSV(customers: Customer[]): void {
     'Customer Name',
     'Phone',
     'Email',
+    'Customer Type',
     'Locality',
     'Total Bookings',
-    'Total Spent (₹)',
+    'Lifetime Spend (₹)',
     'Joined Date',
     'Status',
   ];
 
-  const rows = customers.map(c => [
-    c.id,
-    c.name,
-    c.phone,
-    c.email || 'N/A',
-    c.locality || c.address?.locality || 'Hyderabad',
-    c.totalBookings || 0,
-    c.totalSpent || 0,
-    c.joinedDate || '2026-01-01',
-    c.status || 'active',
-  ]);
+  const rows = customers.map(c => {
+    const rawEmail = c.email || '';
+    const cleanEmail = rawEmail.includes('customer@gchome.com') || rawEmail.includes('example.com') ? '' : rawEmail;
+    return [
+      c.id,
+      c.name,
+      c.phone,
+      cleanEmail || 'Not provided',
+      c.customerType || 'First-time Customer',
+      c.locality || c.address?.locality || '',
+      c.totalBookings || 0,
+      c.totalSpent || 0,
+      formatDateDDMMYYYY(c.joinedDate) || 'N/A',
+      c.status || 'active',
+    ];
+  });
 
   downloadCSV('gc_home_customers_export', headers, rows);
 }

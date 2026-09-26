@@ -328,7 +328,7 @@ export const PendingKYCTab: React.FC = () => {
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
                     <span className="w-5 h-5 rounded-full bg-emerald-700 text-white font-black text-[10px] flex items-center justify-center">2</span>
-                    <strong className="text-xs font-bold text-slate-900">Hub / Location</strong>
+                    <strong className="text-xs font-bold text-slate-900">Service Location & Address</strong>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full text-[10px] font-extrabold">Verified</span>
@@ -362,12 +362,6 @@ export const PendingKYCTab: React.FC = () => {
                   </div>
                   <div className="flex items-center gap-1.5 text-[11px] text-slate-700 font-semibold bg-white p-1.5 rounded-lg border border-slate-200">
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> PAN Card
-                  </div>
-                  <div className="flex items-center gap-1.5 text-[11px] text-slate-700 font-semibold bg-amber-50 p-1.5 rounded-lg border border-amber-200">
-                    <Clock className="w-3.5 h-3.5 text-amber-600" /> Address Proof
-                  </div>
-                  <div className="flex items-center gap-1.5 text-[11px] text-slate-700 font-semibold bg-rose-50 p-1.5 rounded-lg border border-rose-200">
-                    <XCircle className="w-3.5 h-3.5 text-rose-600" /> Police Verification
                   </div>
                 </div>
               </div>

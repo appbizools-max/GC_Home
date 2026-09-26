@@ -1,4 +1,5 @@
-﻿import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAdmin } from '../../context/AdminContext';
 import { 
   Plus, 
@@ -25,7 +26,16 @@ import { deleteAssetFile, getPublicAssetUrl } from '../../services/storageServic
 
 type TabType = 'services' | 'categories' | 'addons' | 'banners';
 
-export const ServicesPage: React.FC = () => {
+interface ServicesPageProps {
+  initialTab?: TabType;
+  initialBannerSubTab?: 'banners' | 'offers';
+}
+
+export const ServicesPage: React.FC<ServicesPageProps> = ({
+  initialTab,
+  initialBannerSubTab,
+}) => {
+  const navigate = useNavigate();
   const {
     currentTab,
     services,
@@ -53,10 +63,13 @@ export const ServicesPage: React.FC = () => {
     toggleOfferActive,
   } = useAdmin();
 
-  const [activeTab, setActiveTab] = useState<TabType>('services');
+  const [activeTab, setActiveTab] = useState<TabType>(initialTab || 'services');
+  const [bannerSubTab, setBannerSubTab] = useState<'banners' | 'offers'>(initialBannerSubTab || 'banners');
 
-  React.useEffect(() => {
-    if (currentTab === 'service-categories' || currentTab === 'categories') {
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    } else if (currentTab === 'service-categories' || currentTab === 'categories') {
       setActiveTab('categories');
     } else if (currentTab === 'service-addons' || currentTab === 'addons') {
       setActiveTab('addons');
@@ -65,8 +78,13 @@ export const ServicesPage: React.FC = () => {
     } else if (currentTab === 'services' || currentTab === 'services-catalog') {
       setActiveTab('services');
     }
-  }, [currentTab]);
-  const [bannerSubTab, setBannerSubTab] = useState<'banners' | 'offers'>('banners');
+  }, [initialTab, currentTab]);
+
+  useEffect(() => {
+    if (initialBannerSubTab) {
+      setBannerSubTab(initialBannerSubTab);
+    }
+  }, [initialBannerSubTab]);
 
   // Service Modal States
   const [showServiceModal, setShowServiceModal] = useState(false);
@@ -468,7 +486,10 @@ export const ServicesPage: React.FC = () => {
       {/* Tabs */}
       <div className="flex items-center gap-2 border-b border-slate-200">
         <button
-          onClick={() => setActiveTab('services')}
+          onClick={() => {
+            setActiveTab('services');
+            navigate('/admin/services');
+          }}
           className={`px-4 py-2.5 text-sm font-bold transition-all ${
             activeTab === 'services'
               ? 'text-[#123D2A] border-b-2 border-[#123D2A]'
@@ -481,7 +502,10 @@ export const ServicesPage: React.FC = () => {
           </div>
         </button>
         <button
-          onClick={() => setActiveTab('categories')}
+          onClick={() => {
+            setActiveTab('categories');
+            navigate('/admin/categories');
+          }}
           className={`px-4 py-2.5 text-sm font-bold transition-all ${
             activeTab === 'categories'
               ? 'text-[#123D2A] border-b-2 border-[#123D2A]'
@@ -494,7 +518,10 @@ export const ServicesPage: React.FC = () => {
           </div>
         </button>
         <button
-          onClick={() => setActiveTab('addons')}
+          onClick={() => {
+            setActiveTab('addons');
+            navigate('/admin/addons');
+          }}
           className={`px-4 py-2.5 text-sm font-bold transition-all ${
             activeTab === 'addons'
               ? 'text-[#123D2A] border-b-2 border-[#123D2A]'
@@ -507,7 +534,10 @@ export const ServicesPage: React.FC = () => {
           </div>
         </button>
         <button
-          onClick={() => setActiveTab('banners')}
+          onClick={() => {
+            setActiveTab('banners');
+            navigate('/admin/offers');
+          }}
           className={`px-4 py-2.5 text-sm font-bold transition-all ${
             activeTab === 'banners'
               ? 'text-[#123D2A] border-b-2 border-[#123D2A]'

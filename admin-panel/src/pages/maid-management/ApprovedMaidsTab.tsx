@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import { MaidProfile } from '../../types';
 import { StatusBadge } from '../../components/StatusBadge';
@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 
 export const ApprovedMaidsTab: React.FC = () => {
-  const { maids, toggleMaidActiveStatus, exportMaidsToCSV } = useAdmin();
+  const { maids, bookings, toggleMaidActiveStatus, exportMaidsToCSV } = useAdmin();
 
   const [selectedLocation, setSelectedLocation] = useState<string>('All');
   const [selectedLanguage, setSelectedLanguage] = useState<string>('All');
@@ -66,7 +66,7 @@ export const ApprovedMaidsTab: React.FC = () => {
   const totalApproved = approvedMaids.length;
   const activeToday = approvedMaids.filter(m => m.isOnline).length;
   const totalJobsCompleted = approvedMaids.reduce((sum, m) => sum + (m.completedJobsCount || 0), 0);
-  const totalCustomersServed = approvedMaids.reduce((sum, m) => sum + (m.uniqueCustomersServed || 30), 0);
+  const totalCustomersServed = approvedMaids.reduce((sum, m) => sum + (m.uniqueCustomersServed || m.completedJobsCount || 0), 0);
   const avgRating = (approvedMaids.reduce((sum, m) => sum + (m.rating || 0), 0) / (approvedMaids.length || 1)).toFixed(1);
 
   const resetFilters = () => {
@@ -76,7 +76,7 @@ export const ApprovedMaidsTab: React.FC = () => {
     setSearchQuery('');
   };
 
-  const activeMaidToDisplay = selectedProfileMaid || approvedMaids.find(m => m.maidId === 'MD001') || approvedMaids[0];
+  const activeMaidToDisplay = selectedProfileMaid || approvedMaids[0] || null;
 
   return (
     <div className="flex flex-col gap-5 font-sans">
@@ -423,7 +423,10 @@ export const ApprovedMaidsTab: React.FC = () => {
                         <div className="pt-2 border-t border-slate-100">
                           <span className="text-slate-400 font-semibold block mb-1">Service Areas</span>
                           <div className="flex flex-wrap gap-1.5">
-                            {(selectedProfileMaid.preferredAreas || ['Kondapur', 'Gachibowli', 'Madhapur', 'Hitech City']).map((a, i) => (
+                            {(selectedProfileMaid.preferredAreas && selectedProfileMaid.preferredAreas.length > 0
+                              ? selectedProfileMaid.preferredAreas
+                              : [selectedProfileMaid.city || selectedProfileMaid.locality || selectedProfileMaid.serviceArea || 'Telangana']
+                            ).map((a, i) => (
                               <span key={i} className="px-2.5 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg font-bold">
                                 {a}
                               </span>
@@ -448,20 +451,33 @@ export const ApprovedMaidsTab: React.FC = () => {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                            <tr>
-                              <td className="py-2.5">16 Sep 2026</td>
-                              <td className="py-2.5 font-bold text-slate-900">Home Cleaning</td>
-                              <td className="py-2.5">Priya Sharma</td>
-                              <td className="py-2.5"><span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full font-bold text-[10px]">Completed</span></td>
-                              <td className="py-2.5 text-right font-bold text-slate-900">₹1,200</td>
-                            </tr>
-                            <tr>
-                              <td className="py-2.5">14 Sep 2026</td>
-                              <td className="py-2.5 font-bold text-slate-900">Deep Cleaning</td>
-                              <td className="py-2.5">Ravi Kumar</td>
-                              <td className="py-2.5"><span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full font-bold text-[10px]">Completed</span></td>
-                              <td className="py-2.5 text-right font-bold text-slate-900">₹1,800</td>
-                            </tr>
+                            {(() => {
+                              const maidJobs = bookings.filter(
+                                b => b.assignedMaidId === selectedProfileMaid.uid || b.assignedMaidName === selectedProfileMaid.fullName
+                              );
+                              if (maidJobs.length === 0) {
+                                return (
+                                  <tr>
+                                    <td colSpan={5} className="py-6 text-center text-slate-400 font-medium">
+                                      No jobs assigned or completed yet for this partner.
+                                    </td>
+                                  </tr>
+                                );
+                              }
+                              return maidJobs.slice(0, 10).map((job, idx) => (
+                                <tr key={job.bookingId || job.id || idx}>
+                                  <td className="py-2.5 text-slate-500">{job.date || 'Recent'}</td>
+                                  <td className="py-2.5 font-bold text-slate-900">{job.serviceName}</td>
+                                  <td className="py-2.5 text-slate-700">{job.customerName || 'Customer'}</td>
+                                  <td className="py-2.5">
+                                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full font-bold text-[10px] uppercase">
+                                      {job.status.replace('_', ' ')}
+                                    </span>
+                                  </td>
+                                  <td className="py-2.5 text-right font-bold text-slate-900">₹{job.totalAmount || 0}</td>
+                                </tr>
+                              ));
+                            })()}
                           </tbody>
                         </table>
                       </div>
@@ -508,12 +524,8 @@ export const ApprovedMaidsTab: React.FC = () => {
                           <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">Verified</span>
                         </div>
                         <div className="flex justify-between py-1 border-b border-slate-100">
-                          <span className="text-slate-500">Police Verification</span>
-                          <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">Completed</span>
-                        </div>
-                        <div className="flex justify-between py-1 border-b border-slate-100">
                           <span className="text-slate-500">Bank Account</span>
-                          <strong className="text-slate-900 font-bold">Linked (HDFC)</strong>
+                          <strong className="text-slate-900 font-bold">Linked</strong>
                         </div>
                       </div>
                     </div>

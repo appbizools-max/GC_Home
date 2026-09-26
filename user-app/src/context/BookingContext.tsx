@@ -78,139 +78,172 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
   };
 
-  // Load real bookings from Supabase for the logged-in customer
-  useEffect(() => {
-    const loadRealBookings = async () => {
-      try {
-        const { data: sessionData } = await supabase.auth.getSession();
-        const userId = sessionData?.session?.user?.id;
+  const mapRowToCustomerBooking = (row: any): CustomerBooking => {
+    const pro = mapAssignedPro(row);
+    const stage = mapStageFromStatus(row.status);
+    const isAssigned = Boolean(pro);
+    const isCompleted = row.status === 'completed';
 
-        let query = supabase.from('bookings').select('*').order('created_at', { ascending: false }).limit(50);
-        if (userId) {
-          query = query.eq('customer_id', userId);
-        }
-
-        const { data, error } = await query;
-        if (error || !data || data.length === 0) {
-          setBookings([]);
-          return;
-        }
-
-        const mapped: CustomerBooking[] = data.map((row): CustomerBooking => {
-          const pro = mapAssignedPro(row);
-          const stage = mapStageFromStatus(row.status);
-          const isAssigned = Boolean(pro);
-          const isCompleted = row.status === 'completed';
-
-          return {
-            bookingId: row.booking_code || row.id,
-            serviceId: row.service_id || '',
-            serviceName: row.service_name || 'Home Cleaning',
-            serviceCategory: row.category_name || 'Home Cleaning',
-            serviceImage: ASSETS.heroLivingRoom,
-            addOns: [],
-            date: row.scheduled_date || new Date().toISOString().split('T')[0],
-            dateLabel: row.scheduled_date || 'Today',
-            timeSlot: row.time_slot || '4:00 PM – 6:00 PM',
-            address: {
-              id: 'addr_supabase',
-              label: row.address_label || 'Home',
-              street: row.address_street || '',
-              locality: row.address_locality || '',
-              city: row.address_city || 'Hyderabad',
-              pincode: row.address_pincode || '500001',
-            },
-            assignedPro: pro,
-            currentStage: stage,
-            stageHistory: [
-              { stage: 'confirmed', timestamp: 'Confirmed', label: 'Booking Confirmed', completed: true },
-              { stage: 'assigned', timestamp: isAssigned ? 'Assigned' : (row.assignment_status || 'Unassigned'), label: 'Partner Matching', completed: isAssigned },
-              { stage: 'on_the_way', timestamp: ['on_the_way', 'arrived', 'cleaning', 'completed'].includes(stage) ? 'En Route' : 'Pending', label: 'Professional On The Way', completed: ['on_the_way', 'arrived', 'cleaning', 'completed'].includes(stage) },
-              { stage: 'arrived', timestamp: ['arrived', 'cleaning', 'completed'].includes(stage) ? 'Arrived' : 'Pending', label: 'Arrived at Location', completed: ['arrived', 'cleaning', 'completed'].includes(stage) },
-              { stage: 'cleaning', timestamp: ['cleaning', 'completed'].includes(stage) ? 'In Progress' : 'Pending', label: 'Cleaning In Progress', completed: ['cleaning', 'completed'].includes(stage) },
-              { stage: 'completed', timestamp: isCompleted ? 'Completed' : 'Pending', label: 'Cleaning Completed', completed: isCompleted },
-            ],
-            paymentMethod: row.payment_method === 'cash' ? 'cod' : 'upi',
-            paymentStatus: row.payment_status === 'paid' ? 'paid' : 'pending',
-            basePrice: Number(row.base_amount || 0),
-            addOnsTotal: Number(row.addon_amount || 0),
-            discountAmount: Number(row.discount_amount || 0),
-            platformFee: Number(row.platform_fee || 29),
-            taxes: Number(row.tax_amount || 0),
-            totalAmount: Number(row.total_amount || 0),
-            createdAt: row.created_at || new Date().toISOString(),
-            startOtp: row.verification_otp || row.start_otp || '123456',
-          };
-        });
-
-        setBookings(mapped);
-        if (mapped.length > 0) {
-          setActiveBookingId(mapped[0].bookingId);
-        }
-      } catch (err) {
-        console.warn('BookingContext: Could not load real bookings:', err);
-      }
+    return {
+      bookingId: row.booking_code || row.id,
+      serviceId: row.service_id || '',
+      serviceName: row.service_name || 'Home Cleaning',
+      serviceCategory: row.category_name || 'Home Cleaning',
+      serviceImage: ASSETS.heroLivingRoom,
+      addOns: Array.isArray(row.selected_addons) ? row.selected_addons : [],
+      date: row.scheduled_date || new Date().toISOString().split('T')[0],
+      dateLabel: row.scheduled_date || 'Today',
+      timeSlot: row.time_slot || '4:00 PM – 6:00 PM',
+      address: {
+        id: 'addr_' + (row.booking_code || row.id),
+        label: row.address_label || 'Home',
+        houseFlat: row.address_house_flat || '',
+        street: row.address_street || '',
+        locality: row.address_locality || '',
+        city: row.address_city || '',
+        pincode: row.address_pincode || '',
+      },
+      assignedPro: pro,
+      currentStage: stage,
+      stageHistory: [
+        { stage: 'confirmed', timestamp: 'Confirmed', label: 'Booking Confirmed', completed: true },
+        { stage: 'assigned', timestamp: isAssigned ? 'Assigned' : (row.assignment_status || 'Unassigned'), label: 'Partner Matching', completed: isAssigned },
+        { stage: 'on_the_way', timestamp: ['on_the_way', 'arrived', 'cleaning', 'completed'].includes(stage) ? 'En Route' : 'Pending', label: 'Professional On The Way', completed: ['on_the_way', 'arrived', 'cleaning', 'completed'].includes(stage) },
+        { stage: 'arrived', timestamp: ['arrived', 'cleaning', 'completed'].includes(stage) ? 'Arrived' : 'Pending', label: 'Arrived at Location', completed: ['arrived', 'cleaning', 'completed'].includes(stage) },
+        { stage: 'cleaning', timestamp: ['cleaning', 'completed'].includes(stage) ? 'In Progress' : 'Pending', label: 'Cleaning In Progress', completed: ['cleaning', 'completed'].includes(stage) },
+        { stage: 'completed', timestamp: isCompleted ? 'Completed' : 'Pending', label: 'Cleaning Completed', completed: isCompleted },
+      ],
+      paymentMethod: row.payment_method === 'cash' ? 'cod' : 'upi',
+      paymentStatus: row.payment_status === 'paid' ? 'paid' : 'pending',
+      basePrice: Number(row.base_amount || 0),
+      addOnsTotal: Number(row.addon_amount || 0),
+      discountAmount: Number(row.discount_amount || 0),
+      platformFee: Number(row.platform_fee || 29),
+      taxes: Number(row.tax_amount || 0),
+      totalAmount: Number(row.total_amount || 0),
+      createdAt: row.created_at || new Date().toISOString(),
+      startOtp: row.verification_otp || row.start_otp || '123456',
     };
+  };
 
+  // Load real bookings from Supabase for the logged-in customer
+  const loadRealBookings = async () => {
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userId = sessionData?.session?.user?.id;
+
+      let query = supabase.from('bookings').select('*').order('created_at', { ascending: false }).limit(50);
+      if (userId) {
+        query = query.eq('customer_id', userId);
+      }
+
+      const { data, error } = await query;
+      if (error || !data || data.length === 0) {
+        setBookings([]);
+        return;
+      }
+
+      const mapped: CustomerBooking[] = data.map(mapRowToCustomerBooking);
+
+      setBookings(mapped);
+      if (mapped.length > 0) {
+        setActiveBookingId(mapped[0].bookingId);
+      }
+    } catch (err) {
+      console.warn('BookingContext: Could not load real bookings:', err);
+    }
+  };
+
+  useEffect(() => {
     loadRealBookings();
   }, []);
 
   // Supabase Realtime Subscription for instant booking updates
   useEffect(() => {
-    const subscription = supabase
-      .channel('public:bookings')
+    const channel = supabase
+      .channel('public:bookings_realtime_customer')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          const newBooking = mapRowToCustomerBooking(payload.new);
+          setBookings(prev => {
+            const exists = prev.some(b => b.bookingId === newBooking.bookingId);
+            return exists ? prev : [newBooking, ...prev];
+          });
+          setActiveBookingId(newBooking.bookingId);
+          return;
+        }
+
+        if (payload.eventType === 'DELETE') {
+          const deletedId = payload.old?.id || payload.old?.booking_code;
+          if (deletedId) {
+            setBookings(prev => prev.filter(b => b.bookingId !== deletedId));
+          }
+          return;
+        }
+
+        // UPDATE
         const updatedRow: any = payload.new;
         if (!updatedRow || !updatedRow.id) return;
 
-        setBookings((prev) =>
-          prev.map((b) => {
-            if (b.bookingId === updatedRow.id || b.bookingId === updatedRow.booking_code) {
-              const updatedPro = updatedRow.assigned_maid_name
-                ? {
-                    id: updatedRow.assigned_maid_id || '',
-                    name: updatedRow.assigned_maid_name,
-                    photoUrl: updatedRow.assigned_maid_photo_url || ASSETS.promoCleaner,
-                    rating: updatedRow.assigned_maid_rating ? Number(updatedRow.assigned_maid_rating) : 5.0,
-                    reviewCount: 48,
-                    phone: updatedRow.assigned_maid_phone || '+91 98000 00000',
-                    isVerified: true,
-                    experience: 'Verified Professional',
-                    vaccinationStatus: 'Fully Vaccinated & Verified',
-                  }
-                : b.assignedPro;
+        setBookings((prev) => {
+          const index = prev.findIndex(b => b.bookingId === updatedRow.id || b.bookingId === updatedRow.booking_code);
+          if (index === -1) {
+            // New booking added from another channel or updated
+            return [mapRowToCustomerBooking(updatedRow), ...prev];
+          }
 
-              const stage = updatedRow.status
-                ? mapStageFromStatus(updatedRow.status)
-                : b.currentStage;
+          const existing = prev[index];
+          const updatedPro = updatedRow.assigned_maid_name
+            ? {
+                id: updatedRow.assigned_maid_id || '',
+                name: updatedRow.assigned_maid_name,
+                photoUrl: updatedRow.assigned_maid_photo_url || ASSETS.promoCleaner,
+                rating: updatedRow.assigned_maid_rating ? Number(updatedRow.assigned_maid_rating) : 5.0,
+                reviewCount: 48,
+                phone: updatedRow.assigned_maid_phone || '+91 98000 00000',
+                isVerified: true,
+                experience: 'Verified Professional',
+                vaccinationStatus: 'Fully Vaccinated & Verified',
+              }
+            : existing.assignedPro;
 
-              const isAssigned = Boolean(updatedPro);
-              const isCompleted = updatedRow.status === 'completed';
+          const stage = updatedRow.status
+            ? mapStageFromStatus(updatedRow.status)
+            : existing.currentStage;
 
-              return {
-                ...b,
-                assignedPro: updatedPro,
-                currentStage: stage,
-                startOtp: updatedRow.verification_otp || updatedRow.start_otp || b.startOtp,
-                paymentStatus: updatedRow.payment_status || b.paymentStatus,
-                stageHistory: [
-                  { stage: 'confirmed', timestamp: 'Confirmed', label: 'Booking Confirmed', completed: true },
-                  { stage: 'assigned', timestamp: isAssigned ? 'Assigned' : 'Pending', label: 'Partner Matching', completed: isAssigned },
-                  { stage: 'on_the_way', timestamp: ['on_the_way', 'arrived', 'cleaning', 'completed'].includes(stage) ? 'En Route' : 'Pending', label: 'Professional On The Way', completed: ['on_the_way', 'arrived', 'cleaning', 'completed'].includes(stage) },
-                  { stage: 'arrived', timestamp: ['arrived', 'cleaning', 'completed'].includes(stage) ? 'Arrived' : 'Pending', label: 'Arrived at Location', completed: ['arrived', 'cleaning', 'completed'].includes(stage) },
-                  { stage: 'cleaning', timestamp: ['cleaning', 'completed'].includes(stage) ? 'In Progress' : 'Pending', label: 'Cleaning In Progress', completed: ['cleaning', 'completed'].includes(stage) },
-                  { stage: 'completed', timestamp: isCompleted ? 'Completed' : 'Pending', label: 'Cleaning Completed', completed: isCompleted },
-                ],
-              };
-            }
-            return b;
-          })
-        );
+          const isAssigned = Boolean(updatedPro);
+          const isCompleted = updatedRow.status === 'completed';
+
+          const updatedBooking: CustomerBooking = {
+            ...existing,
+            assignedPro: updatedPro,
+            currentStage: stage,
+            startOtp: updatedRow.verification_otp || updatedRow.start_otp || existing.startOtp,
+            paymentStatus: updatedRow.payment_status || existing.paymentStatus,
+            date: updatedRow.scheduled_date || existing.date,
+            timeSlot: updatedRow.time_slot || existing.timeSlot,
+            stageHistory: [
+              { stage: 'confirmed', timestamp: 'Confirmed', label: 'Booking Confirmed', completed: true },
+              { stage: 'assigned', timestamp: isAssigned ? 'Assigned' : 'Pending', label: 'Partner Matching', completed: isAssigned },
+              { stage: 'on_the_way', timestamp: ['on_the_way', 'arrived', 'cleaning', 'completed'].includes(stage) ? 'En Route' : 'Pending', label: 'Professional On The Way', completed: ['on_the_way', 'arrived', 'cleaning', 'completed'].includes(stage) },
+              { stage: 'arrived', timestamp: ['arrived', 'cleaning', 'completed'].includes(stage) ? 'Arrived' : 'Pending', label: 'Arrived at Location', completed: ['arrived', 'cleaning', 'completed'].includes(stage) },
+              { stage: 'cleaning', timestamp: ['cleaning', 'completed'].includes(stage) ? 'In Progress' : 'Pending', label: 'Cleaning In Progress', completed: ['cleaning', 'completed'].includes(stage) },
+              { stage: 'completed', timestamp: isCompleted ? 'Completed' : 'Pending', label: 'Cleaning Completed', completed: isCompleted },
+            ],
+          };
+
+          const next = [...prev];
+          next[index] = updatedBooking;
+          return next;
+        });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'partner_assignments' }, () => {
+        loadRealBookings();
       })
       .subscribe();
 
     return () => {
-      supabase.removeChannel(subscription);
+      supabase.removeChannel(channel);
     };
   }, []);
 
@@ -246,12 +279,13 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       dateLabel: cart.selectedDateLabel,
       timeSlot: cart.selectedSlot,
       address: cart.address || {
-        id: 'addr_hyd',
+        id: 'addr_' + Date.now(),
         label: 'Home',
-        street: 'Road No 36, Jubilee Hills',
-        locality: 'Jubilee Hills',
-        city: 'Hyderabad',
-        pincode: '500033',
+        houseFlat: '',
+        street: '',
+        locality: '',
+        city: '',
+        pincode: '',
       },
       assignedPro: undefined,
       currentStage: 'confirmed',
@@ -284,8 +318,8 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const authSession = await authService.getCurrentUser();
       const currentUserId = authSession.user?.uid || null;
       const customerName = authSession.user?.name || (cart.address?.label ? `Customer (${cart.address.label})` : 'Customer');
-      const customerPhone = authSession.user?.phone || '+91 98000 00000';
-      const customerEmail = authSession.user?.email || 'customer@gchome.com';
+      const customerPhone = authSession.user?.phone || '+91 93904 20247';
+      const customerEmail = authSession.user?.email || null;
 
       let scheduledDateIso = new Date().toISOString().split('T')[0];
       if (cart.selectedDate && /^\d{4}-\d{2}-\d{2}$/.test(cart.selectedDate)) {
@@ -321,10 +355,10 @@ export const BookingProvider: React.FC<{ children: React.ReactNode }> = ({ child
           tax_amount: cart.taxes || 0,
           total_amount: cart.totalAmount,
           address_label: cart.address?.label || 'Home',
-          address_street: cart.address?.street || 'Customer Address',
-          address_locality: cart.address?.locality || 'Hyderabad',
-          address_city: cart.address?.city || 'Hyderabad',
-          address_pincode: cart.address?.pincode || '500001',
+          address_street: [cart.address?.houseFlat, cart.address?.street].filter(Boolean).join(', ') || cart.address?.street || '',
+          address_locality: cart.address?.locality || '',
+          address_city: cart.address?.city || '',
+          address_pincode: cart.address?.pincode || '',
           scheduled_date: scheduledDateIso,
           time_slot: cart.selectedSlot || '4:00 PM – 6:00 PM',
           status: 'pending_assignment',

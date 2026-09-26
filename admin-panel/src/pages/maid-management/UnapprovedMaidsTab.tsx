@@ -153,7 +153,6 @@ export const UnapprovedMaidsTab: React.FC = () => {
             <option value="All">Rejection Reason</option>
             <option value="Invalid">Invalid Documents</option>
             <option value="Incomplete">Incomplete Details</option>
-            <option value="Police">Police Verification Pending</option>
           </select>
 
           <select

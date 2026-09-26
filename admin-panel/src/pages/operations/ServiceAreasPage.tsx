@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { supabase, supabaseAdmin } from '../../config/supabase';
 import {
   MapPin,
@@ -45,7 +45,7 @@ export const ServiceAreasPage: React.FC = () => {
   // Modal state
   const [modalOpen, setModalOpen] = useState<boolean>(false);
   const [editingArea, setEditingArea] = useState<ServiceArea | null>(null);
-  const [cityInput, setCityInput] = useState<TelanganaCity>('Karimnagar');
+  const [cityInput, setCityInput] = useState<string>('Karimnagar');
   const [localityInput, setLocalityInput] = useState<string>('');
   const [pincodeInput, setPincodeInput] = useState<string>('');
   const [isActiveInput, setIsActiveInput] = useState<boolean>(true);
@@ -171,10 +171,7 @@ export const ServiceAreasPage: React.FC = () => {
 
   const handleOpenEditModal = (area: ServiceArea) => {
     setEditingArea(area);
-    const validCity = TELANGANA_CITIES.includes(area.city as any)
-      ? (area.city as TelanganaCity)
-      : 'Karimnagar';
-    setCityInput(validCity);
+    setCityInput(area.city || 'Karimnagar');
     setLocalityInput(area.locality);
     setPincodeInput(area.pincode);
     setIsActiveInput(area.is_serviceable && area.is_active);
@@ -364,6 +361,17 @@ export const ServiceAreasPage: React.FC = () => {
     }
   };
 
+  // Dynamically derive available cities from real Supabase service areas
+  const availableCities = useMemo(() => {
+    const citySet = new Set<string>(TELANGANA_CITIES);
+    serviceAreas.forEach(a => {
+      if (a.city && a.city.trim()) {
+        citySet.add(a.city.trim());
+      }
+    });
+    return Array.from(citySet).sort((a, b) => a.localeCompare(b));
+  }, [serviceAreas]);
+
   // Filtered view
   const filteredAreas = serviceAreas.filter(a => {
     const matchesSearch =
@@ -441,12 +449,12 @@ export const ServiceAreasPage: React.FC = () => {
             >
               All Cities
             </button>
-            {TELANGANA_CITIES.map(city => (
+            {availableCities.map(city => (
               <button
                 key={city}
                 onClick={() => setSelectedCityFilter(city)}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
-                  selectedCityFilter === city
+                  selectedCityFilter.toLowerCase() === city.toLowerCase()
                     ? 'bg-[#123D2A] text-white shadow-sm'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
@@ -637,10 +645,10 @@ export const ServiceAreasPage: React.FC = () => {
                 <select
                   required
                   value={cityInput}
-                  onChange={e => setCityInput(e.target.value as TelanganaCity)}
+                  onChange={e => setCityInput(e.target.value)}
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#168A68] cursor-pointer"
                 >
-                  {TELANGANA_CITIES.map(city => (
+                  {availableCities.map(city => (
                     <option key={city} value={city}>
                       {city}
                     </option>

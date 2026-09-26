@@ -1,6 +1,13 @@
-﻿import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useAdmin } from '../../context/AdminContext';
+import { supabase, supabaseAdmin } from '../../config/supabase';
 import { MaidProfile } from '../../types';
+import {
+  formatDateDDMMYYYY,
+  getPaymentDisplayInfo,
+  getPartnerEstimatedEarnings,
+} from '../../utils/bookingDisplayUtils';
 import {
   ChevronRight,
   ArrowLeft,
@@ -95,8 +102,11 @@ const CustomerAvatar: React.FC<{ avatarUrl?: string; name: string; size?: string
 };
 
 export const AssignMaidPage: React.FC = () => {
+  const { bookingId } = useParams<{ bookingId?: string }>();
+  const navigate = useNavigate();
   const {
-    selectedBooking,
+    bookings,
+    selectedBooking: contextBooking,
     maids,
     setCurrentTab,
     openBookingDetails,
@@ -104,10 +114,13 @@ export const AssignMaidPage: React.FC = () => {
     cancelPartnerAssignmentRequest,
     acceptPartnerAssignment,
     declinePartnerAssignment,
+    adminError,
+    setAdminError,
   } = useAdmin();
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [distanceFilter, setDistanceFilter] = useState('10');
+  const [distanceFilter, setDistanceFilter] = useState('all');
+  const [availabilityFilter, setAvailabilityFilter] = useState<'all' | 'available'>('all');
   const [serviceFilter, setServiceFilter] = useState<'matching' | 'all'>('matching');
   const [selectedPartnerId, setSelectedPartnerId] = useState<string | null>(null);
 
@@ -117,6 +130,200 @@ export const AssignMaidPage: React.FC = () => {
   >('idle');
   const [requestSentAt, setRequestSentAt] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [directBooking, setDirectBooking] = useState<any>(null);
+  const [fetchingDirect, setFetchingDirect] = useState<boolean>(false);
+
+  // Resolve booking from context or route param
+  const selectedBooking =
+    (contextBooking && (!bookingId || contextBooking.bookingId === bookingId || contextBooking.id === bookingId))
+      ? contextBooking
+      : (bookingId ? bookings.find(item => item.bookingId === bookingId || item.id === bookingId) : null) || directBooking;
+
+  // Direct fetch fallback for direct URL access & refresh
+  useEffect(() => {
+    if (!selectedBooking && bookingId) {
+      setFetchingDirect(true);
+      supabase
+        .from('bookings')
+        .select('*')
+        .or(`booking_code.eq.${bookingId},id.eq.${bookingId}`)
+        .maybeSingle()
+        .then(({ data, error }) => {
+          setFetchingDirect(false);
+          if (data && !error) {
+            setDirectBooking({
+              id: data.id,
+              bookingId: data.booking_code || data.id,
+              customerId: data.customer_id,
+              customerName: data.customer_name || 'Customer',
+              customerPhone: data.customer_phone || '+91 93904 20247',
+              customerEmail: data.customer_email,
+              serviceId: data.service_id || 'srv_1',
+              serviceName: data.service_name || 'Home Cleaning',
+              servicePrice: Number(data.service_price || data.total_amount || 799),
+              totalAmount: Number(data.total_amount || 799),
+              serviceDuration: data.service_duration || '3 Hours',
+              address: {
+                id: 'addr_' + (data.booking_code || data.id),
+                label: data.address_label || 'Home',
+                street: data.address_street || '',
+                locality: data.address_locality || '',
+                city: data.address_city || 'Hanamkonda',
+                pincode: data.address_pincode || '',
+              },
+              date: data.scheduled_date || 'Today',
+              timeSlot: data.time_slot || '10:00 AM',
+              specialInstructions: data.special_instructions,
+              status: data.status || 'pending_assignment',
+              adminApprovalStatus: data.admin_approval_status || 'pending',
+              assignmentStatus: data.assignment_status || 'unassigned',
+              categoryName: data.category_name || 'General',
+              selectedAddOns: Array.isArray(data.selected_addons) ? data.selected_addons : [],
+              assignedMaidId: data.assigned_maid_id,
+              assignedMaidName: data.assigned_maid_name,
+              assignedMaidPhone: data.assigned_maid_phone,
+              assignedMaidPhotoUrl: data.assigned_maid_photo_url,
+              assignedMaidRating: data.assigned_maid_rating ? Number(data.assigned_maid_rating) : undefined,
+              paymentMethod: data.payment_method || 'cash',
+              paymentStatus: data.payment_status || 'pending',
+              partnerEarnings: data.partner_earnings,
+              createdAt: data.created_at ? new Date(data.created_at).toISOString().replace('T', ' ').substring(0, 16) : new Date().toISOString(),
+            });
+          }
+        });
+    }
+  }, [selectedBooking, bookingId]);
+
+  // Real-time synchronization for this specific booking
+  useEffect(() => {
+    const targetCode = bookingId || selectedBooking?.bookingId;
+    if (!targetCode) return;
+
+    const channel = supabase
+      .channel(`assign-partner-realtime-${targetCode}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'bookings',
+        },
+        payload => {
+          const row: any = payload.new;
+          if (row && (row.booking_code === targetCode || row.id === targetCode || row.id === selectedBooking?.id)) {
+            setDirectBooking((prev: any) => ({
+              ...(prev || {}),
+              id: row.id,
+              bookingId: row.booking_code || row.id,
+              customerName: row.customer_name || prev?.customerName || 'Customer',
+              customerPhone: row.customer_phone || prev?.customerPhone,
+              customerEmail: row.customer_email || prev?.customerEmail,
+              serviceName: row.service_name || prev?.serviceName,
+              servicePrice: Number(row.service_price || row.total_amount || prev?.servicePrice || 799),
+              totalAmount: Number(row.total_amount || prev?.totalAmount || 799),
+              serviceDuration: row.service_duration || prev?.serviceDuration || '3 Hours',
+              date: row.scheduled_date || prev?.date || 'Today',
+              timeSlot: row.time_slot || prev?.timeSlot || '10:00 AM',
+              specialInstructions: row.special_instructions,
+              status: row.status || prev?.status || 'pending_assignment',
+              adminApprovalStatus: row.admin_approval_status || prev?.adminApprovalStatus || 'pending',
+              assignmentStatus: row.assignment_status || prev?.assignmentStatus || 'unassigned',
+              paymentMethod: row.payment_method || prev?.paymentMethod || 'cash',
+              paymentStatus: row.payment_status || prev?.paymentStatus || 'pending',
+              partnerEarnings: row.partner_earnings || prev?.partnerEarnings,
+              assignedMaidId: row.assigned_maid_id,
+              assignedMaidName: row.assigned_maid_name,
+              assignedMaidPhone: row.assigned_maid_phone,
+            }));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [bookingId, selectedBooking?.bookingId, selectedBooking?.id]);
+
+  // Synchronize active partner assignment lifecycle
+  useEffect(() => {
+    const bookingDbId = selectedBooking?.id;
+    if (!bookingDbId) return;
+
+    supabaseAdmin
+      .from('partner_assignments')
+      .select('*')
+      .eq('booking_id', bookingDbId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (!error && data) {
+          if (data.response_status === 'pending') {
+            setRequestStatus('pending_acceptance');
+            setSelectedPartnerId(data.partner_id);
+            if (data.offer_sent_at) {
+              setRequestSentAt(
+                new Date(data.offer_sent_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              );
+            }
+          } else if (data.response_status === 'accepted') {
+            setRequestStatus('accepted');
+            setSelectedPartnerId(data.partner_id);
+          } else if (data.response_status === 'declined') {
+            setRequestStatus('declined');
+          }
+        }
+      });
+  }, [selectedBooking?.id]);
+
+  // Real-time synchronization for partner_assignments
+  useEffect(() => {
+    const bookingDbId = selectedBooking?.id;
+    if (!bookingDbId) return;
+
+    const channel = supabase
+      .channel(`partner-assignments-rt-${bookingDbId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'partner_assignments',
+          filter: `booking_id=eq.${bookingDbId}`,
+        },
+        payload => {
+          const row: any = payload.new;
+          if (row) {
+            if (row.response_status === 'pending') {
+              setRequestStatus('pending_acceptance');
+              setSelectedPartnerId(row.partner_id);
+            } else if (row.response_status === 'accepted') {
+              setRequestStatus('accepted');
+              setSelectedPartnerId(row.partner_id);
+            } else if (row.response_status === 'declined') {
+              setRequestStatus('declined');
+            } else if (row.response_status === 'expired') {
+              setRequestStatus('idle');
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [selectedBooking?.id]);
+
+  if (fetchingDirect) {
+    return (
+      <div className="p-16 text-center text-slate-500 font-sans flex flex-col items-center justify-center gap-3">
+        <div className="w-8 h-8 border-3 border-[#123D2A] border-t-transparent rounded-full animate-spin"></div>
+        <p className="text-xs font-bold text-slate-600">Loading booking for assignment...</p>
+      </div>
+    );
+  }
 
   if (!selectedBooking) {
     return (
@@ -125,8 +332,8 @@ export const AssignMaidPage: React.FC = () => {
         <h3 className="text-base font-extrabold text-slate-800">No Booking Selected</h3>
         <p className="text-xs text-slate-500 mt-1">Please select a pending booking from the bookings list to assign an eligible partner.</p>
         <button
-          onClick={() => setCurrentTab('all-bookings')}
-          className="mt-4 bg-[#123D2A] hover:bg-[#184a34] text-white px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-sm"
+          onClick={() => navigate('/admin/bookings')}
+          className="mt-4 bg-[#123D2A] hover:bg-[#184a34] text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-sm"
         >
           Return to Bookings
         </button>
@@ -155,9 +362,14 @@ export const AssignMaidPage: React.FC = () => {
     if (Array.isArray(partner.servicesProvided) && partner.servicesProvided.length > 0) {
       const hasService = partner.servicesProvided.some((s: any) => {
         const sName = (s?.serviceName || s?.name || '').toLowerCase().trim();
-        return sName.includes(reqLower) || reqLower.includes(sName);
+        return sName.includes(reqLower) || reqLower.includes(sName) || (reqLower.includes('clean') && sName.includes('clean'));
       });
       if (hasService) return true;
+    }
+
+    // 4. If partner has no specific skills array recorded, allow matching
+    if ((!partner.skills || partner.skills.length === 0) && (!partner.servicesProvided || partner.servicesProvided.length === 0)) {
+      return true;
     }
 
     return false;
@@ -165,17 +377,37 @@ export const AssignMaidPage: React.FC = () => {
 
   // Filter partners: Approved & matching requested service by default
   const eligiblePartners = useMemo(() => {
-    return maids.filter(m => {
-      // 1. Must be approved
+    const list = maids.filter(m => {
+      // 1. Must be approved by Admin
       if (m.status !== 'approved') return false;
+
+      // 1b. Mandatory verification check:
+      // If photo was explicitly marked for reupload by Admin, partner cannot be assigned
+      const ver = m.verificationStatus || {};
+      if (ver.profile_photo?.status === 'reupload_required') return false;
+
+      // Mandatory documents must not be flagged for re-upload
+      if (ver.step4_documents?.status === 'reupload_required') return false;
+      const docs = ver.documents || {};
+      if (docs.aadhaar_front?.status === 'reupload_required') return false;
+      if (docs.aadhaar_back?.status === 'reupload_required') return false;
+      if (docs.pan_card?.status === 'reupload_required') return false;
+
+      // KYC cannot be rejected
+      if (m.kycStatus === 'rejected') return false;
+
+      // 1c. Availability filter
+      if (availabilityFilter === 'available' && !m.isOnline) {
+        return false;
+      }
 
       // 2. Service matching
       if (serviceFilter === 'matching') {
         if (!isPartnerEligibleForService(m, selectedBooking.serviceName)) return false;
       }
 
-      // 3. Distance filter
-      const distance = m.distanceKm || 1.8;
+      // 3. Distance filter (only filter if a positive distance was calculated and exceeds limit)
+      const distance = m.distanceKm || 0;
       if (distanceFilter === '5' && distance > 5) return false;
       if (distanceFilter === '10' && distance > 10) return false;
 
@@ -190,7 +422,15 @@ export const AssignMaidPage: React.FC = () => {
 
       return true;
     });
-  }, [maids, serviceFilter, distanceFilter, searchTerm, selectedBooking.serviceName]);
+
+    // Sort Available (Online) partners first, then by rating
+    return list.sort((a, b) => {
+      if (a.isOnline !== b.isOnline) {
+        return a.isOnline ? -1 : 1;
+      }
+      return (b.rating || 5) - (a.rating || 5);
+    });
+  }, [maids, serviceFilter, distanceFilter, availabilityFilter, searchTerm, selectedBooking.serviceName]);
 
   // Find currently selected partner object
   const selectedPartner = useMemo(() => {
@@ -201,16 +441,6 @@ export const AssignMaidPage: React.FC = () => {
     const firstAvailable = eligiblePartners.find(m => m.isOnline && m.currentStatus !== 'busy');
     return firstAvailable || null;
   }, [selectedPartnerId, maids, eligiblePartners]);
-
-  // Helper: Mask phone number
-  const maskPhone = (phone?: string): string => {
-    if (!phone) return '';
-    const cleaned = phone.trim();
-    if (cleaned.length < 8) return cleaned;
-    const start = cleaned.slice(0, 5);
-    const end = cleaned.slice(-2);
-    return `${start} ••••• ${end}`;
-  };
 
   // 1. Send Assignment Request to Selected Partner
   const handleSendAssignmentRequest = async () => {
@@ -239,7 +469,7 @@ export const AssignMaidPage: React.FC = () => {
         new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       );
     } else {
-      alert('Unable to send assignment request. Please check connection and try again.');
+      alert(adminError || 'Assignment request failed. Please check connection and try again.');
     }
   };
 
@@ -275,6 +505,9 @@ export const AssignMaidPage: React.FC = () => {
     setRequestStatus('declined');
   };
 
+  const paymentInfo = getPaymentDisplayInfo(selectedBooking.paymentStatus, selectedBooking.paymentMethod);
+  const partnerPayout = getPartnerEstimatedEarnings(selectedBooking.totalAmount, selectedBooking.partnerEarnings);
+
   return (
     <div className="flex flex-col gap-5 font-sans text-slate-800 select-none pb-8">
       {/* 1. Breadcrumbs & Header */}
@@ -296,7 +529,7 @@ export const AssignMaidPage: React.FC = () => {
         </div>
 
         <button
-          onClick={() => setCurrentTab('all-bookings')}
+          onClick={() => navigate('/admin/bookings')}
           className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold px-4 py-2.5 rounded-xl text-xs flex items-center gap-2 shadow-xs cursor-pointer transition-all self-start md:self-auto"
         >
           <ArrowLeft className="w-4 h-4" />
@@ -318,27 +551,39 @@ export const AssignMaidPage: React.FC = () => {
             </span>
           </div>
 
-          {/* Customer Info */}
+          {/* Customer Info (Unmasked Mobile Number for Admin) */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <CustomerAvatar avatarUrl={selectedBooking.customerAvatar} name={selectedBooking.customerName} size="w-10 h-10" />
               <div>
                 <h4 className="text-xs font-black text-slate-900">{selectedBooking.customerName}</h4>
-                <p className="text-[11px] text-slate-500 font-medium">{maskPhone(selectedBooking.customerPhone)}</p>
+                <p className="text-xs text-slate-700 font-extrabold tracking-wide mt-0.5">
+                  {selectedBooking.customerPhone || '+91 93904 20247'}
+                </p>
               </div>
             </div>
 
             <div className="flex items-center gap-1.5">
+              {selectedBooking.customerPhone ? (
+                <a
+                  href={`tel:${String(selectedBooking.customerPhone).replace(/\s+/g, '')}`}
+                  title={`Call ${selectedBooking.customerName} (${selectedBooking.customerPhone})`}
+                  className="w-8 h-8 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 flex items-center justify-center border border-slate-200 cursor-pointer transition-all"
+                >
+                  <Phone className="w-3.5 h-3.5" />
+                </a>
+              ) : (
+                <button
+                  disabled
+                  title="Phone number unavailable"
+                  className="w-8 h-8 rounded-xl bg-slate-50 text-slate-300 flex items-center justify-center border border-slate-200 cursor-not-allowed"
+                >
+                  <Phone className="w-3.5 h-3.5" />
+                </button>
+              )}
               <button
-                onClick={() => alert(`Calling ${selectedBooking.customerName}...`)}
-                title="Call Customer"
-                className="w-8 h-8 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 flex items-center justify-center border border-slate-200 cursor-pointer transition-all"
-              >
-                <Phone className="w-3.5 h-3.5" />
-              </button>
-              <button
-                onClick={() => alert(`WhatsApp ${selectedBooking.customerName}...`)}
-                title="WhatsApp"
+                onClick={() => navigate('/admin/chat')}
+                title={`Open chat with ${selectedBooking.customerName}`}
                 className="w-8 h-8 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-[#123D2A] flex items-center justify-center border border-emerald-200 cursor-pointer transition-all"
               >
                 <MessageSquare className="w-3.5 h-3.5" />
@@ -358,24 +603,24 @@ export const AssignMaidPage: React.FC = () => {
               </div>
               {(selectedBooking.selectedAddOns || []).length > 0 && (
                 <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200/60 inline-block mt-0.5">
-                  + {(selectedBooking.selectedAddOns || []).length} add-on
+                  + {(selectedBooking.selectedAddOns || []).length} add-on{(selectedBooking.selectedAddOns || []).length > 1 ? 's' : ''}
                 </span>
               )}
             </div>
           </div>
 
-          {/* Schedule & Duration */}
+          {/* Schedule & Duration — Formatted strictly as DD-MM-YYYY */}
           <div className="border-t border-slate-100 pt-3 flex items-start gap-3">
             <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center shrink-0 border border-purple-100">
               <Calendar className="w-4 h-4" />
             </div>
             <div>
               <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Schedule</span>
-              <div className="text-xs font-bold text-slate-900">
-                {selectedBooking.date}
+              <div className="text-xs font-black text-slate-900">
+                {formatDateDDMMYYYY(selectedBooking.date)}
               </div>
-              <div className="text-[11px] text-slate-500 font-medium">
-                {selectedBooking.timeSlot} · {selectedBooking.serviceDuration || '3 hours'}
+              <div className="text-[11px] text-slate-500 font-medium mt-0.5">
+                {selectedBooking.timeSlot} · {selectedBooking.serviceDuration || '3 Hours'}
               </div>
             </div>
           </div>
@@ -388,25 +633,42 @@ export const AssignMaidPage: React.FC = () => {
             <div>
               <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Location</span>
               <div className="text-xs font-bold text-slate-900 leading-snug">
-                {selectedBooking.address?.locality || selectedBooking.address?.city || 'Hyderabad'}
+                {selectedBooking.address?.locality || selectedBooking.address?.city || 'Hanamkonda'}
               </div>
               <div className="text-[11px] text-slate-500 font-medium">
-                {selectedBooking.address?.city || 'Hyderabad'}
+                {selectedBooking.address?.city || 'Hanamkonda'}
               </div>
             </div>
           </div>
 
-          {/* Payment Status & Amount */}
-          <div className="border-t border-slate-100 pt-3 flex items-center justify-between">
-            <div>
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Payment</span>
-              <span className="bg-emerald-50 text-emerald-700 font-bold px-2 py-0.5 rounded-full text-[10px] border border-emerald-200/60 inline-block mt-0.5">
-                Paid
-              </span>
+          {/* Payment Status & Amount (Never hardcoded to Paid) */}
+          <div className="border-t border-slate-100 pt-3 flex flex-col gap-2.5">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
+                  Payment Method
+                </span>
+                <span className="text-xs font-black text-slate-800">
+                  {paymentInfo.methodLabel}
+                </span>
+              </div>
+              <div className="text-right">
+                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
+                  Payment Status
+                </span>
+                <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border inline-block mt-0.5 ${paymentInfo.statusBadgeStyle}`}>
+                  {paymentInfo.statusLabel}
+                </span>
+              </div>
             </div>
-            <div className="text-right">
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Amount</span>
-              <span className="text-sm font-black text-slate-900">₹{selectedBooking.totalAmount}</span>
+
+            <div className="flex items-center justify-between pt-2 border-t border-slate-100/80">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                Booking Amount
+              </span>
+              <span className="text-sm font-black text-slate-900">
+                ₹{selectedBooking.totalAmount}
+              </span>
             </div>
           </div>
 
@@ -439,6 +701,16 @@ export const AssignMaidPage: React.FC = () => {
               </div>
 
               <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
+                {/* Availability Filter */}
+                <select
+                  value={availabilityFilter}
+                  onChange={e => setAvailabilityFilter(e.target.value as any)}
+                  className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-slate-700 font-bold outline-none cursor-pointer"
+                >
+                  <option value="all">All Partners</option>
+                  <option value="available">🟢 Available (Online) Only</option>
+                </select>
+
                 {/* Service Match Filter */}
                 <select
                   value={serviceFilter}
@@ -455,9 +727,9 @@ export const AssignMaidPage: React.FC = () => {
                   onChange={e => setDistanceFilter(e.target.value)}
                   className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-slate-700 font-bold outline-none cursor-pointer"
                 >
+                  <option value="all">All Distances</option>
                   <option value="10">Nearby (10 km)</option>
                   <option value="5">Nearby (5 km)</option>
-                  <option value="all">All Distances</option>
                 </select>
 
                 {/* Search Box */}
@@ -492,9 +764,11 @@ export const AssignMaidPage: React.FC = () => {
                 <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
                   {eligiblePartners.map(partner => {
                     const isSelected = selectedPartner?.uid === partner.uid;
-                    const isAvailable = partner.isOnline && partner.currentStatus !== 'busy';
-                    const distance = partner.distanceKm || 1.2;
-                    const eta = partner.etaMins || 8;
+                    const isAvailable = Boolean(partner.isOnline);
+                    const hasJobs = Boolean(partner.completedJobsCount && partner.completedJobsCount > 0);
+                    const hasRatings = Boolean(hasJobs && partner.totalRatingsCount && partner.totalRatingsCount > 0 && partner.rating);
+                    const distanceStr = partner.distanceKm !== undefined && partner.distanceKm > 0 ? `${partner.distanceKm} km` : 'Distance unavailable';
+                    const partnerEtaStr = (selectedBooking as any).partnerEta || partner.etaMins ? `${(selectedBooking as any).partnerEta || partner.etaMins} min` : 'Not provided';
 
                     return (
                       <tr
@@ -518,27 +792,31 @@ export const AssignMaidPage: React.FC = () => {
                             <PartnerAvatar photoUrl={partner.photoUrl} name={partner.fullName} size="w-8 h-8" />
                             <div>
                               <span className="font-bold text-slate-900 block text-xs">{partner.fullName}</span>
-                              <span className="text-[10px] text-slate-400 font-medium">{partner.serviceArea || 'Hyderabad'}</span>
+                              <span className="text-[10px] text-slate-400 font-medium">{partner.serviceArea || partner.city || 'Available'}</span>
                             </div>
                           </div>
                         </td>
 
                         {/* 2. Distance */}
-                        <td className="py-3 px-3 font-bold text-slate-800 whitespace-nowrap">
-                          {distance} km
+                        <td className="py-3 px-3 font-semibold text-slate-700 whitespace-nowrap text-[11px]">
+                          {distanceStr}
                         </td>
 
                         {/* 3. Rating */}
                         <td className="py-3 px-3 whitespace-nowrap">
-                          <div className="flex items-center gap-1 font-bold text-slate-900">
-                            <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                            <span>{partner.rating || 5.0}</span>
-                          </div>
+                          {hasRatings ? (
+                            <div className="flex items-center gap-1 font-bold text-slate-900">
+                              <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                              <span>{partner.rating.toFixed(1)}</span>
+                            </div>
+                          ) : (
+                            <span className="text-[11px] text-slate-400 font-medium italic">No ratings yet</span>
+                          )}
                         </td>
 
                         {/* 4. Jobs */}
-                        <td className="py-3 px-3 font-bold text-slate-800 whitespace-nowrap">
-                          {partner.completedJobsCount || 210}
+                        <td className="py-3 px-3 font-semibold text-slate-700 whitespace-nowrap text-[11px]">
+                          {hasJobs ? `${partner.completedJobsCount} completed jobs` : '0 completed jobs'}
                         </td>
 
                         {/* 5. Services */}
@@ -551,21 +829,25 @@ export const AssignMaidPage: React.FC = () => {
                         {/* 6. Availability */}
                         <td className="py-3 px-3 whitespace-nowrap">
                           {isAvailable ? (
-                            <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold px-2 py-0.5 rounded-full text-[10px]">
+                            <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold px-2.5 py-0.5 rounded-full text-[10px]">
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
                               Available
                             </span>
                           ) : (
-                            <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-800 border border-amber-200 font-bold px-2 py-0.5 rounded-full text-[10px]">
-                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                              Busy / On Job
+                            <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-600 border border-slate-200 font-bold px-2.5 py-0.5 rounded-full text-[10px]">
+                              <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                              Not Available
                             </span>
                           )}
                         </td>
 
                         {/* 7. ETA */}
-                        <td className="py-3 px-3 font-bold text-slate-800 whitespace-nowrap">
-                          {eta} min
+                        <td className="py-3 px-3 font-semibold text-slate-700 whitespace-nowrap text-[11px]">
+                          {requestStatus === 'pending_acceptance' ? (
+                            <span className="text-amber-600 font-bold italic">Awaiting response</span>
+                          ) : (
+                            partnerEtaStr
+                          )}
                         </td>
 
                         {/* 8. Action */}
@@ -588,10 +870,10 @@ export const AssignMaidPage: React.FC = () => {
                           ) : (
                             <button
                               disabled
-                              title="Partner is currently busy and cannot be assigned"
+                              title="Partner is currently offline / unavailable"
                               className="bg-slate-100 text-slate-400 border border-slate-200 px-3 py-1.5 rounded-lg text-xs font-bold opacity-60 cursor-not-allowed"
                             >
-                              Unavailable
+                              Not Available
                             </button>
                           )}
                         </td>
@@ -680,6 +962,15 @@ export const AssignMaidPage: React.FC = () => {
                         <span>{selectedPartner.distanceKm || 1.2} km away</span>
                         <span>·</span>
                         <span className="text-[#123D2A] font-bold">{selectedPartner.etaMins || 8} min ETA</span>
+                      </div>
+                      {/* Explicit Partner Earnings vs Customer Booking Total */}
+                      <div className="flex flex-wrap items-center gap-2 mt-2">
+                        <span className="bg-emerald-100/80 text-emerald-900 font-bold text-[10px] px-2 py-0.5 rounded-md border border-emerald-200">
+                          Partner Payout: ₹{partnerPayout}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-semibold">
+                          Customer Total: ₹{selectedBooking.totalAmount}
+                        </span>
                       </div>
                     </div>
                   </div>

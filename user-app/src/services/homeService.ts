@@ -159,6 +159,77 @@ class HomeService {
   private inFlightServicesPromise: Promise<any> | null = null;
   private inFlightCategoriesPromise: Promise<any> | null = null;
   private inFlightDashboardPromise: Promise<any> | null = null;
+  private listeners: Set<(event: string) => void> = new Set();
+  private realtimeChannel: any = null;
+
+  constructor() {
+    this.setupRealtime();
+  }
+
+  private setupRealtime() {
+    try {
+      this.realtimeChannel = supabase
+        .channel('user_app_catalog_realtime')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'services' }, () => {
+          console.log('[Realtime: UserApp] Services changed in database');
+          this.invalidateCache('services');
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'service_categories' }, () => {
+          console.log('[Realtime: UserApp] Service categories changed in database');
+          this.invalidateCache('categories');
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'service_addons' }, () => {
+          console.log('[Realtime: UserApp] Service addons changed in database');
+          this.notifyListeners('addons');
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'offers' }, () => {
+          console.log('[Realtime: UserApp] Offers changed in database');
+          this.notifyListeners('offers');
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'homepage_banners' }, () => {
+          console.log('[Realtime: UserApp] Homepage banners changed in database');
+          this.invalidateCache('banners');
+        })
+        .subscribe();
+    } catch (err) {
+      console.warn('[Realtime: UserApp] Could not initialize catalog subscription:', err);
+    }
+  }
+
+  public subscribe(listener: (event: string) => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  private notifyListeners(event: string) {
+    this.listeners.forEach(fn => {
+      try {
+        fn(event);
+      } catch (err) {
+        console.warn('HomeService listener notification error:', err);
+      }
+    });
+  }
+
+  public invalidateCache(type?: string) {
+    if (!type || type === 'services') {
+      this.cache.services = null;
+      this.cache.topServices = null;
+    }
+    if (!type || type === 'categories') {
+      this.cache.categories = null;
+    }
+    if (!type || type === 'banners') {
+      this.cache.banners = null;
+    }
+    if (!type || type === 'notifications') {
+      this.cache.notifications = null;
+    }
+    this.cache.lastUpdated = null;
+    this.notifyListeners(type || 'all');
+  }
 
   public getCachedServices() {
     return this.cache.services;

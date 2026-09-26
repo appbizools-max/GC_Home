@@ -266,8 +266,27 @@ export const BookingSummaryScreen: React.FC = () => {
           {currentAddress ? (
             <View style={styles.addressBox}>
               <View style={styles.addressHeaderRow}>
-                <MapPin size={16} color="#168A68" />
-                <Text style={styles.addressLabel}>{currentAddress.label || 'Home'} Location</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                  <MapPin size={16} color="#168A68" />
+                  <Text style={styles.addressLabel}>{currentAddress.label || 'Home'} Location</Text>
+                  {currentAddress.isDefault ? (
+                    <View style={styles.defaultPill}>
+                      <Text style={styles.defaultPillText}>DEFAULT</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.bookingOnlyPill}>
+                      <Text style={styles.bookingOnlyPillText}>BOOKING LOCATION</Text>
+                    </View>
+                  )}
+                </View>
+
+                <TouchableOpacity
+                  onPress={() => navigateTo('address-confirmation')}
+                  activeOpacity={0.7}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={styles.changeAddressBtnText}>Change</Text>
+                </TouchableOpacity>
               </View>
               <Text style={styles.addressText}>
                 {currentAddress.houseFlat ? `${currentAddress.houseFlat}, ` : ''}
@@ -693,14 +712,47 @@ const styles = StyleSheet.create({
   },
   addressHeaderRow: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 6,
-    marginBottom: 4,
+    marginBottom: 6,
   },
   addressLabel: {
     fontSize: 13,
     fontWeight: '800',
     color: '#0F172A',
+  },
+  changeAddressBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#168A68',
+  },
+  defaultPill: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 6,
+    borderWidth: 0.5,
+    borderColor: '#FDE68A',
+  },
+  defaultPillText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#92400E',
+    letterSpacing: 0.3,
+  },
+  bookingOnlyPill: {
+    backgroundColor: '#E6F4EA',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 6,
+    borderWidth: 0.5,
+    borderColor: '#C6E7D2',
+  },
+  bookingOnlyPillText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#0D8846',
+    letterSpacing: 0.3,
   },
   addressText: {
     fontSize: 12,

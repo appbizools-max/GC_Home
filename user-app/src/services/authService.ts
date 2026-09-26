@@ -225,22 +225,22 @@ class AuthService {
     }
 
     if (existingProfile || existingMaidProfile) {
-      const isApprovedMaid = existingMaidProfile?.status === 'approved' || existingProfile?.maid_application_status === 'approved';
       let userRole: 'customer' | 'maid' | 'partner' = 'customer';
       let maidStatus = 'none';
 
-      if (isApprovedMaid) {
-        userRole = 'maid';
-        maidStatus = 'approved';
-      } else if (existingProfile?.role === 'maid' || existingProfile?.role === 'partner') {
-        userRole = existingProfile.role;
-        maidStatus = existingProfile.maid_application_status || existingMaidProfile?.status || 'pending';
+      // 1. If an existing customer profile exists in user_profiles, user is primarily a Customer
+      if (existingProfile) {
+        userRole = (existingProfile.role as any) || 'customer';
+        maidStatus = existingProfile.maid_application_status || 'none';
+
+        // If they also have an approved partner profile, note the approved status
+        if (existingMaidProfile?.status === 'approved') {
+          maidStatus = 'approved';
+        }
       } else if (existingMaidProfile) {
-        userRole = existingMaidProfile.status === 'approved' ? 'maid' : 'customer';
+        // 2. Only if they do NOT have a customer profile and only have a maid profile
+        userRole = 'maid';
         maidStatus = existingMaidProfile.status || 'pending';
-      } else {
-        userRole = (existingProfile?.role as any) || 'customer';
-        maidStatus = existingProfile?.maid_application_status || 'none';
       }
 
       const displayName = existingProfile?.name || existingProfile?.full_name || existingMaidProfile?.full_name || 'GC Home User';
@@ -329,12 +329,12 @@ class AuthService {
   }
 
   /**
-   * Check if a mobile number already exists in Supabase user_profiles or maid_profiles
+   * Helper to build phone variants filter for Supabase query
    */
-  async checkPhoneExists(phoneNumber: string): Promise<boolean> {
+  private buildPhoneFilter(phoneNumber: string): string | null {
     const cleanPhone = phoneNumber.trim();
     const digitsOnly = cleanPhone.replace(/\D/g, '');
-    if (digitsOnly.length < 10) return false;
+    if (digitsOnly.length < 10) return null;
     const last10Digits = digitsOnly.slice(-10);
 
     const variants = [
@@ -346,36 +346,82 @@ class AuthService {
       `91${last10Digits}`,
     ];
     const uniqueVariants = Array.from(new Set(variants.filter(Boolean)));
-    const orFilter = uniqueVariants.map(v => `phone.eq.${v}`).join(',');
+    return uniqueVariants.map(v => `phone.eq.${v}`).join(',');
+  }
+
+  /**
+   * Check if a mobile number is already registered as a Customer in Supabase user_profiles
+   */
+  async checkCustomerPhoneExists(phoneNumber: string): Promise<boolean> {
+    const orFilter = this.buildPhoneFilter(phoneNumber);
+    if (!orFilter) return false;
 
     try {
-      // 1. Check Supabase user_profiles
+      const { data: userRows, error } = await supabase
+        .from('user_profiles')
+        .select('id')
+        .or(orFilter)
+        .limit(1);
+
+      if (error) {
+        console.warn('Supabase checkCustomerPhoneExists error:', error);
+        return false;
+      }
+      return Boolean(userRows && userRows.length > 0);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Check if a mobile number is already registered as a Partner in Supabase maid_profiles
+   */
+  async checkPartnerPhoneExists(phoneNumber: string): Promise<boolean> {
+    const orFilter = this.buildPhoneFilter(phoneNumber);
+    if (!orFilter) return false;
+
+    try {
+      const { data: maidRows, error } = await supabase
+        .from('maid_profiles')
+        .select('id')
+        .or(orFilter)
+        .limit(1);
+
+      if (error) {
+        console.warn('Supabase checkPartnerPhoneExists error:', error);
+        return false;
+      }
+      return Boolean(maidRows && maidRows.length > 0);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Check if a mobile number already exists in Supabase user_profiles or maid_profiles (for login)
+   */
+  async checkPhoneExists(phoneNumber: string): Promise<boolean> {
+    const orFilter = this.buildPhoneFilter(phoneNumber);
+    if (!orFilter) return false;
+
+    try {
+      // 1. Check Supabase user_profiles first
       const { data: userRows, error: userErr } = await supabase
         .from('user_profiles')
         .select('id')
         .or(orFilter)
         .limit(1);
 
-      if (userErr) {
-        console.warn('Supabase user_profiles check error:', userErr);
-        throw new Error(userErr.message);
-      }
-
       if (userRows && userRows.length > 0) {
         return true;
       }
 
       // 2. Check Supabase maid_profiles
-      const { data: maidRows, error: maidErr } = await supabase
+      const { data: maidRows } = await supabase
         .from('maid_profiles')
         .select('id')
         .or(orFilter)
         .limit(1);
-
-      if (maidErr) {
-        console.warn('Supabase maid_profiles check error:', maidErr);
-        throw new Error(maidErr.message);
-      }
 
       if (maidRows && maidRows.length > 0) {
         return true;
@@ -384,22 +430,22 @@ class AuthService {
       return false;
     } catch (err: any) {
       console.warn('Error checking phone existence in Supabase:', err);
-      throw new Error('Unable to connect to service. Please check your internet connection.');
+      return false;
     }
   }
 
   /**
    * Save / Complete user profile setup
    */
-  async createProfile(data: ProfileInputData, phone: string): Promise<{ success: boolean; user: User; address: Address }> {
+  async createProfile(data: ProfileInputData, phone: string): Promise<{ success: boolean; user: User; address?: Address | null }> {
     await new Promise(r => setTimeout(r, 400));
 
     if (!data.name || data.name.trim().length < 2) {
       throw new Error('Please enter your full name (minimum 2 characters).');
     }
 
-    const finalCity = data.city?.trim() || 'Hyderabad, Telangana';
-    const finalAddress = data.address?.trim() || 'Hyderabad, Telangana';
+    const finalCity = data.city?.trim() || '';
+    const finalAddress = data.address?.trim() || '';
 
     // Check if customer profile already exists for this mobile number to prevent duplicate rows
     let existingProfileId: string | null = null;
@@ -430,16 +476,6 @@ class AuthService {
       createdAt: new Date().toISOString().split('T')[0],
     };
 
-    const newAddressId = generateUUID();
-    const newAddress: Address = {
-      id: newAddressId,
-      label: 'Home',
-      street: finalAddress,
-      locality: finalCity,
-      city: finalCity,
-      pincode: '500081',
-    };
-
     // Persist securely in local storage
     await safeStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(newUser));
     await safeStorage.setItem(ONBOARDING_COMPLETED_KEY, 'true');
@@ -454,8 +490,8 @@ class AuthService {
         email: newUser.email,
         role: 'customer',
         customer_type: 'Regular Customer',
-        address: finalAddress,
-        city: finalCity,
+        address: finalAddress || null,
+        city: finalCity || null,
         account_status: 'active',
         maid_application_status: 'none',
         profile_photo_url: newUser.profilePhoto || null,
@@ -467,21 +503,34 @@ class AuthService {
       console.warn('Customer profile DB sync notice:', dbErr);
     }
 
-    // Sync address to Supabase saved_addresses table
-    try {
-      await supabase.from('saved_addresses').insert({
+    // Sync address to Supabase saved_addresses table ONLY when actual address entered
+    let newAddress: Address | null = null;
+    if (finalAddress || finalCity) {
+      const newAddressId = generateUUID();
+      newAddress = {
         id: newAddressId,
-        user_id: uid,
         label: 'Home',
-        street: data.address,
-        locality: data.city,
-        city: data.city,
-        pincode: '500081',
-        is_default: true,
-        created_at: new Date().toISOString(),
-      });
-    } catch (addrErr) {
-      console.warn('Saved address DB sync notice:', addrErr);
+        street: finalAddress,
+        locality: finalCity,
+        city: finalCity,
+        pincode: '',
+      };
+
+      try {
+        await supabase.from('saved_addresses').insert({
+          id: newAddressId,
+          user_id: uid,
+          label: 'Home',
+          street: finalAddress,
+          locality: finalCity,
+          city: finalCity,
+          pincode: '',
+          is_default: true,
+          created_at: new Date().toISOString(),
+        });
+      } catch (addrErr) {
+        console.warn('Saved address DB sync notice:', addrErr);
+      }
     }
 
     return {
@@ -508,6 +557,15 @@ class AuthService {
     } catch {
       return { user: null, token: null, onboardingCompleted: false };
     }
+  }
+
+  /**
+   * Update stored user session in local safeStorage
+   */
+  async updateStoredUser(user: User): Promise<void> {
+    try {
+      await safeStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(user));
+    } catch {}
   }
 
   /**

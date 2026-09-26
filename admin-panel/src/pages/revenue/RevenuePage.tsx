@@ -37,9 +37,13 @@ interface Payout {
   account_number?: string;
 }
 
-export const RevenuePage: React.FC = () => {
+interface RevenuePageProps {
+  initialTab?: 'overview' | 'payouts' | 'coupons';
+}
+
+export const RevenuePage: React.FC<RevenuePageProps> = ({ initialTab }) => {
   const { currentTab, bookings, maids, exportBookingsToCSV } = useAdmin();
-  const [activeTab, setActiveTab] = useState<'overview' | 'payouts' | 'coupons'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'payouts' | 'coupons'>(initialTab || 'overview');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [payouts, setPayouts] = useState<Payout[]>([]);
@@ -48,6 +52,10 @@ export const RevenuePage: React.FC = () => {
   const [editingCoupon, setEditingCoupon] = useState<Coupon | null>(null);
 
   useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+      return;
+    }
     if (currentTab === 'partner-payouts' || currentTab === 'payouts') {
       setActiveTab('payouts');
     } else if (currentTab === 'coupons') {
@@ -55,7 +63,7 @@ export const RevenuePage: React.FC = () => {
     } else if (currentTab === 'transactions' || currentTab === 'revenue') {
       setActiveTab('overview');
     }
-  }, [currentTab]);
+  }, [initialTab, currentTab]);
 
   // Fetch coupons and payouts
   useEffect(() => {

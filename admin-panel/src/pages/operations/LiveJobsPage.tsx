@@ -35,8 +35,9 @@ export const LiveJobsPage: React.FC = () => {
     ['en_route', 'arrived', 'cleaning_started', 'in_progress', 'ongoing', 'maid_assigned'].includes(b.status)
   );
 
-  const [selectedJob, setSelectedJob] = useState<Booking>(liveBookings[0] || bookings[0]);
+  const [selectedJob, setSelectedJob] = useState<Booking | null>(liveBookings[0] || bookings[0] || null);
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [maidFilter, setMaidFilter] = useState<string>('all');
   const [locationFilter, setLocationFilter] = useState<string>('all');
   const [serviceFilter, setServiceFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -71,14 +72,15 @@ export const LiveJobsPage: React.FC = () => {
   // Filtered List
   const filteredJobs = liveBookings.filter(b => {
     if (statusFilter !== 'all' && b.status !== statusFilter) return false;
-    if (locationFilter !== 'all' && b.address.locality !== locationFilter) return false;
+    if (maidFilter !== 'all' && b.assignedMaidName !== maidFilter && b.assignedMaidId !== maidFilter) return false;
+    if (locationFilter !== 'all' && b.address?.locality !== locationFilter && b.address?.city !== locationFilter) return false;
     if (serviceFilter !== 'all' && !b.serviceName.toLowerCase().includes(serviceFilter.toLowerCase())) return false;
     if (searchQuery.trim() !== '') {
       const q = searchQuery.toLowerCase();
-      const matchId = b.bookingId.toLowerCase().includes(q);
-      const matchCust = b.customerName.toLowerCase().includes(q);
+      const matchId = (b.bookingId || '').toLowerCase().includes(q);
+      const matchCust = (b.customerName || '').toLowerCase().includes(q);
       const matchMaid = (b.assignedMaidName || '').toLowerCase().includes(q);
-      const matchLoc = b.address.locality.toLowerCase().includes(q);
+      const matchLoc = (b.address?.locality || b.address?.city || '').toLowerCase().includes(q);
       if (!matchId && !matchCust && !matchMaid && !matchLoc) return false;
     }
     return true;
@@ -319,12 +321,15 @@ export const LiveJobsPage: React.FC = () => {
           {/* Maids Dropdown */}
           <div className="relative">
             <User className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <select className="w-full bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold pl-8 pr-7 py-2 rounded-xl focus:outline-none focus:border-emerald-500 cursor-pointer appearance-none">
+            <select
+              value={maidFilter}
+              onChange={e => setMaidFilter(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold pl-8 pr-7 py-2 rounded-xl focus:outline-none focus:border-emerald-500 cursor-pointer appearance-none"
+            >
               <option value="all">All Maids</option>
-              <option value="Laxmi">Laxmi T.</option>
-              <option value="Sravani">Sravani K.</option>
-              <option value="Pavani">Pavani M.</option>
-              <option value="Anitha">Anitha S.</option>
+              {maids.filter(m => m.status === 'approved').map(m => (
+                <option key={m.uid} value={m.fullName}>{m.fullName}</option>
+              ))}
             </select>
           </div>
         </div>
@@ -481,74 +486,83 @@ export const LiveJobsPage: React.FC = () => {
                 }}
               ></div>
 
-              {/* Map Location Labels */}
-              <div className="absolute top-4 left-24 text-[11px] font-extrabold text-slate-600 bg-white/80 backdrop-blur-xs px-2 py-0.5 rounded-md">
-                Kukatpally
+              {/* Operational Region Indicators */}
+              <div className="absolute top-4 left-6 text-[11px] font-extrabold text-slate-700 bg-white/90 backdrop-blur-xs px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs">
+                Telangana Operations
               </div>
-              <div className="absolute top-12 right-36 text-[11px] font-extrabold text-slate-600 bg-white/80 backdrop-blur-xs px-2 py-0.5 rounded-md">
-                Ameerpet
-              </div>
-              <div className="absolute bottom-20 left-1/3 text-[11px] font-extrabold text-slate-600 bg-white/80 backdrop-blur-xs px-2 py-0.5 rounded-md">
-                Madhapur
-              </div>
-              <div className="absolute bottom-10 left-12 text-[11px] font-extrabold text-slate-600 bg-white/80 backdrop-blur-xs px-2 py-0.5 rounded-md">
-                Gachibowli
-              </div>
-              <div className="absolute bottom-6 right-8 text-xl font-black text-slate-700/60 tracking-wider">
-                Hyderabad
+              <div className="absolute bottom-6 right-8 text-xl font-black text-slate-700/40 tracking-wider uppercase pointer-events-none">
+                Live Operations Map
               </div>
 
-              {/* Interactive Pin 1: Meena P. - En Route */}
-              <div className="absolute top-10 left-16 flex items-center gap-2 bg-white/95 p-1.5 rounded-xl shadow-lg border border-purple-200 cursor-pointer hover:scale-105 transition-transform">
-                <img
-                  src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=100"
-                  alt="Meena"
-                  className="w-7 h-7 rounded-full object-cover border-2 border-purple-600"
-                />
-                <div className="pr-1">
-                  <span className="text-[11px] font-extrabold text-slate-900 block leading-tight">Meena P.</span>
-                  <span className="text-[10px] font-bold text-purple-600 block">En Route</span>
+              {/* Dynamic Interactive Pins from Filtered Live Jobs */}
+              {filteredJobs.length === 0 ? (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="bg-white/90 backdrop-blur-md px-4 py-2.5 rounded-xl shadow-sm border border-slate-200 text-center">
+                    <p className="text-xs font-bold text-slate-700">No active live jobs match current filters</p>
+                    <span className="text-[11px] text-slate-500 font-medium">All active bookings will appear on this operational radar</span>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                filteredJobs.slice(0, 8).map((job, idx) => {
+                  const isSelected = selectedJob?.bookingId === job.bookingId || selectedJob?.id === job.id;
+                  const positions = [
+                    { top: '22%', left: '15%' },
+                    { top: '15%', left: '42%' },
+                    { top: '55%', left: '50%' },
+                    { top: '65%', left: '22%' },
+                    { top: '35%', left: '68%' },
+                    { top: '70%', left: '72%' },
+                    { top: '38%', left: '32%' },
+                    { top: '75%', left: '45%' },
+                  ];
+                  const pos = positions[idx % positions.length];
+                  const partnerName = job.assignedMaidName || 'Unassigned';
+                  const statusLabel =
+                    job.status === 'en_route' ? 'En Route' :
+                    job.status === 'arrived' ? 'Arrived' :
+                    job.status === 'cleaning_started' || job.status === 'in_progress' ? 'Cleaning' :
+                    job.status === 'maid_assigned' ? 'Assigned' : 'Active';
 
-              {/* Interactive Pin 2: Anitha S. - Arrived */}
-              <div className="absolute top-8 left-1/3 flex items-center gap-2 bg-white/95 p-1.5 rounded-xl shadow-lg border border-emerald-200 cursor-pointer hover:scale-105 transition-transform">
-                <img
-                  src="https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?auto=format&fit=crop&q=80&w=100"
-                  alt="Anitha"
-                  className="w-7 h-7 rounded-full object-cover border-2 border-emerald-600"
-                />
-                <div className="pr-1">
-                  <span className="text-[11px] font-extrabold text-slate-900 block leading-tight">Anitha S.</span>
-                  <span className="text-[10px] font-bold text-emerald-600 block">Arrived</span>
-                </div>
-              </div>
+                  const borderCol =
+                    job.status === 'en_route' ? 'border-purple-600' :
+                    job.status === 'arrived' ? 'border-emerald-600' :
+                    job.status === 'cleaning_started' || job.status === 'in_progress' ? 'border-blue-600' :
+                    'border-amber-600';
 
-              {/* Interactive Pin 3: Laxmi T. - Cleaning */}
-              <div className="absolute bottom-16 left-1/2 flex items-center gap-2 bg-white/95 p-1.5 rounded-xl shadow-lg border border-blue-200 cursor-pointer hover:scale-105 transition-transform ring-2 ring-blue-500/30">
-                <img
-                  src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=100"
-                  alt="Laxmi"
-                  className="w-7 h-7 rounded-full object-cover border-2 border-blue-600"
-                />
-                <div className="pr-1">
-                  <span className="text-[11px] font-extrabold text-slate-900 block leading-tight">Laxmi T.</span>
-                  <span className="text-[10px] font-bold text-blue-600 block">Cleaning</span>
-                </div>
-              </div>
+                  const statusBadgeColor =
+                    job.status === 'en_route' ? 'text-purple-600' :
+                    job.status === 'arrived' ? 'text-emerald-600' :
+                    job.status === 'cleaning_started' || job.status === 'in_progress' ? 'text-blue-600' :
+                    'text-amber-600';
 
-              {/* Interactive Pin 4: Pavani M. - En Route */}
-              <div className="absolute bottom-24 right-1/4 flex items-center gap-2 bg-white/95 p-1.5 rounded-xl shadow-lg border border-purple-200 cursor-pointer hover:scale-105 transition-transform">
-                <img
-                  src="https://images.unsplash.com/photo-1567532939604-b6b5b0db2604?auto=format&fit=crop&q=80&w=100"
-                  alt="Pavani"
-                  className="w-7 h-7 rounded-full object-cover border-2 border-purple-600"
-                />
-                <div className="pr-1">
-                  <span className="text-[11px] font-extrabold text-slate-900 block leading-tight">Pavani M.</span>
-                  <span className="text-[10px] font-bold text-purple-600 block">En Route</span>
-                </div>
-              </div>
+                  return (
+                    <div
+                      key={job.bookingId || job.id}
+                      style={{ position: 'absolute', top: pos.top, left: pos.left }}
+                      onClick={() => setSelectedJob(job)}
+                      className={`flex items-center gap-2 bg-white/95 p-1.5 rounded-xl shadow-lg border border-slate-200 cursor-pointer hover:scale-105 transition-all z-10 ${
+                        isSelected ? 'ring-2 ring-emerald-500 scale-105 shadow-xl' : ''
+                      }`}
+                    >
+                      {job.assignedMaidPhotoUrl ? (
+                        <img
+                          src={job.assignedMaidPhotoUrl}
+                          alt={partnerName}
+                          className={`w-7 h-7 rounded-full object-cover border-2 ${borderCol}`}
+                        />
+                      ) : (
+                        <div className={`w-7 h-7 rounded-full bg-emerald-100 text-[#123D2A] flex items-center justify-center text-[10px] font-black border-2 ${borderCol}`}>
+                          {partnerName.charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <div className="pr-1 text-left">
+                        <span className="text-[11px] font-extrabold text-slate-900 block leading-tight">{partnerName}</span>
+                        <span className={`text-[10px] font-bold ${statusBadgeColor} block`}>{statusLabel}</span>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
 
               {/* Zoom Controls */}
               <div className="absolute bottom-3 left-3 bg-white/90 backdrop-blur-xs rounded-xl shadow-md border border-slate-200 flex flex-col divide-y divide-slate-100">
@@ -608,196 +622,239 @@ export const LiveJobsPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Selected Booking Header */}
-          <div>
-            <span className="text-xs text-slate-400 font-semibold block">Customer:</span>
-            <div className="flex items-baseline justify-between mt-0.5">
-              <h4 className="text-lg font-black text-slate-900 tracking-tight">
-                {selectedJob?.bookingId || 'GC-20260916-045'}
-              </h4>
-            </div>
-            <p className="text-xs font-bold text-slate-600">{selectedJob?.serviceName || 'Home Cleaning (2 BHK)'}</p>
-          </div>
-
-          {/* 4-Stage Horizontal Stepper */}
-          <div className="bg-slate-50/80 p-3.5 rounded-2xl border border-slate-200/60">
-            <div className="flex items-center justify-between relative">
-              {/* Stepper Line Background */}
-              <div className="absolute top-3.5 left-4 right-4 h-0.5 bg-emerald-600 -z-0"></div>
-
-              {/* Step 1: Assigned */}
-              <div className="flex flex-col items-center gap-1 z-10">
-                <div className="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
-                  <Check className="w-4 h-4" />
-                </div>
-                <span className="text-[10px] font-bold text-slate-800">Assigned</span>
-                <span className="text-[9px] font-semibold text-slate-400">08:50</span>
-              </div>
-
-              {/* Step 2: En Route */}
-              <div className="flex flex-col items-center gap-1 z-10">
-                <div className="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
-                  <Check className="w-4 h-4" />
-                </div>
-                <span className="text-[10px] font-bold text-slate-800">En Route</span>
-                <span className="text-[9px] font-semibold text-slate-400">09:05</span>
-              </div>
-
-              {/* Step 3: Arrived */}
-              <div className="flex flex-col items-center gap-1 z-10">
-                <div className="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
-                  <Check className="w-4 h-4" />
-                </div>
-                <span className="text-[10px] font-bold text-slate-800">Arrived</span>
-                <span className="text-[9px] font-semibold text-slate-400">09:20</span>
-              </div>
-
-              {/* Step 4: Cleaning */}
-              <div className="flex flex-col items-center gap-1 z-10">
-                <div className="w-7 h-7 rounded-full bg-[#123D2A] text-white flex items-center justify-center font-bold text-xs shadow-xs ring-4 ring-emerald-100">
-                  <Sparkles className="w-3.5 h-3.5 text-emerald-300" />
-                </div>
-                <span className="text-[10px] font-black text-emerald-900">Cleaning</span>
-                <span className="text-[9px] font-semibold text-slate-400">09:30</span>
-              </div>
-
-              {/* Step 5: Complete */}
-              <div className="flex flex-col items-center gap-1 z-10">
-                <div className="w-7 h-7 rounded-full bg-slate-200 text-slate-400 flex items-center justify-center font-bold text-xs">
-                  <span className="w-2 h-2 rounded-full bg-slate-400"></span>
-                </div>
-                <span className="text-[10px] font-semibold text-slate-400">Complete</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Customer Info Box */}
-          <div className="bg-slate-50/60 p-3.5 rounded-2xl border border-slate-200/80 flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <img
-                  src={
-                    selectedJob?.customerAvatar ||
-                    'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=200'
-                  }
-                  alt={selectedJob?.customerName || 'Priya Sharma'}
-                  className="w-10 h-10 rounded-full object-cover border border-slate-200"
-                />
-                <div>
-                  <h5 className="text-sm font-bold text-slate-900">{selectedJob?.customerName || 'Priya Sharma'}</h5>
-                  <span className="text-xs font-semibold text-slate-500 block">
-                    {selectedJob?.customerPhone || '+91 98765 43210'}
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                <a
-                  href={`tel:${selectedJob?.customerPhone}`}
-                  className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center hover:bg-emerald-200 transition-colors"
-                >
-                  <Phone className="w-4 h-4" />
-                </a>
-                <a
-                  href={`https://wa.me/${selectedJob?.customerPhone}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center hover:bg-emerald-700 transition-colors"
-                >
-                  <MessageSquare className="w-4 h-4" />
-                </a>
-              </div>
-            </div>
-
-            <div className="pt-2 border-t border-slate-200/60 flex items-start justify-between gap-2">
-              <div className="flex items-start gap-2">
-                <MapPin className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
-                <div>
-                  <span className="text-xs text-slate-700 font-medium block leading-snug">
-                    {selectedJob?.address?.street || 'Flat 4B, Sri Sai Residency'}, {selectedJob?.address?.locality || 'Kondapur'}, Hyderabad - {selectedJob?.address?.pincode || '500084'}
-                  </span>
-                </div>
-              </div>
-              <button className="border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-[11px] font-bold px-2.5 py-1 rounded-lg flex items-center gap-1 flex-shrink-0 shadow-2xs cursor-pointer">
-                <ExternalLink className="w-3 h-3 text-slate-500" />
-                <span>View on Map</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Maid Partner Box */}
-          <div className="bg-slate-50/60 p-3.5 rounded-2xl border border-slate-200/80 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <img
-                src={
-                  selectedJob?.assignedMaidPhotoUrl ||
-                  'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=200'
-                }
-                alt={selectedJob?.assignedMaidName || 'Laxmi T.'}
-                className="w-10 h-10 rounded-full object-cover border border-slate-200"
-              />
-              <div>
-                <span className="text-[11px] font-semibold text-slate-400 block uppercase tracking-wider">Maid Partner</span>
-                <div className="flex items-center gap-1.5">
-                  <h5 className="text-sm font-bold text-slate-900">{selectedJob?.assignedMaidName || 'Laxmi T.'}</h5>
-                  <span className="text-xs font-extrabold text-amber-500 flex items-center gap-0.5">
-                    ★ {selectedJob?.assignedMaidRating || 4.8}
-                  </span>
-                </div>
-                <span className="text-xs text-slate-500 font-medium">
-                  {selectedJob?.assignedMaidPhone || '+91 91234 56789'}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              <a
-                href={`tel:${selectedJob?.assignedMaidPhone}`}
-                className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center hover:bg-emerald-200 transition-colors"
-              >
-                <Phone className="w-4 h-4" />
-              </a>
-              <a
-                href={`https://wa.me/${selectedJob?.assignedMaidPhone}`}
-                target="_blank"
-                rel="noreferrer"
-                className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center hover:bg-emerald-700 transition-colors"
-              >
-                <MessageSquare className="w-4 h-4" />
-              </a>
-            </div>
-          </div>
-
-          {/* Job Timing & Customer Note */}
-          <div className="flex flex-col gap-3">
-            <h5 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Job Info</h5>
-
-            <div className="grid grid-cols-3 gap-2 bg-slate-50/80 p-3 rounded-xl border border-slate-200/60 text-center">
-              <div>
-                <span className="text-[10px] font-semibold text-slate-400 block">Started At</span>
-                <span className="text-xs font-bold text-slate-800 block mt-0.5">{selectedJob?.startedAt || '09:00 AM'}</span>
-              </div>
-              <div>
-                <span className="text-[10px] font-semibold text-slate-400 block">Duration</span>
-                <span className="text-xs font-bold text-emerald-700 block mt-0.5">{selectedJob?.durationFormatted || '1h 42m'}</span>
-              </div>
-              <div>
-                <span className="text-[10px] font-semibold text-slate-400 block">Est. Completion</span>
-                <span className="text-xs font-bold text-slate-800 block mt-0.5">{selectedJob?.estimatedCompletion || '11:00 AM'}</span>
-              </div>
-            </div>
-
-            {/* Customer Note Box */}
-            <div className="bg-amber-50/60 p-3 rounded-xl border border-amber-200/60">
-              <span className="text-xs font-extrabold text-amber-900 flex items-center gap-1">
-                <MessageSquare className="w-3.5 h-3.5 text-amber-600" />
-                Customer Note
-              </span>
-              <p className="text-xs text-amber-950 font-medium mt-1 leading-relaxed">
-                "{selectedJob?.customerNote || selectedJob?.specialInstructions || 'Focus on kitchen and living room. Please bring your own equipment.'}"
+          {!selectedJob ? (
+            <div className="py-20 text-center text-slate-400">
+              <Sparkles className="w-10 h-10 mx-auto mb-3 text-slate-300" />
+              <p className="text-sm font-bold text-slate-700">No Job Selected</p>
+              <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
+                Select any active booking from the list or map above to view its live operational status.
               </p>
             </div>
-          </div>
+          ) : (
+            <>
+              {/* Selected Booking Header */}
+              <div>
+                <span className="text-xs text-slate-400 font-semibold block">Booking Reference:</span>
+                <div className="flex items-baseline justify-between mt-0.5">
+                  <h4 className="text-lg font-black text-slate-900 tracking-tight">
+                    {selectedJob.bookingId}
+                  </h4>
+                  <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                    ₹{selectedJob.totalAmount || 0}
+                  </span>
+                </div>
+                <p className="text-xs font-bold text-slate-600 mt-0.5">{selectedJob.serviceName}</p>
+              </div>
+
+              {/* Dynamic Horizontal Stepper */}
+              {(() => {
+                const getStep = (s: string) => {
+                  if (['completed'].includes(s)) return 5;
+                  if (['cleaning_started', 'in_progress', 'ongoing'].includes(s)) return 4;
+                  if (['arrived'].includes(s)) return 3;
+                  if (['en_route'].includes(s)) return 2;
+                  if (['maid_assigned', 'maid_accepted'].includes(s)) return 1;
+                  return 0;
+                };
+                const currentStep = getStep(selectedJob.status);
+                const steps = [
+                  { num: 1, label: 'Assigned' },
+                  { num: 2, label: 'En Route' },
+                  { num: 3, label: 'Arrived' },
+                  { num: 4, label: 'Cleaning' },
+                  { num: 5, label: 'Complete' },
+                ];
+
+                return (
+                  <div className="bg-slate-50/80 p-3.5 rounded-2xl border border-slate-200/60">
+                    <div className="flex items-center justify-between relative">
+                      <div className="absolute top-3.5 left-4 right-4 h-0.5 bg-slate-200 -z-0">
+                        <div
+                          className="h-full bg-emerald-600 transition-all duration-300"
+                          style={{ width: `${Math.min(100, Math.max(0, (currentStep - 1) * 25))}%` }}
+                        />
+                      </div>
+
+                      {steps.map(st => {
+                        const isDone = currentStep > st.num;
+                        const isCurrent = currentStep === st.num;
+                        return (
+                          <div key={st.num} className="flex flex-col items-center gap-1 z-10">
+                            <div
+                              className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs transition-all shadow-xs ${
+                                isDone
+                                  ? 'bg-emerald-600 text-white'
+                                  : isCurrent
+                                  ? 'bg-[#123D2A] text-white ring-4 ring-emerald-100'
+                                  : 'bg-slate-200 text-slate-400'
+                              }`}
+                            >
+                              {isDone ? <Check className="w-4 h-4" /> : isCurrent ? <Sparkles className="w-3.5 h-3.5 text-emerald-300" /> : st.num}
+                            </div>
+                            <span className={`text-[10px] ${isCurrent ? 'font-black text-emerald-900' : isDone ? 'font-bold text-slate-800' : 'font-semibold text-slate-400'}`}>
+                              {st.label}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Customer Info Box */}
+              <div className="bg-slate-50/60 p-3.5 rounded-2xl border border-slate-200/80 flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    {selectedJob.customerAvatar ? (
+                      <img
+                        src={selectedJob.customerAvatar}
+                        alt={selectedJob.customerName || 'Customer'}
+                        className="w-10 h-10 rounded-full object-cover border border-slate-200"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-emerald-100 text-[#123D2A] flex items-center justify-center font-bold text-sm border border-emerald-200">
+                        {selectedJob.customerName ? selectedJob.customerName.charAt(0).toUpperCase() : 'C'}
+                      </div>
+                    )}
+                    <div>
+                      <h5 className="text-sm font-bold text-slate-900">{selectedJob.customerName || 'Customer'}</h5>
+                      <span className="text-xs font-semibold text-slate-500 block">
+                        {selectedJob.customerPhone || 'Phone unavailable'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {selectedJob.customerPhone && (
+                    <div className="flex items-center gap-1.5">
+                      <a
+                        href={`tel:${selectedJob.customerPhone}`}
+                        className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center hover:bg-emerald-200 transition-colors"
+                      >
+                        <Phone className="w-4 h-4" />
+                      </a>
+                      <a
+                        href={`https://wa.me/${selectedJob.customerPhone.replace(/[^0-9]/g, '')}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center hover:bg-emerald-700 transition-colors"
+                      >
+                        <MessageSquare className="w-4 h-4" />
+                      </a>
+                    </div>
+                  )}
+                </div>
+
+                <div className="pt-2 border-t border-slate-200/60 flex items-start justify-between gap-2">
+                  <div className="flex items-start gap-2">
+                    <MapPin className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <span className="text-xs text-slate-700 font-medium block leading-snug">
+                        {[
+                          selectedJob.address?.street,
+                          selectedJob.address?.locality,
+                          selectedJob.address?.city,
+                          selectedJob.address?.pincode ? `- ${selectedJob.address.pincode}` : '',
+                        ].filter(Boolean).join(', ') || 'Address not specified'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Maid Partner Box */}
+              {selectedJob.assignedMaidName ? (
+                <div className="bg-slate-50/60 p-3.5 rounded-2xl border border-slate-200/80 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    {selectedJob.assignedMaidPhotoUrl ? (
+                      <img
+                        src={selectedJob.assignedMaidPhotoUrl}
+                        alt={selectedJob.assignedMaidName}
+                        className="w-10 h-10 rounded-full object-cover border border-slate-200"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-emerald-100 text-[#123D2A] flex items-center justify-center font-bold text-sm border border-emerald-200">
+                        {selectedJob.assignedMaidName.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <div>
+                      <span className="text-[11px] font-semibold text-slate-400 block uppercase tracking-wider">Maid Partner</span>
+                      <div className="flex items-center gap-1.5">
+                        <h5 className="text-sm font-bold text-slate-900">{selectedJob.assignedMaidName}</h5>
+                        {selectedJob.assignedMaidRating ? (
+                          <span className="text-xs font-extrabold text-amber-500 flex items-center gap-0.5">
+                            ★ {selectedJob.assignedMaidRating}
+                          </span>
+                        ) : null}
+                      </div>
+                      <span className="text-xs text-slate-500 font-medium">
+                        {selectedJob.assignedMaidPhone || 'Phone unavailable'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {selectedJob.assignedMaidPhone && (
+                    <div className="flex items-center gap-1.5">
+                      <a
+                        href={`tel:${selectedJob.assignedMaidPhone}`}
+                        className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center hover:bg-emerald-200 transition-colors"
+                      >
+                        <Phone className="w-4 h-4" />
+                      </a>
+                      <a
+                        href={`https://wa.me/${selectedJob.assignedMaidPhone.replace(/[^0-9]/g, '')}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center hover:bg-emerald-700 transition-colors"
+                      >
+                        <MessageSquare className="w-4 h-4" />
+                      </a>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="bg-amber-50/60 p-3.5 rounded-2xl border border-amber-200 text-center">
+                  <span className="text-xs font-bold text-amber-900 block">No Partner Assigned Yet</span>
+                  <p className="text-[11px] text-amber-700 mt-0.5">This booking is in queue for dispatch</p>
+                </div>
+              )}
+
+              {/* Job Timing & Schedule */}
+              <div className="flex flex-col gap-3">
+                <h5 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Schedule & Details</h5>
+
+                <div className="grid grid-cols-3 gap-2 bg-slate-50/80 p-3 rounded-xl border border-slate-200/60 text-center">
+                  <div>
+                    <span className="text-[10px] font-semibold text-slate-400 block">Date</span>
+                    <span className="text-xs font-bold text-slate-800 block mt-0.5">{selectedJob.date || 'Today'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-semibold text-slate-400 block">Time Slot</span>
+                    <span className="text-xs font-bold text-emerald-700 block mt-0.5">{selectedJob.timeSlot || 'Anytime'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-semibold text-slate-400 block">Status</span>
+                    <span className="text-xs font-bold text-slate-800 block mt-0.5 uppercase tracking-wide">
+                      {selectedJob.status.replace('_', ' ')}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Customer Note Box (Only if provided) */}
+                {(selectedJob.customerNote || selectedJob.specialInstructions) && (
+                  <div className="bg-amber-50/60 p-3 rounded-xl border border-amber-200/60">
+                    <span className="text-xs font-extrabold text-amber-900 flex items-center gap-1">
+                      <MessageSquare className="w-3.5 h-3.5 text-amber-600" />
+                      Customer Instructions
+                    </span>
+                    <p className="text-xs text-amber-950 font-medium mt-1 leading-relaxed">
+                      "{selectedJob.customerNote || selectedJob.specialInstructions}"
+                    </p>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
 
           {/* Bottom Actions */}
           <div className="flex items-center gap-2 pt-2 border-t border-slate-100">

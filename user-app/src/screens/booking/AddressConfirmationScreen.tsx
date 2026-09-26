@@ -27,27 +27,27 @@ import {
   Edit3,
 } from 'lucide-react-native';
 
-const DEFAULT_ADDRESS: Address = {
-  id: 'addr_current',
-  label: 'Home',
-  street: 'Road No 36, Jubilee Hills',
-  locality: 'Jubilee Hills',
-  city: 'Hyderabad',
-  pincode: '500033',
-};
-
 export const AddressConfirmationScreen: React.FC = () => {
   const { navigateTo, savedAddresses, addSavedAddress, updateSavedAddress } = useAuth();
   const { cart, setDeliveryAddress } = useCart();
 
-  const availableAddresses = (savedAddresses && savedAddresses.length > 0)
-    ? savedAddresses
-    : [cart?.address || DEFAULT_ADDRESS];
+  const defaultSavedAddress = (savedAddresses && savedAddresses.length > 0)
+    ? (savedAddresses.find(a => a.isDefault) || savedAddresses[0])
+    : null;
 
-  const [selectedAddress, setSelectedAddress] = useState<Address>(
-    cart?.address || availableAddresses[0]
+  // Selected Booking Address: starts with active cart address if present, or user's default address
+  const [selectedAddress, setSelectedAddress] = useState<Address | null>(
+    cart?.address || defaultSavedAddress
   );
   const [isServiceAvailable, setIsServiceAvailable] = useState<boolean>(true);
+
+  // Synchronize when savedAddresses load or cart address changes
+  useEffect(() => {
+    if (!selectedAddress && defaultSavedAddress) {
+      setSelectedAddress(defaultSavedAddress);
+      setDeliveryAddress(defaultSavedAddress);
+    }
+  }, [defaultSavedAddress, selectedAddress, setDeliveryAddress]);
 
   // Address Modal State for Add / Edit
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
@@ -59,10 +59,17 @@ export const AddressConfirmationScreen: React.FC = () => {
   };
 
   const handleEditCurrent = () => {
-    setEditingAddress(selectedAddress);
-    setIsAddressModalOpen(true);
+    if (selectedAddress) {
+      setEditingAddress(selectedAddress);
+      setIsAddressModalOpen(true);
+    }
   };
 
+  /**
+   * Save address from modal:
+   * By default, adding or choosing an address for a booking does NOT affect
+   * or modify the customer's Default Address unless they explicitly choose to make it default.
+   */
   const handleSaveModalAddress = async (data: Omit<Address, 'id'>) => {
     if (editingAddress) {
       await updateSavedAddress(editingAddress.id, data);
@@ -70,10 +77,13 @@ export const AddressConfirmationScreen: React.FC = () => {
       setSelectedAddress(updated);
       setDeliveryAddress(updated);
     } else {
-      await addSavedAddress(data);
+      const isFirst = !savedAddresses || savedAddresses.length === 0;
+      const willBeDefault = Boolean(data.isDefault || isFirst);
+      await addSavedAddress({ ...data, isDefault: willBeDefault });
       const newAddr: Address = {
         id: 'addr_' + Date.now(),
         ...data,
+        isDefault: willBeDefault,
       };
       setSelectedAddress(newAddr);
       setDeliveryAddress(newAddr);
@@ -85,13 +95,13 @@ export const AddressConfirmationScreen: React.FC = () => {
   const validateArea = useCallback(async () => {
     if (!selectedAddress || !selectedAddress.pincode) {
       setIsServiceAvailable(false);
-      setServiceMessage('Sorry, GC HOME+ is currently not available in your area.');
+      setServiceMessage('Please select or add an address to verify service availability.');
       return;
     }
     const result = await checkPincodeServiceability(selectedAddress.pincode);
     setIsServiceAvailable(result.isServiceable);
     setServiceMessage(result.message);
-  }, [selectedAddress?.pincode]);
+  }, [selectedAddress]);
 
   useEffect(() => {
     validateArea();
@@ -113,13 +123,17 @@ export const AddressConfirmationScreen: React.FC = () => {
     };
   }, [validateArea]);
 
+  /**
+   * Selecting an address for this booking:
+   * Sets the booking delivery address without modifying the customer's Default Address.
+   */
   const handleSelect = (addr: Address) => {
     setSelectedAddress(addr);
     setDeliveryAddress(addr);
   };
 
   const handleConfirm = () => {
-    if (!isServiceAvailable) return;
+    if (!selectedAddress || !isServiceAvailable) return;
     setDeliveryAddress(selectedAddress);
     navigateTo('booking-summary');
   };
@@ -151,117 +165,167 @@ export const AddressConfirmationScreen: React.FC = () => {
         <View style={styles.titleSection}>
           <Text style={styles.screenTitle}>Where should we clean?</Text>
           <Text style={styles.screenSubtitle}>
-            Select your service address or add a new location
+            Choose a service address for this booking or add a new location
           </Text>
         </View>
 
-        {/* Selected Address Preview Hero Card */}
-        <View style={styles.currentCard}>
-          <View style={styles.currentCardHeader}>
-            <View style={styles.badgeLabel}>
-              <Home size={14} color="#0E5B47" />
-              <Text style={styles.badgeLabelText}>{selectedAddress.label} Address</Text>
+        {/* Swiggy-style Booking Notice */}
+        <View style={styles.noticeBanner}>
+          <MapPin size={15} color="#0D8846" />
+          <Text style={styles.noticeBannerText}>
+            You can select any location for this booking. Your default address won't be changed.
+          </Text>
+        </View>
+
+        {/* Selected Booking Address Preview Hero Card */}
+        {selectedAddress ? (
+          <View style={styles.currentCard}>
+            <View style={styles.currentCardHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <View style={styles.badgeLabel}>
+                  <Home size={14} color="#0E5B47" />
+                  <Text style={styles.badgeLabelText}>{selectedAddress.label} Address</Text>
+                </View>
+                {selectedAddress.isDefault && (
+                  <View style={styles.defaultPill}>
+                    <Text style={styles.defaultPillText}>DEFAULT ADDRESS</Text>
+                  </View>
+                )}
+              </View>
+
+              <TouchableOpacity style={styles.editBtn} onPress={handleEditCurrent} activeOpacity={0.7}>
+                <Edit3 size={13} color="#168A68" />
+                <Text style={styles.editText}>Edit</Text>
+              </TouchableOpacity>
             </View>
 
-            <TouchableOpacity style={styles.editBtn} onPress={handleEditCurrent} activeOpacity={0.7}>
-              <Edit3 size={13} color="#168A68" />
-              <Text style={styles.editText}>Edit</Text>
+            {Boolean(selectedAddress.houseFlat) && (
+              <Text style={styles.houseFlatText}>{selectedAddress.houseFlat}</Text>
+            )}
+            <Text style={styles.streetText}>{selectedAddress.street}</Text>
+            <Text style={styles.localityText}>
+              {selectedAddress.locality ? `${selectedAddress.locality}, ` : ''}
+              {selectedAddress.city}
+              {selectedAddress.pincode ? ` - ${selectedAddress.pincode}` : ''}
+            </Text>
+
+            {Boolean(selectedAddress.landmark) && (
+              <Text style={styles.landmarkText}>Landmark: {selectedAddress.landmark}</Text>
+            )}
+
+            {/* Service Availability Badge */}
+            <View
+              style={[
+                styles.coverageBanner,
+                !isServiceAvailable && styles.coverageBannerUnavailable,
+              ]}
+            >
+              {isServiceAvailable ? (
+                <>
+                  <ShieldCheck size={16} color="#168A68" />
+                  <Text style={styles.coverageText}>
+                    Services available in your area.
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <AlertCircle size={16} color="#EF4444" />
+                  <Text style={[styles.coverageText, { color: '#EF4444' }]}>
+                    {serviceMessage || 'Sorry, GC HOME+ is currently not available in your area.'}
+                  </Text>
+                </>
+              )}
+            </View>
+          </View>
+        ) : (
+          <View style={styles.emptyPromptCard}>
+            <MapPin size={28} color="#94A3B8" />
+            <Text style={styles.emptyPromptTitle}>No service address selected</Text>
+            <Text style={styles.emptyPromptSub}>
+              Please add a service location where you would like our cleaning partner to arrive.
+            </Text>
+            <TouchableOpacity style={styles.addFirstBtn} onPress={handleAddNew} activeOpacity={0.85}>
+              <Plus size={16} color="#FFFFFF" strokeWidth={2.4} />
+              <Text style={styles.addFirstBtnText}>Add Service Address</Text>
             </TouchableOpacity>
           </View>
-
-          <Text style={styles.streetText}>{selectedAddress.street}</Text>
-          <Text style={styles.localityText}>
-            {selectedAddress.locality}, {selectedAddress.city} - {selectedAddress.pincode}
-          </Text>
-
-          {selectedAddress.landmark && (
-            <Text style={styles.landmarkText}>Landmark: {selectedAddress.landmark}</Text>
-          )}
-
-          {/* Service Availability Badge */}
-          <View
-            style={[
-              styles.coverageBanner,
-              !isServiceAvailable && styles.coverageBannerUnavailable,
-            ]}
-          >
-            {isServiceAvailable ? (
-              <>
-                <ShieldCheck size={16} color="#168A68" />
-                <Text style={styles.coverageText}>
-                  Services available in your area.
-                </Text>
-              </>
-            ) : (
-              <>
-                <AlertCircle size={16} color="#EF4444" />
-                <Text style={[styles.coverageText, { color: '#EF4444' }]}>
-                  Sorry, GC HOME+ is currently not available in your area.
-                </Text>
-              </>
-            )}
-          </View>
-        </View>
+        )}
 
         {/* Saved Addresses Section */}
         <View style={styles.savedSectionHeader}>
           <Text style={styles.sectionTitle}>Saved Addresses</Text>
           <TouchableOpacity style={styles.addNewBtn} onPress={handleAddNew} activeOpacity={0.7}>
             <Plus size={14} color="#168A68" strokeWidth={2.5} />
-            <Text style={styles.addNewText}>Add New</Text>
+            <Text style={styles.addNewText}>Add New Location</Text>
           </TouchableOpacity>
         </View>
 
         <View style={styles.addressesList}>
-          {availableAddresses.map(addr => {
-            const isSelected = selectedAddress.id === addr.id;
-            return (
-              <TouchableOpacity
-                key={addr.id}
-                style={[styles.addressCard, isSelected && styles.addressCardSelected]}
-                onPress={() => handleSelect(addr)}
-                activeOpacity={0.88}
-              >
-                <View style={styles.addrIconBox}>
-                  {addr.label === 'Home' ? (
-                    <Home size={18} color="#168A68" />
-                  ) : (
-                    <Building size={18} color="#168A68" />
-                  )}
-                </View>
+          {savedAddresses && savedAddresses.length > 0 ? (
+            savedAddresses.map(addr => {
+              const isSelected = selectedAddress?.id === addr.id;
+              return (
+                <TouchableOpacity
+                  key={addr.id}
+                  style={[styles.addressCard, isSelected && styles.addressCardSelected]}
+                  onPress={() => handleSelect(addr)}
+                  activeOpacity={0.88}
+                >
+                  <View style={styles.addrIconBox}>
+                    {addr.label === 'Home' ? (
+                      <Home size={18} color="#168A68" />
+                    ) : (
+                      <Building size={18} color="#168A68" />
+                    )}
+                  </View>
 
-                <View style={styles.addrDetails}>
-                  <Text style={styles.addrLabel}>{addr.label}</Text>
-                  <Text style={styles.addrStreet} numberOfLines={1}>
-                    {addr.street}
-                  </Text>
-                  <Text style={styles.addrCity}>
-                    {addr.locality}, {addr.city}
-                  </Text>
-                </View>
+                  <View style={styles.addrDetails}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                      <Text style={styles.addrLabel}>{addr.label}</Text>
+                      {addr.isDefault && (
+                        <View style={styles.defaultPill}>
+                          <Text style={styles.defaultPillText}>DEFAULT</Text>
+                        </View>
+                      )}
+                    </View>
+                    {Boolean(addr.houseFlat) && (
+                      <Text style={styles.addrHouseFlat}>{addr.houseFlat}</Text>
+                    )}
+                    <Text style={styles.addrStreet} numberOfLines={1}>
+                      {addr.street}
+                    </Text>
+                    <Text style={styles.addrCity}>
+                      {addr.locality ? `${addr.locality}, ` : ''}{addr.city} - {addr.pincode}
+                    </Text>
+                  </View>
 
-                <View style={styles.addrRadio}>
-                  {isSelected ? (
-                    <CheckCircle2 size={22} color="#168A68" fill="#168A68" />
-                  ) : (
-                    <Circle size={22} color="#CBD5E1" />
-                  )}
-                </View>
-              </TouchableOpacity>
-            );
-          })}
+                  <View style={styles.addrRadio}>
+                    {isSelected ? (
+                      <CheckCircle2 size={22} color="#168A68" fill="#168A68" />
+                    ) : (
+                      <Circle size={22} color="#CBD5E1" />
+                    )}
+                  </View>
+                </TouchableOpacity>
+              );
+            })
+          ) : (
+            <View style={styles.noAddressesFoundBox}>
+              <Text style={styles.noAddressesText}>No saved addresses found. Tap "+ Add New Location" above.</Text>
+            </View>
+          )}
         </View>
       </ScrollView>
 
       {/* Sticky Bottom Confirmation Action */}
       <View style={styles.bottomBar}>
         <TouchableOpacity
-          style={[styles.confirmBtn, !isServiceAvailable && styles.confirmBtnDisabled]}
+          style={[styles.confirmBtn, (!selectedAddress || !isServiceAvailable) && styles.confirmBtnDisabled]}
           onPress={handleConfirm}
-          disabled={!isServiceAvailable}
+          disabled={!selectedAddress || !isServiceAvailable}
           activeOpacity={0.88}
         >
-          <Text style={styles.confirmBtnText}>Confirm Address</Text>
+          <Text style={styles.confirmBtnText}>Confirm Booking Address</Text>
           <ArrowRight size={18} color="#FFFFFF" strokeWidth={2.4} />
         </TouchableOpacity>
       </View>
@@ -500,5 +564,101 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '800',
     color: '#FFFFFF',
+  },
+  noticeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#E6F4EA',
+    borderWidth: 1,
+    borderColor: '#C6E7D2',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 16,
+  },
+  noticeBannerText: {
+    flex: 1,
+    fontSize: 11.5,
+    color: '#0D6836',
+    fontWeight: '600',
+    lineHeight: 16,
+  },
+  defaultPill: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 0.5,
+    borderColor: '#FDE68A',
+  },
+  defaultPillText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#92400E',
+    letterSpacing: 0.3,
+  },
+  houseFlatText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginBottom: 1,
+  },
+  addrHouseFlat: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  emptyPromptCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  emptyPromptTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginTop: 10,
+  },
+  emptyPromptSub: {
+    fontSize: 12.5,
+    color: '#64748B',
+    textAlign: 'center',
+    marginTop: 4,
+    marginBottom: 16,
+    lineHeight: 18,
+  },
+  addFirstBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#0D8846',
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  addFirstBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  noAddressesFoundBox: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 18,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  noAddressesText: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '600',
+    textAlign: 'center',
   },
 });

@@ -10,10 +10,14 @@ import {
   Alert,
   ActivityIndicator,
   Modal,
+  Platform,
+  KeyboardAvoidingView,
+  Keyboard,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../config/supabase';
+import { authService } from '../../services/authService';
 import { MaidApplicationStatus } from '../../types';
 import { AddressEntryForm, AddressFormData } from '../../components/address/AddressEntryForm';
 import { DynamicServiceSelector, SelectedServiceItem } from './components/DynamicServiceSelector';
@@ -28,6 +32,7 @@ import {
   ShieldCheck,
   CreditCard,
   ChevronRight,
+  ChevronDown,
   Sparkles,
   Clock,
   Check,
@@ -37,12 +42,19 @@ import {
   Calendar as CalendarIcon,
   Globe,
   Radio,
-  AlertCircle,
+  Edit3,
 } from 'lucide-react-native';
 
 const STANDARD_LANGUAGES = ['Telugu', 'Hindi', 'English', 'Other'];
 const RADIUS_OPTIONS = [5, 10, 15, 20];
-const EXPERIENCE_OPTIONS = [1, 2, 3, 5, 8, 10];
+const EXPERIENCE_OPTIONS = [
+  '0–1 Years',
+  '1–2 Years',
+  '2–3 Years',
+  '3–5 Years',
+  '5–10 Years',
+  '10+ Years',
+];
 
 export const PARTNER_SUPPORTED_CITIES = [
   'Karimnagar',
@@ -54,12 +66,13 @@ export const PARTNER_SUPPORTED_CITIES = [
 export const MaidRegistrationFormScreen: React.FC = () => {
   const { navigateTo, user, submitMaidApplication, maidProfile, savedAddresses, navigationPayload } = useAuth();
 
-  // Application Flow State (Steps 1 to 5, Step 6 = Confirmation)
+  // Application Flow State (Steps 1 to 5, Step 6 = Review & Confirmation)
   const [currentStep, setCurrentStep] = useState<number>(1);
+  const [completedSteps, setCompletedSteps] = useState<number>(0);
   const [isSubmitted, setIsSubmitted] = useState<boolean>(false);
   const [appStatus, setAppStatus] = useState<MaidApplicationStatus>('none');
   const [draftStatus, setDraftStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
-  const saveTimeoutRef = useRef<any>(null);
+  const [isSavingStep, setIsSavingStep] = useState<boolean>(false);
 
   // ── Step 1: Personal Details ──
   const [fullName, setFullName] = useState(user?.name || '');
@@ -68,9 +81,48 @@ export const MaidRegistrationFormScreen: React.FC = () => {
   const [gender, setGender] = useState<'Female' | 'Male' | 'Other'>('Female');
   const [dob, setDob] = useState('');
   const [showDobModal, setShowDobModal] = useState(false);
-  const [dobYear, setDobYear] = useState('1995');
-  const [dobMonth, setDobMonth] = useState('06');
-  const [dobDay, setDobDay] = useState('15');
+  const [dobYear, setDobYear] = useState('');
+  const [dobMonth, setDobMonth] = useState('');
+  const [dobDay, setDobDay] = useState('');
+
+  // Auto-advance input refs for DOB
+  const dayInputRef = useRef<TextInput>(null);
+  const monthInputRef = useRef<TextInput>(null);
+  const yearInputRef = useRef<TextInput>(null);
+
+  // Keyboard & Scroll awareness for automatic field scrolling
+  const scrollViewRef = useRef<ScrollView>(null);
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      () => setIsKeyboardOpen(true)
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setIsKeyboardOpen(false)
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  const handleInputFocus = useCallback((event: any) => {
+    const target = event?.target;
+    if (!target || !scrollViewRef.current) return;
+    setTimeout(() => {
+      try {
+        const scrollResponder = (scrollViewRef.current as any)?.getScrollResponder?.();
+        if (scrollResponder && typeof scrollResponder.scrollNativeHandleToKeyboard === 'function') {
+          scrollResponder.scrollNativeHandleToKeyboard(target, 110, true);
+        }
+      } catch (err) {
+        // ignore
+      }
+    }, 100);
+  }, []);
 
   const [emergencyContactName, setEmergencyContactName] = useState('');
   const [emergencyContactPhone, setEmergencyContactPhone] = useState('');
@@ -88,24 +140,26 @@ export const MaidRegistrationFormScreen: React.FC = () => {
   const [locality, setLocality] = useState('');
   const [pincode, setPincode] = useState('');
 
-  // ── Step 2: Preferred Work City (Multi-select checkboxes, separate from residential address) ──
+  // ── Step 2: Preferred Work City (Multi-select checkboxes) ──
   const [availableCities, setAvailableCities] = useState<string[]>(PARTNER_SUPPORTED_CITIES);
   const [preferredWorkCities, setPreferredWorkCities] = useState<string[]>([]);
 
   // ── Step 3: Services & Availability ──
   const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
+  const [selectedSubServiceIds, setSelectedSubServiceIds] = useState<string[]>([]);
   const [selectedServices, setSelectedServices] = useState<SelectedServiceItem[]>([]);
+  const [experienceRange, setExperienceRange] = useState<string>('2–3 Years');
   const [experienceYears, setExperienceYears] = useState<number>(3);
   const [selectedLanguages, setSelectedLanguages] = useState<string[]>(['Telugu', 'English']);
   const [customLanguageInput, setCustomLanguageInput] = useState('');
   const [customLanguagesList, setCustomLanguagesList] = useState<string[]>([]);
   const [availabilityStatus, setAvailabilityStatus] = useState<'Available' | 'Not Available'>('Available');
-  const [serviceRadiusKm, setServiceRadiusKm] = useState<number>(5); // Initial dispatch radius: 5 KM
-  const [startTime, setStartTime] = useState<string>('08:00 AM');
-  const [endTime, setEndTime] = useState<string>('08:00 PM');
+  const [serviceRadiusKm, setServiceRadiusKm] = useState<number>(5);
+  const [startTime, setStartTime] = useState<string>('09:00 AM');
+  const [endTime, setEndTime] = useState<string>('06:00 PM');
   const [emergencyJobsAccepted, setEmergencyJobsAccepted] = useState<boolean>(true);
 
-  // ── Step 4: Document Verification (Simple upload without rigid document-type restriction) ──
+  // ── Step 4: Document Verification ──
   const [uploadedDocs, setUploadedDocs] = useState<UploadedDocItem[]>([]);
   const [documents, setDocuments] = useState<{
     aadhaarFront: DocItemState;
@@ -152,11 +206,72 @@ export const MaidRegistrationFormScreen: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [generatedPartnerId, setGeneratedPartnerId] = useState('');
 
-  // ── Auto-save Draft Function ──
-  const saveDraft = useCallback(async (overrides?: Record<string, any>) => {
+  // ── Step 6: Mobile OTP Verification State ──
+  const [showOtpModal, setShowOtpModal] = useState(false);
+  const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
+  const [isSendingOtp, setIsSendingOtp] = useState(false);
+  const [otpCountdown, setOtpCountdown] = useState(30);
+  const [otpError, setOtpError] = useState('');
+  const otpInputRefs = useRef<Array<TextInput | null>>([]);
+
+  // Countdown timer for Partner Registration OTP
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval>;
+    if (showOtpModal && otpCountdown > 0) {
+      interval = setInterval(() => {
+        setOtpCountdown(prev => prev - 1);
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [showOtpModal, otpCountdown]);
+
+  // Stable Profile ID helper to prevent duplicate partner records
+  const getStableProfileId = useCallback(async (): Promise<string> => {
+    if (user?.uid && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.uid)) {
+      return user.uid;
+    }
+    const key = `@gc_partner_draft_id_${user?.uid || phone || 'default'}`;
+    const existing = await AsyncStorage.getItem(key);
+    if (existing) return existing;
+    const newId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+      const r = (Math.random() * 16) | 0;
+      const v = c === 'x' ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
+    await AsyncStorage.setItem(key, newId);
+    return newId;
+  }, [user?.uid, phone]);
+
+  // ── PAGE-WISE DRAFT PERSISTENCE (Saves complete step data together, no field-by-field DB thrashing) ──
+  const saveStepData = useCallback(async (stepNumber: number): Promise<boolean> => {
+    setIsSavingStep(true);
     setDraftStatus('saving');
+
     try {
-      const draftData = {
+      const newCompleted = Math.max(completedSteps, stepNumber);
+      setCompletedSteps(newCompleted);
+
+      const profileId = await getStableProfileId();
+      const fullAddressStr = `${houseFlat || fullAddress}${street ? ', ' + street : ''}, ${locality}, ${selectedCity} ${pincode}`;
+      const citiesArr = preferredWorkCities || [];
+      const citiesStr = citiesArr.join(', ') || selectedCity || '';
+      const activeDocsList: UploadedDocItem[] = uploadedDocs || [];
+      const partnerProvidedServices = selectedServices.map(s => ({
+        id: s.serviceId,
+        serviceId: s.serviceId,
+        serviceName: s.serviceName,
+        category: s.category || '',
+        experienceYears,
+      }));
+      const allLanguages = [
+        ...selectedLanguages.filter(l => l !== 'Other'),
+        ...customLanguagesList,
+      ];
+      const pStart = parseTimeString(startTime);
+      const pEnd = parseTimeString(endTime);
+
+      const draftPayload = {
         fullName,
         phone,
         email,
@@ -176,16 +291,18 @@ export const MaidRegistrationFormScreen: React.FC = () => {
         fullAddress,
         preferredWorkCities,
         selectedServiceIds,
-        selectedServices,
+        selectedSubServiceIds,
+        selectedServices: partnerProvidedServices,
+        experienceRange,
         experienceYears,
-        selectedLanguages,
+        selectedLanguages: allLanguages,
         customLanguagesList,
         availabilityStatus,
         serviceRadiusKm,
         startTime,
         endTime,
         emergencyJobsAccepted,
-        uploadedDocs,
+        uploadedDocs: activeDocsList,
         documents,
         bankAccountHolder,
         bankName,
@@ -197,87 +314,73 @@ export const MaidRegistrationFormScreen: React.FC = () => {
         termsAccepted,
         privacyAccepted,
         accuracyConfirmed,
-        currentStep,
-        ...overrides,
+        currentStep: Math.min(stepNumber + 1, 6),
+        completedSteps: newCompleted,
+        lastSavedStep: stepNumber,
+        status: 'draft',
+        registrationStatus: 'DRAFT',
       };
 
+      // 1. Save complete page draft to AsyncStorage (keep draft local, do not prematurely insert into Supabase)
       const key = `@gc_partner_draft_${user?.uid || phone || 'default'}`;
-      await AsyncStorage.setItem(key, JSON.stringify(draftData));
+      await AsyncStorage.setItem(key, JSON.stringify(draftPayload));
 
-      // Also auto-save to Supabase maid_profiles with status: 'draft' if user has a valid UID
-      if (user?.uid) {
-        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.uid);
-        if (isUuid) {
-          const fullAddressStr = `${draftData.houseFlat || draftData.fullAddress}${draftData.street ? ', ' + draftData.street : ''}, ${draftData.locality}, ${draftData.selectedCity} ${draftData.pincode}`;
-          const citiesArr = draftData.preferredWorkCities || [];
-          const citiesStr = citiesArr.join(', ') || draftData.selectedCity || '';
-          const activeDocsList: UploadedDocItem[] = draftData.uploadedDocs || [];
-
-          await supabase.from('maid_profiles').upsert({
-            id: user.uid,
-            full_name: draftData.fullName || user.name || 'Partner Draft',
-            phone: draftData.phone || user.phone || '',
-            email: draftData.email || user.email || '',
-            photo_url: draftData.profilePhotoUrl || '',
-            dob: draftData.dob || '',
-            gender: draftData.gender || 'Female',
-            emergency_contact_name: draftData.emergencyContactName || '',
-            emergency_contact_phone: draftData.emergencyContactPhone || '',
-            address: fullAddressStr,
-            full_address: draftData.fullAddress || '',
-            locality: draftData.locality || '',
-            pincode: draftData.pincode || '',
-            city: draftData.selectedCity || '',
-            service_area: citiesStr,
-            preferred_service_area: citiesStr,
-            preferred_cities: citiesArr,
-            service_radius_km: draftData.serviceRadiusKm || 5,
-            start_time: draftData.startTime || '08:00 AM',
-            end_time: draftData.endTime || '08:00 PM',
-            emergency_jobs_accepted: draftData.emergencyJobsAccepted ?? true,
-            skills: (draftData.selectedServices || []).map((s: any) => s.serviceName),
-            services_provided: draftData.selectedServices || [],
-            languages_spoken: draftData.selectedLanguages || [],
-            kyc_documents: {
-              profilePhotoUrl: draftData.profilePhotoUrl || '',
-              documents: activeDocsList,
-              aadhaarFrontUrl: activeDocsList[0]?.fileUrl || draftData.documents?.aadhaarFront?.fileUrl,
-              aadhaarBackUrl: activeDocsList[1]?.fileUrl || draftData.documents?.aadhaarBack?.fileUrl,
-              panDocUrl: activeDocsList[2]?.fileUrl || draftData.documents?.pan?.fileUrl,
-              upiId: draftData.upiId,
-            },
-            aadhaar_doc_url: activeDocsList[0]?.fileUrl || draftData.documents?.aadhaarFront?.fileUrl,
-            pan_doc_url: activeDocsList[1]?.fileUrl || draftData.documents?.pan?.fileUrl,
-            other_docs_urls: activeDocsList.map(d => d.fileUrl),
-            bank_account_name: draftData.bankAccountHolder || '',
-            bank_account_number: draftData.accountNumber || '',
-            bank_ifsc: draftData.ifscCode || '',
-            bank_name: draftData.bankName || '',
-            upi_id: draftData.upiId || '',
-            status: 'draft',
-            correction_requested: false,
-          });
-        }
-      }
-
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-      saveTimeoutRef.current = setTimeout(() => {
-        setDraftStatus('saved');
-      }, 500);
-    } catch (err) {
-      console.warn('Draft auto-save notice:', err);
+      setDraftStatus('saved');
+      setIsSavingStep(false);
+      return true;
+    } catch (err: any) {
+      console.error('Error saving step draft:', err);
+      setIsSavingStep(false);
       setDraftStatus('idle');
+      Alert.alert(
+        'Save Failed',
+        `Unable to save Step ${stepNumber} information. Please check your network connection and try again.`
+      );
+      return false;
     }
   }, [
-    fullName, phone, email, gender, dob, emergencyContactName, emergencyContactPhone,
-    profilePhotoUrl, houseFlat, street, locality, selectedCity, selectedDistrict,
-    selectedState, selectedPostOffice, pincode, fullAddress, preferredWorkCities,
-    selectedServiceIds, selectedServices, experienceYears, selectedLanguages,
-    customLanguagesList, availabilityStatus, serviceRadiusKm, startTime, endTime,
-    emergencyJobsAccepted, documents, bankAccountHolder, bankName, confirmBankName,
-    accountNumber, confirmAccountNumber, ifscCode, upiId, termsAccepted, privacyAccepted,
-    accuracyConfirmed, currentStep, user?.uid
+    completedSteps, getStableProfileId, user, phone, fullName, email, gender, dob,
+    emergencyContactName, emergencyContactPhone, profilePhotoUrl, houseFlat, street,
+    locality, selectedCity, selectedDistrict, selectedState, selectedPostOffice, pincode,
+    fullAddress, preferredWorkCities, selectedServiceIds, selectedServices, experienceYears,
+    selectedLanguages, customLanguagesList, availabilityStatus, serviceRadiusKm, startTime,
+    endTime, emergencyJobsAccepted, uploadedDocs, documents, bankAccountHolder, bankName,
+    confirmBankName, accountNumber, confirmAccountNumber, ifscCode, upiId, termsAccepted,
+    privacyAccepted, accuracyConfirmed
   ]);
+
+  // Profile Photo Delete Handler (Removes from UI, storage, database, cache, and draft state)
+  const handlePhotoDelete = async () => {
+    setProfilePhotoUrl('');
+    setIsPhotoUploaded(false);
+
+    try {
+      const key = `@gc_partner_draft_${user?.uid || phone || 'default'}`;
+      const savedStr = await AsyncStorage.getItem(key);
+      if (savedStr) {
+        const d = JSON.parse(savedStr);
+        d.profilePhotoUrl = '';
+        await AsyncStorage.setItem(key, JSON.stringify(d));
+      }
+    } catch (e) {
+      console.warn('AsyncStorage photo clear notice:', e);
+    }
+
+    try {
+      const profileId = await getStableProfileId();
+      if (profileId) {
+        await supabase.from('maid_profiles').update({
+          photo_url: null,
+          kyc_documents: {
+            documents: uploadedDocs,
+            profilePhotoUrl: '',
+          },
+        }).eq('id', profileId);
+      }
+    } catch (e) {
+      console.warn('Supabase photo clear notice:', e);
+    }
+  };
 
   // Dynamic Cities Fetch from Admin/Supabase service_areas
   useEffect(() => {
@@ -301,7 +404,7 @@ export const MaidRegistrationFormScreen: React.FC = () => {
     fetchSupportedCities();
   }, []);
 
-  // Pre-fill customer profile details & saved address if empty (TASK 2)
+  // Pre-fill user profile details & saved address if empty
   useEffect(() => {
     if (user) {
       if (!fullName && user.name) setFullName(user.name);
@@ -324,7 +427,7 @@ export const MaidRegistrationFormScreen: React.FC = () => {
     }
   }, [user, savedAddresses]);
 
-  // Handle Re-Application intent from navigation payload (TASK 3)
+  // Handle Re-Application intent from navigation payload
   useEffect(() => {
     if (navigationPayload?.isReapplication) {
       setIsSubmitted(false);
@@ -332,7 +435,7 @@ export const MaidRegistrationFormScreen: React.FC = () => {
     }
   }, [navigationPayload]);
 
-  // Restore Draft on Mount (Local storage first, then Supabase draft row)
+  // Restore Draft on Mount (Resumes from the appropriate step, preserving all completed data)
   useEffect(() => {
     const restoreDraft = async () => {
       if (
@@ -354,10 +457,16 @@ export const MaidRegistrationFormScreen: React.FC = () => {
           if (d.phone) setPhone(d.phone);
           if (d.email) setEmail(d.email);
           if (d.gender) setGender(d.gender);
-          if (d.dob) setDob(d.dob);
+          if (d.dob) setDob(normalizeDobToDDMMYYYY(d.dob));
           if (d.emergencyContactName) setEmergencyContactName(d.emergencyContactName);
           if (d.emergencyContactPhone) setEmergencyContactPhone(d.emergencyContactPhone);
-          if (d.profilePhotoUrl) setProfilePhotoUrl(d.profilePhotoUrl);
+
+          // Explicitly restore profile photo handling empty string as deleted
+          if (d.profilePhotoUrl !== undefined) {
+            setProfilePhotoUrl(d.profilePhotoUrl || '');
+            setIsPhotoUploaded(Boolean(d.profilePhotoUrl));
+          }
+
           if (d.houseFlat) setHouseFlat(d.houseFlat);
           if (d.street) setStreet(d.street);
           if (d.locality) setLocality(d.locality);
@@ -373,7 +482,19 @@ export const MaidRegistrationFormScreen: React.FC = () => {
             setPreferredWorkCities([d.preferredWorkCity]);
           }
           if (Array.isArray(d.selectedServiceIds)) setSelectedServiceIds(d.selectedServiceIds);
+          if (Array.isArray(d.selectedSubServiceIds)) setSelectedSubServiceIds(d.selectedSubServiceIds);
           if (Array.isArray(d.selectedServices)) setSelectedServices(d.selectedServices);
+          if (d.experienceRange) {
+            setExperienceRange(d.experienceRange);
+          } else if (d.experienceYears) {
+            const y = Number(d.experienceYears);
+            if (y <= 1) setExperienceRange('0–1 Years');
+            else if (y <= 2) setExperienceRange('1–2 Years');
+            else if (y <= 3) setExperienceRange('2–3 Years');
+            else if (y <= 5) setExperienceRange('3–5 Years');
+            else if (y <= 10) setExperienceRange('5–10 Years');
+            else setExperienceRange('10+ Years');
+          }
           if (d.experienceYears) setExperienceYears(d.experienceYears);
           if (Array.isArray(d.selectedLanguages)) setSelectedLanguages(d.selectedLanguages);
           if (Array.isArray(d.customLanguagesList)) setCustomLanguagesList(d.customLanguagesList);
@@ -384,38 +505,8 @@ export const MaidRegistrationFormScreen: React.FC = () => {
           if (d.emergencyJobsAccepted !== undefined) setEmergencyJobsAccepted(d.emergencyJobsAccepted);
           if (Array.isArray(d.uploadedDocs) && d.uploadedDocs.length > 0) {
             setUploadedDocs(d.uploadedDocs);
-          } else if (d.documents) {
-            const converted: UploadedDocItem[] = [];
-            if (d.documents.aadhaarFront?.fileUrl) {
-              converted.push({
-                id: 'aadhaar_front',
-                name: d.documents.aadhaarFront.fileName || 'Verification Document 1',
-                fileUrl: d.documents.aadhaarFront.fileUrl,
-                fileType: d.documents.aadhaarFront.fileType || 'image',
-                uploadedAt: new Date().toISOString(),
-              });
-            }
-            if (d.documents.aadhaarBack?.fileUrl) {
-              converted.push({
-                id: 'aadhaar_back',
-                name: d.documents.aadhaarBack.fileName || 'Verification Document 2',
-                fileUrl: d.documents.aadhaarBack.fileUrl,
-                fileType: d.documents.aadhaarBack.fileType || 'image',
-                uploadedAt: new Date().toISOString(),
-              });
-            }
-            if (d.documents.pan?.fileUrl) {
-              converted.push({
-                id: 'pan',
-                name: d.documents.pan.fileName || 'Verification Document 3',
-                fileUrl: d.documents.pan.fileUrl,
-                fileType: d.documents.pan.fileType || 'image',
-                uploadedAt: new Date().toISOString(),
-              });
-            }
-            if (converted.length > 0) setUploadedDocs(converted);
-            setDocuments(d.documents);
           }
+          if (d.documents) setDocuments(d.documents);
           if (d.bankAccountHolder) setBankAccountHolder(d.bankAccountHolder);
           if (d.bankName) setBankName(d.bankName);
           if (d.confirmBankName) setConfirmBankName(d.confirmBankName);
@@ -425,9 +516,17 @@ export const MaidRegistrationFormScreen: React.FC = () => {
           }
           if (d.ifscCode) setIfscCode(d.ifscCode);
           if (d.upiId) setUpiId(d.upiId);
-          if (d.currentStep && d.currentStep >= 1 && d.currentStep <= 5) {
-            setCurrentStep(d.currentStep);
-          }
+          if (d.termsAccepted) setTermsAccepted(d.termsAccepted);
+          if (d.privacyAccepted) setPrivacyAccepted(d.privacyAccepted);
+          if (d.accuracyConfirmed) setAccuracyConfirmed(d.accuracyConfirmed);
+
+          const savedComp = d.completedSteps || 0;
+          setCompletedSteps(savedComp);
+
+          // Resume from the next step after completed steps
+          const resumeStep = Math.min(Math.max(savedComp + 1, d.currentStep || 1), 6);
+          setCurrentStep(resumeStep);
+
           setDraftStatus('saved');
           return;
         }
@@ -440,12 +539,15 @@ export const MaidRegistrationFormScreen: React.FC = () => {
             .eq('id', user.uid)
             .maybeSingle();
 
-          if (dbDraft && dbDraft.status === 'draft') {
+          if (dbDraft && !dbDraft.submitted_at && dbDraft.status !== 'approved') {
             if (dbDraft.full_name) setFullName(dbDraft.full_name);
             if (dbDraft.phone) setPhone(dbDraft.phone);
             if (dbDraft.email) setEmail(dbDraft.email);
-            if (dbDraft.photo_url) setProfilePhotoUrl(dbDraft.photo_url);
-            if (dbDraft.dob) setDob(dbDraft.dob);
+            if (dbDraft.photo_url !== undefined) {
+              setProfilePhotoUrl(dbDraft.photo_url || '');
+              setIsPhotoUploaded(Boolean(dbDraft.photo_url));
+            }
+            if (dbDraft.dob) setDob(normalizeDobToDDMMYYYY(dbDraft.dob));
             if (dbDraft.gender) setGender(dbDraft.gender);
             if (dbDraft.emergency_contact_name) setEmergencyContactName(dbDraft.emergency_contact_name);
             if (dbDraft.emergency_contact_phone) setEmergencyContactPhone(dbDraft.emergency_contact_phone);
@@ -464,36 +566,6 @@ export const MaidRegistrationFormScreen: React.FC = () => {
             const dbKyc = dbDraft.kyc_documents;
             if (dbKyc && Array.isArray(dbKyc.documents) && dbKyc.documents.length > 0) {
               setUploadedDocs(dbKyc.documents);
-            } else {
-              const converted: UploadedDocItem[] = [];
-              if (dbDraft.aadhaar_doc_url || dbKyc?.aadhaarFrontUrl) {
-                converted.push({
-                  id: 'doc_1',
-                  name: 'Verification Document 1',
-                  fileUrl: dbDraft.aadhaar_doc_url || dbKyc?.aadhaarFrontUrl,
-                  fileType: (dbDraft.aadhaar_doc_url || dbKyc?.aadhaarFrontUrl)?.endsWith('.pdf') ? 'pdf' : 'image',
-                  uploadedAt: new Date().toISOString(),
-                });
-              }
-              if (dbKyc?.aadhaarBackUrl) {
-                converted.push({
-                  id: 'doc_2',
-                  name: 'Verification Document 2',
-                  fileUrl: dbKyc.aadhaarBackUrl,
-                  fileType: dbKyc.aadhaarBackUrl.endsWith('.pdf') ? 'pdf' : 'image',
-                  uploadedAt: new Date().toISOString(),
-                });
-              }
-              if (dbDraft.pan_doc_url || dbKyc?.panDocUrl) {
-                converted.push({
-                  id: 'doc_3',
-                  name: 'Verification Document 3',
-                  fileUrl: dbDraft.pan_doc_url || dbKyc?.panDocUrl,
-                  fileType: (dbDraft.pan_doc_url || dbKyc?.panDocUrl)?.endsWith('.pdf') ? 'pdf' : 'image',
-                  uploadedAt: new Date().toISOString(),
-                });
-              }
-              if (converted.length > 0) setUploadedDocs(converted);
             }
 
             if (dbDraft.bank_account_name) setBankAccountHolder(dbDraft.bank_account_name);
@@ -538,14 +610,14 @@ export const MaidRegistrationFormScreen: React.FC = () => {
           setCurrentStep(1);
         } else {
           setIsSubmitted(true);
-          setCurrentStep(6); // Show confirmation/status screen
+          setCurrentStep(7); // Show confirmation/status screen
         }
-        setGeneratedPartnerId(maidProfile.maidCode || 'GC-PARTNER-1001');
+        setGeneratedPartnerId(maidProfile.maidCode || '');
 
         if (maidProfile.fullName) setFullName(maidProfile.fullName);
         if (maidProfile.phone) setPhone(maidProfile.phone);
         if (maidProfile.email) setEmail(maidProfile.email);
-        if (maidProfile.dob) setDob(maidProfile.dob);
+        if (maidProfile.dob) setDob(normalizeDobToDDMMYYYY(maidProfile.dob));
         if (maidProfile.emergencyContactName) setEmergencyContactName(maidProfile.emergencyContactName);
         if (maidProfile.emergencyContactPhone) setEmergencyContactPhone(maidProfile.emergencyContactPhone);
 
@@ -593,67 +665,26 @@ export const MaidRegistrationFormScreen: React.FC = () => {
           setServiceRadiusKm(maidProfile.serviceRadiusKm);
         }
 
-        const existingDocs: UploadedDocItem[] = [];
         const rawKyc = (maidProfile as any).kyc_documents;
         if (rawKyc && Array.isArray(rawKyc.documents) && rawKyc.documents.length > 0) {
           setUploadedDocs(rawKyc.documents);
-        } else {
-          if (maidProfile.aadhaarFrontUrl) {
-            existingDocs.push({
-              id: 'doc_1',
-              name: 'Verification Document 1',
-              fileUrl: maidProfile.aadhaarFrontUrl,
-              fileType: maidProfile.aadhaarFrontUrl.endsWith('.pdf') ? 'pdf' : 'image',
-              uploadedAt: new Date().toISOString(),
-            });
-          }
-          if (maidProfile.aadhaarBackUrl) {
-            existingDocs.push({
-              id: 'doc_2',
-              name: 'Verification Document 2',
-              fileUrl: maidProfile.aadhaarBackUrl,
-              fileType: maidProfile.aadhaarBackUrl.endsWith('.pdf') ? 'pdf' : 'image',
-              uploadedAt: new Date().toISOString(),
-            });
-          }
-          if (maidProfile.panDocUrl) {
-            existingDocs.push({
-              id: 'doc_3',
-              name: 'Verification Document 3',
-              fileUrl: maidProfile.panDocUrl,
-              fileType: maidProfile.panDocUrl.endsWith('.pdf') ? 'pdf' : 'image',
-              uploadedAt: new Date().toISOString(),
-            });
-          }
-          if (existingDocs.length > 0) {
-            setUploadedDocs(existingDocs);
-          }
         }
       }
     }
-  }, [maidProfile]);
+  }, [maidProfile, navigationPayload]);
 
-  // ── Language Handlers ──
+  // Language toggles
   const toggleStandardLanguage = (lang: string) => {
-    if (selectedLanguages.includes(lang)) {
-      if (selectedLanguages.length <= 1 && customLanguagesList.length === 0) {
-        Alert.alert('Language Required', 'Please keep at least 1 language selected.');
-        return;
-      }
-      setSelectedLanguages(prev => prev.filter(l => l !== lang));
-    } else {
-      setSelectedLanguages(prev => [...prev, lang]);
-    }
+    setSelectedLanguages(prev =>
+      prev.includes(lang) ? prev.filter(l => l !== lang) : [...prev, lang]
+    );
   };
 
   const handleAddCustomLanguage = () => {
-    const trimmed = customLanguageInput.trim();
-    if (!trimmed) return;
-    if (
-      !customLanguagesList.some(l => l.toLowerCase() === trimmed.toLowerCase()) &&
-      !selectedLanguages.some(l => l.toLowerCase() === trimmed.toLowerCase())
-    ) {
-      setCustomLanguagesList(prev => [...prev, trimmed]);
+    if (!customLanguageInput.trim()) return;
+    const clean = customLanguageInput.trim();
+    if (!customLanguagesList.includes(clean)) {
+      setCustomLanguagesList(prev => [...prev, clean]);
     }
     setCustomLanguageInput('');
   };
@@ -662,48 +693,101 @@ export const MaidRegistrationFormScreen: React.FC = () => {
     setCustomLanguagesList(prev => prev.filter(l => l !== lang));
   };
 
-  // ── Date of Birth Confirm Handler ──
+  // Normalize any incoming DOB to strict Date – Month – Year (DD-MM-YYYY)
+  const normalizeDobToDDMMYYYY = (val: string): string => {
+    if (!val) return '';
+    const clean = val.trim();
+    // YYYY-MM-DD
+    const ymdMatch = clean.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+    if (ymdMatch) {
+      const [, y, m, d] = ymdMatch;
+      return `${d.padStart(2, '0')}-${m.padStart(2, '0')}-${y}`;
+    }
+    // DD-MM-YYYY or DD/MM/YYYY
+    const dmyMatch = clean.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+    if (dmyMatch) {
+      const [, d, m, y] = dmyMatch;
+      return `${d.padStart(2, '0')}-${m.padStart(2, '0')}-${y}`;
+    }
+    return clean;
+  };
+
+  const openDobModal = () => {
+    if (dob) {
+      const clean = normalizeDobToDDMMYYYY(dob);
+      const parts = clean.split('-');
+      if (parts.length === 3) {
+        setDobDay(parts[0]);
+        setDobMonth(parts[1]);
+        setDobYear(parts[2]);
+      }
+    } else {
+      if (!dobDay) setDobDay('');
+      if (!dobMonth) setDobMonth('');
+      if (!dobYear) setDobYear('1995');
+    }
+    setShowDobModal(true);
+  };
+
+  const handleDayChange = (text: string) => {
+    const clean = text.replace(/\D/g, '').slice(0, 2);
+    setDobDay(clean);
+    if (clean.length === 2 && monthInputRef.current) {
+      monthInputRef.current.focus();
+    }
+  };
+
+  const handleMonthChange = (text: string) => {
+    const clean = text.replace(/\D/g, '').slice(0, 2);
+    setDobMonth(clean);
+    if (clean.length === 2 && yearInputRef.current) {
+      yearInputRef.current.focus();
+    }
+  };
+
+  const handleYearChange = (text: string) => {
+    const clean = text.replace(/\D/g, '').slice(0, 4);
+    setDobYear(clean);
+  };
+
   const handleConfirmDob = () => {
-    const formatted = `${dobYear}-${dobMonth.padStart(2, '0')}-${dobDay.padStart(2, '0')}`;
+    const d = parseInt(dobDay, 10);
+    const m = parseInt(dobMonth, 10);
+    const y = parseInt(dobYear, 10);
+    const currentYear = new Date().getFullYear();
+
+    if (isNaN(d) || d < 1 || d > 31) {
+      Alert.alert('Invalid Date', 'Please enter a valid Day between 01 and 31.');
+      return;
+    }
+    if (isNaN(m) || m < 1 || m > 12) {
+      Alert.alert('Invalid Month', 'Please enter a valid Month between 01 and 12.');
+      return;
+    }
+    const maxDays = new Date(y, m, 0).getDate();
+    if (d > maxDays) {
+      Alert.alert('Invalid Date', `The selected month only has ${maxDays} days.`);
+      return;
+    }
+    if (isNaN(y) || y < 1940 || y > currentYear) {
+      Alert.alert('Invalid Year', `Please enter a valid 4-digit Year between 1940 and ${currentYear}.`);
+      return;
+    }
+    if (currentYear - y < 18) {
+      Alert.alert('Age Requirement', 'Partner applicants must be at least 18 years of age to register.');
+      return;
+    }
+
+    const formatted = `${String(d).padStart(2, '0')}-${String(m).padStart(2, '0')}-${String(y)}`;
     setDob(formatted);
     setShowDobModal(false);
   };
 
-  // ── Step 2 Multi-City Preference Toggle ──
+  // Step 2 Multi-City Preference Toggle
   const toggleWorkCity = (cityName: string) => {
-    setPreferredWorkCities(prev => {
-      const updated = prev.includes(cityName)
-        ? prev.filter(c => c !== cityName)
-        : [...prev, cityName];
-      saveDraft({ preferredWorkCities: updated });
-      return updated;
-    });
-  };
-
-  // ── Step 2 Address Submit & Continue ──
-  const handleStep2Continue = () => {
-    const hasHouse = houseFlat.trim() || fullAddress.trim();
-    if (!hasHouse || !locality.trim() || !pincode.trim()) {
-      Alert.alert(
-        'Address Details Required',
-        'Please complete your residential address (House/Flat, Street, Locality, and Pincode).'
-      );
-      return;
-    }
-    if (pincode.replace(/\D/g, '').length < 6) {
-      Alert.alert('Valid Pincode Required', 'Please enter a valid 6-digit pincode.');
-      return;
-    }
-    if (preferredWorkCities.length === 0) {
-      Alert.alert(
-        'Preferred Work City Required',
-        'Please select at least one city where you want to provide services.'
-      );
-      return;
-    }
-
-    saveDraft({ currentStep: 3, preferredWorkCities });
-    setCurrentStep(3);
+    setPreferredWorkCities(prev =>
+      prev.includes(cityName) ? prev.filter(c => c !== cityName) : [...prev, cityName]
+    );
   };
 
   const handlePartnerAddressSubmit = (data: AddressFormData) => {
@@ -716,136 +800,113 @@ export const MaidRegistrationFormScreen: React.FC = () => {
     setPincode(data.pincode);
     setSelectedPostOffice(data.postOffice || '');
     setFullAddress(`${data.houseFlat}${data.street ? ', ' + data.street : ''}`);
-    handleStep2Continue();
   };
 
-  // ── Document State Change Handlers ──
+  // Document Handlers
   const handleDocumentsChange = (docs: UploadedDocItem[]) => {
     setUploadedDocs(docs);
-    setDocuments({
-      aadhaarFront: {
-        id: docs[0]?.id || 'aadhaar_front',
-        name: docs[0]?.name || 'Verification Document 1',
-        uploaded: Boolean(docs[0]?.fileUrl),
-        fileUrl: docs[0]?.fileUrl,
-        fileType: docs[0]?.fileType,
-      },
-      aadhaarBack: {
-        id: docs[1]?.id || 'aadhaar_back',
-        name: docs[1]?.name || 'Verification Document 2',
-        uploaded: Boolean(docs[1]?.fileUrl),
-        fileUrl: docs[1]?.fileUrl,
-        fileType: docs[1]?.fileType,
-      },
-      pan: {
-        id: docs[2]?.id || 'pan',
-        name: docs[2]?.name || 'Verification Document 3',
-        uploaded: Boolean(docs[2]?.fileUrl || docs[0]?.fileUrl),
-        fileUrl: docs[2]?.fileUrl || docs[0]?.fileUrl,
-        fileType: docs[2]?.fileType || docs[0]?.fileType,
-      },
-    });
-    saveDraft({ uploadedDocs: docs });
   };
 
-  const handleDocumentChange = (docKey: string, updated: DocItemState) => {
-    setDocuments(prev => {
-      const nextDocs = {
-        ...prev,
-        [docKey]: updated,
-      };
-      saveDraft({ documents: nextDocs });
-      return nextDocs;
-    });
-  };
-
-  // ── Validation & Step Navigation ──
-  const handleNextStep = () => {
-    if (currentStep === 1) {
-      if (!fullName.trim()) {
-        Alert.alert('Full Name Required', 'Please enter your full legal name.');
-        return;
-      }
-      if (!phone.trim() || phone.replace(/\D/g, '').length < 10) {
-        Alert.alert('Valid Phone Required', 'Please enter a valid 10-digit mobile number.');
-        return;
-      }
-      if (email.trim() && !/\S+@\S+\.\S+/.test(email.trim())) {
-        Alert.alert('Invalid Email', 'Please enter a valid email address.');
-        return;
-      }
-      if (!dob.trim()) {
-        Alert.alert('Date of Birth Required', 'Please select your birth date.');
-        return;
-      }
-      if (!emergencyContactName.trim() || !emergencyContactPhone.trim()) {
-        Alert.alert('Emergency Contact Required', 'Please provide an emergency contact name and phone number.');
-        return;
-      }
-    } else if (currentStep === 2) {
-      const hasHouse = houseFlat.trim() || fullAddress.trim();
-      if (!hasHouse || !locality.trim() || !pincode.trim() || !selectedCity.trim()) {
-        Alert.alert('Complete Address Required', 'Please fill in your address, locality, pincode, and select your city.');
-        return;
-      }
-      if (pincode.replace(/\D/g, '').length < 6) {
-        Alert.alert('Valid Pincode Required', 'Please enter a valid 6-digit pincode.');
-        return;
-      }
-      if (preferredWorkCities.length === 0) {
-        Alert.alert('Preferred Work City Required', 'Please select at least one city where you want to provide services.');
-        return;
-      }
-    } else if (currentStep === 3) {
-      // Step 3 Validation: Services & Availability
-      if (selectedServices.length === 0) {
-        Alert.alert('Services Required', 'Please select at least one active service you provide.');
-        return;
-      }
-      if (!experienceYears || experienceYears <= 0) {
-        Alert.alert('Experience Required', 'Please select or enter your years of experience.');
-        return;
-      }
-      if (selectedLanguages.length === 0 && customLanguagesList.length === 0) {
-        Alert.alert('Language Required', 'Please select at least 1 language you speak.');
-        return;
-      }
-
-      // Validate working times: End time must be later than start time (Native AM/PM validation)
-      const pStart = parseTimeString(startTime);
-      const pEnd = parseTimeString(endTime);
-      if (pEnd.totalMinutes <= pStart.totalMinutes) {
-        Alert.alert(
-          'Invalid Working Hours',
-          `End time (${pEnd.display12}) cannot be earlier than or equal to start time (${pStart.display12}). Please adjust your schedule.`
-        );
-        return;
-      }
-    } else if (currentStep === 4) {
-      // Step 4 Validation: Simple Document Upload — accept any uploaded document, do not enforce rigid types
-      if (uploadedDocs.length === 0) {
-        Alert.alert(
-          'Document Required',
-          'Please upload your verification document to proceed.'
-        );
-        return;
-      }
+  // ── Step Navigation & Page-Wise Saving ──
+  const handleStep1Next = async () => {
+    if (!fullName.trim()) {
+      Alert.alert('Full Name Required', 'Please enter your full legal name.');
+      return;
+    }
+    if (!phone.trim() || phone.replace(/\D/g, '').length < 10) {
+      Alert.alert('Valid Phone Required', 'Please enter a valid 10-digit mobile number.');
+      return;
+    }
+    if (email.trim() && !/\S+@\S+\.\S+/.test(email.trim())) {
+      Alert.alert('Invalid Email', 'Please enter a valid email address.');
+      return;
+    }
+    if (!dob.trim()) {
+      Alert.alert('Date of Birth Required', 'Please enter your Date of Birth in DD-MM-YYYY format.');
+      return;
+    }
+    if (!/^\d{2}-\d{2}-\d{4}$/.test(dob.trim())) {
+      Alert.alert('Invalid Date Format', 'Please enter your Date of Birth in DD-MM-YYYY format (e.g. 15-06-1995).');
+      return;
+    }
+    if (!emergencyContactName.trim() || !emergencyContactPhone.trim()) {
+      Alert.alert('Emergency Contact Required', 'Please provide an emergency contact name and phone number.');
+      return;
     }
 
-    const nextStepNum = Math.min(currentStep + 1, 5);
-    setCurrentStep(nextStepNum);
-    saveDraft({ currentStep: nextStepNum });
+    const saved = await saveStepData(1);
+    if (saved) {
+      setCurrentStep(2);
+    }
   };
 
-  const handlePrevStep = () => {
-    const prevStepNum = Math.max(currentStep - 1, 1);
-    setCurrentStep(prevStepNum);
-    saveDraft({ currentStep: prevStepNum });
+  const handleStep2Next = async () => {
+    const hasHouse = houseFlat.trim() || fullAddress.trim();
+    if (!hasHouse || !locality.trim() || !pincode.trim() || !selectedCity.trim()) {
+      Alert.alert('Complete Address Required', 'Please fill in your address, locality, pincode, and select your city.');
+      return;
+    }
+    if (pincode.replace(/\D/g, '').length < 6) {
+      Alert.alert('Valid Pincode Required', 'Please enter a valid 6-digit pincode.');
+      return;
+    }
+    if (preferredWorkCities.length === 0) {
+      Alert.alert('Preferred Work City Required', 'Please select at least one city where you want to provide services.');
+      return;
+    }
+
+    const saved = await saveStepData(2);
+    if (saved) {
+      setCurrentStep(3);
+    }
   };
 
-  // ── Final Application Submission (Step 5 -> Supabase -> Step 6 Confirmation) ──
-  const handleFinalSubmission = async () => {
-    // 1. Bank Fields Validation
+  const handleStep3Next = async () => {
+    if (selectedServices.length === 0) {
+      Alert.alert('Services Required', 'Please select at least one service you provide.');
+      return;
+    }
+    if (!experienceRange) {
+      Alert.alert('Experience Required', 'Please select your years of experience.');
+      return;
+    }
+    if (selectedLanguages.length === 0 && customLanguagesList.length === 0) {
+      Alert.alert('Language Required', 'Please select at least 1 language you speak.');
+      return;
+    }
+
+    const pStart = parseTimeString(startTime);
+    const pEnd = parseTimeString(endTime);
+    if (pEnd.totalMinutes <= pStart.totalMinutes) {
+      Alert.alert(
+        'Invalid Working Hours',
+        `End time (${pEnd.display12}) cannot be earlier than or equal to start time (${pStart.display12}). Please adjust your schedule.`
+      );
+      return;
+    }
+
+    const saved = await saveStepData(3);
+    if (saved) {
+      setCurrentStep(4);
+    }
+  };
+
+  const handleStep4Next = async () => {
+    // Document upload is optional during registration; can be uploaded later from Partner Profile
+    const saved = await saveStepData(4);
+    if (saved) {
+      setCurrentStep(5);
+    }
+  };
+
+  const handleSkipStep4 = async () => {
+    const saved = await saveStepData(4);
+    if (saved) {
+      setCurrentStep(5);
+    }
+  };
+
+  const handleStep5Next = async () => {
     if (!bankAccountHolder.trim()) {
       Alert.alert('Account Holder Required', 'Please enter your account holder name.');
       return;
@@ -885,29 +946,6 @@ export const MaidRegistrationFormScreen: React.FC = () => {
       }
     }
 
-    // 2. Re-validate Document Completeness
-    if (uploadedDocs.length === 0) {
-      Alert.alert(
-        'Document Required',
-        'Please upload at least one verification document before submitting.'
-      );
-      setCurrentStep(4);
-      return;
-    }
-
-    // 3. Re-validate Working Hours (SECTION 2)
-    const pStart = parseTimeString(startTime);
-    const pEnd = parseTimeString(endTime);
-    if (pEnd.totalMinutes <= pStart.totalMinutes) {
-      Alert.alert(
-        'Invalid Working Hours',
-        `End time (${pEnd.display12}) cannot be earlier than or equal to start time (${pStart.display12}).`
-      );
-      setCurrentStep(3);
-      return;
-    }
-
-    // 4. Declarations Check
     if (!termsAccepted || !privacyAccepted || !accuracyConfirmed) {
       Alert.alert(
         'Declarations Required',
@@ -916,9 +954,24 @@ export const MaidRegistrationFormScreen: React.FC = () => {
       return;
     }
 
+    // Save complete Step 5 data and advance to Step 6: Review Application
+    const saved = await saveStepData(5);
+    if (saved) {
+      setCurrentStep(6);
+    }
+  };
+
+  // Back button handler (Preserves all state; never erases typed inputs)
+  const handlePrevStep = () => {
+    const prev = Math.max(currentStep - 1, 1);
+    setCurrentStep(prev);
+  };
+
+  // ── ATOMIC FINAL REGISTRATION SUBMISSION (Step 6 Review -> Submit Registration) ──
+  const handleFinalSubmission = async () => {
     setIsSubmitting(true);
     try {
-      // 3. Backend Active Service Verification
+      // 1. Backend Active Service Verification
       const selectedIds = selectedServices.map(s => s.serviceId);
       const { data: dbServices, error: dbServErr } = await supabase
         .from('services')
@@ -930,14 +983,28 @@ export const MaidRegistrationFormScreen: React.FC = () => {
         if (inactive.length > 0) {
           Alert.alert(
             'Service No Longer Active',
-            `The service "${inactive[0].name}" is currently deactivated in the Admin catalog. Please remove it and select active services.`
+            `The service "${inactive[0].name}" is currently deactivated in the Admin catalog. Please remove it and choose from available services.`
           );
           setIsSubmitting(false);
+          setCurrentStep(3);
           return;
         }
       }
 
-      const partnerCode = `GC-PARTNER-${Math.floor(1000 + Math.random() * 9000)}`;
+      const profileId = await getStableProfileId();
+      let partnerCode = maidProfile?.maidCode || generatedPartnerId;
+      if (!partnerCode) {
+        const { data: existingProfile } = await supabase
+          .from('maid_profiles')
+          .select('maid_code')
+          .eq('id', profileId)
+          .maybeSingle();
+        if (existingProfile?.maid_code) {
+          partnerCode = existingProfile.maid_code;
+        } else {
+          partnerCode = `GC-PARTNER-${Math.floor(1000 + Math.random() * 9000)}`;
+        }
+      }
       setGeneratedPartnerId(partnerCode);
 
       const allLanguages = [
@@ -947,6 +1014,9 @@ export const MaidRegistrationFormScreen: React.FC = () => {
 
       const fullAddressStr = `${houseFlat || fullAddress}${street ? ', ' + street : ''}, ${locality}, ${selectedCity} ${pincode}`;
       const citiesStr = preferredWorkCities.join(', ') || selectedCity;
+      const pStart = parseTimeString(startTime);
+      const pEnd = parseTimeString(endTime);
+      const ifscClean = ifscCode.trim().toUpperCase();
 
       const partnerProvidedServices = selectedServices.map(s => ({
         id: s.serviceId,
@@ -954,6 +1024,8 @@ export const MaidRegistrationFormScreen: React.FC = () => {
         serviceName: s.serviceName,
         category: s.category || '',
         experienceYears,
+        experienceRange,
+        subServices: s.subServices || [],
       }));
 
       const applicationPayload = {
@@ -964,7 +1036,7 @@ export const MaidRegistrationFormScreen: React.FC = () => {
         dob,
         gender,
         photoUrl: profilePhotoUrl || '',
-        idProofUrl: uploadedDocs[0]?.fileUrl || documents.aadhaarFront.fileUrl || '',
+        idProofUrl: uploadedDocs[0]?.fileUrl || documents?.aadhaarFront?.fileUrl || '',
         emergencyContact: `${emergencyContactName} (${emergencyContactPhone})`,
         emergencyContactName,
         emergencyContactPhone,
@@ -997,61 +1069,50 @@ export const MaidRegistrationFormScreen: React.FC = () => {
         servicesProvided: partnerProvidedServices,
         languagesSpoken: allLanguages,
         documents: uploadedDocs,
-        aadhaarFrontUrl: uploadedDocs[0]?.fileUrl || documents.aadhaarFront.fileUrl,
-        aadhaarBackUrl: uploadedDocs[1]?.fileUrl || documents.aadhaarBack.fileUrl,
-        panDocUrl: uploadedDocs[2]?.fileUrl || documents.pan.fileUrl,
+        aadhaarFrontUrl: uploadedDocs[0]?.fileUrl || documents?.aadhaarFront?.fileUrl || null,
+        aadhaarBackUrl: uploadedDocs[1]?.fileUrl || documents?.aadhaarBack?.fileUrl || null,
+        panDocUrl: uploadedDocs[2]?.fileUrl || documents?.pan?.fileUrl || null,
+        documentsSkipped: uploadedDocs.length === 0,
         termsAccepted,
         privacyAccepted,
         accuracyConfirmed,
         status: 'pending' as const,
       };
 
-      // 1. Check & preserve previous application history for re-application (TASK 3)
-      const isUuid = Boolean(user?.uid && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.uid));
-      const profileId = isUuid && user?.uid
-        ? user.uid
-        : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-            const r = (Math.random() * 16) | 0;
-            const v = c === 'x' ? r : (r & 0x3) | 0x8;
-            return v.toString(16);
-          });
-
+      // Check & preserve previous application history for re-application
       let existingHistory: any[] = [];
       let currentReappCount = 0;
 
-      if (isUuid && user?.uid) {
-        try {
-          const { data: existingMaidRow } = await supabase
-            .from('maid_profiles')
-            .select('id, application_history, reapplication_count, status, rejection_reason, rejected_at, applied_at, photo_url, services_provided, preferred_cities')
-            .eq('id', user.uid)
-            .maybeSingle();
+      try {
+        const { data: existingMaidRow } = await supabase
+          .from('maid_profiles')
+          .select('id, application_history, reapplication_count, status, rejection_reason, rejected_at, applied_at, photo_url, services_provided, preferred_cities')
+          .eq('id', profileId)
+          .maybeSingle();
 
-          if (existingMaidRow) {
-            existingHistory = Array.isArray(existingMaidRow.application_history)
-              ? [...existingMaidRow.application_history]
-              : [];
-            currentReappCount = existingMaidRow.reapplication_count || 0;
+        if (existingMaidRow) {
+          existingHistory = Array.isArray(existingMaidRow.application_history)
+            ? [...existingMaidRow.application_history]
+            : [];
+          currentReappCount = existingMaidRow.reapplication_count || 0;
 
-            // If previously rejected or completed application exists, archive into application_history
-            if (existingMaidRow.status === 'rejected' || existingMaidRow.applied_at) {
-              existingHistory.push({
-                version: currentReappCount + 1,
-                status: existingMaidRow.status || 'rejected',
-                rejectionReason: existingMaidRow.rejection_reason || 'Previous application submission',
-                rejectedAt: existingMaidRow.rejected_at || new Date().toISOString(),
-                appliedAt: existingMaidRow.applied_at || new Date().toISOString(),
-                photoUrl: existingMaidRow.photo_url || '',
-                servicesProvided: existingMaidRow.services_provided || [],
-                preferredCities: existingMaidRow.preferred_cities || [],
-                archivedAt: new Date().toISOString(),
-              });
-              currentReappCount += 1;
-            }
+          if (existingMaidRow.status === 'rejected' || existingMaidRow.applied_at) {
+            existingHistory.push({
+              version: currentReappCount + 1,
+              status: existingMaidRow.status || 'rejected',
+              rejectionReason: existingMaidRow.rejection_reason || 'Previous application submission',
+              rejectedAt: existingMaidRow.rejected_at || new Date().toISOString(),
+              appliedAt: existingMaidRow.applied_at || new Date().toISOString(),
+              photoUrl: existingMaidRow.photo_url || '',
+              servicesProvided: existingMaidRow.services_provided || [],
+              preferredCities: existingMaidRow.preferred_cities || [],
+              archivedAt: new Date().toISOString(),
+            });
+            currentReappCount += 1;
           }
-        } catch (histFetchErr) {
-          console.warn('Could not read existing application history:', histFetchErr);
         }
+      } catch (histFetchErr) {
+        console.warn('Could not read existing application history:', histFetchErr);
       }
 
       // Update Context with history metadata
@@ -1062,14 +1123,14 @@ export const MaidRegistrationFormScreen: React.FC = () => {
         applicationHistory: existingHistory,
       } as any);
 
-      // 2. Persist to Supabase `maid_profiles` table (status: 'pending' for Admin KYC Review)
+      // Persist Final Application to Supabase `maid_profiles` (status: 'pending' for Admin KYC Review)
       const dbPayload: any = {
         id: profileId,
         maid_code: partnerCode,
         full_name: fullName,
         phone: phone,
         email: email,
-        photo_url: profilePhotoUrl || '',
+        photo_url: profilePhotoUrl || null,
         dob: dob,
         gender: gender,
         emergency_contact: `${emergencyContactName} (${emergencyContactPhone})`,
@@ -1086,9 +1147,6 @@ export const MaidRegistrationFormScreen: React.FC = () => {
         service_radius_km: serviceRadiusKm,
         working_days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
         working_hours: `${pStart.display12} - ${pEnd.display12}`,
-        available_hours: `${pStart.display12} - ${pEnd.display12}`,
-        start_time: pStart.time24,
-        end_time: pEnd.time24,
         emergency_jobs_accepted: emergencyJobsAccepted,
         skills: selectedServices.map(s => s.serviceName),
         services_provided: partnerProvidedServices,
@@ -1097,350 +1155,435 @@ export const MaidRegistrationFormScreen: React.FC = () => {
         kyc_documents: {
           profilePhotoUrl: profilePhotoUrl || '',
           documents: uploadedDocs,
-          aadhaarFrontUrl: uploadedDocs[0]?.fileUrl || documents.aadhaarFront.fileUrl,
-          aadhaarBackUrl: uploadedDocs[1]?.fileUrl || documents.aadhaarBack.fileUrl,
-          panDocUrl: uploadedDocs[2]?.fileUrl || documents.pan.fileUrl,
+          aadhaarFrontUrl: uploadedDocs[0]?.fileUrl || documents?.aadhaarFront?.fileUrl || null,
+          aadhaarBackUrl: uploadedDocs[1]?.fileUrl || documents?.aadhaarBack?.fileUrl || null,
+          panDocUrl: uploadedDocs[2]?.fileUrl || documents?.pan?.fileUrl || null,
           upiId,
+          skipped: uploadedDocs.length === 0,
         },
-        aadhaar_doc_url: uploadedDocs[0]?.fileUrl || documents.aadhaarFront.fileUrl || '',
-        pan_doc_url: uploadedDocs[1]?.fileUrl || documents.pan.fileUrl || '',
+        aadhaar_doc_url: uploadedDocs[0]?.fileUrl || documents?.aadhaarFront?.fileUrl || null,
+        pan_doc_url: uploadedDocs[1]?.fileUrl || documents?.pan?.fileUrl || null,
         other_docs_urls: uploadedDocs.map(d => d.fileUrl),
         bank_account_name: bankAccountHolder,
         bank_account_number: accountNumber,
         bank_ifsc: ifscClean,
         bank_name: bankName,
         upi_id: upiId,
-        terms_accepted: termsAccepted,
-        privacy_accepted: privacyAccepted,
-        accuracy_confirmed: accuracyConfirmed,
+        health_safety_decl: true,
+        terms_accepted: true,
+        privacy_accepted: true,
+        accuracy_confirmed: true,
         status: 'pending',
-        correction_requested: false,
-        rejection_reason: null,
-        rejected_at: null,
-        rejected_by: null,
-        reapplication_count: currentReappCount,
+        application_status: 'pending',
+        kyc_status: uploadedDocs.length > 0 ? 'submitted' : 'pending',
+        applied_at: new Date().toISOString(),
         latest_applied_at: new Date().toISOString(),
+        submitted_at: new Date().toISOString(),
         application_history: existingHistory,
-        applied_at: (maidProfile as any)?.appliedAt || new Date().toISOString(),
+        reapplication_count: currentReappCount,
+        correction_requested: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       };
 
-      const { error: upsertErr } = await supabase.from('maid_profiles').upsert(dbPayload);
-      if (upsertErr) throw upsertErr;
+      const { error: dbError } = await supabase
+        .from('maid_profiles')
+        .upsert(dbPayload, { onConflict: 'id' });
 
-      // Update customer user_profile to mark maid_application_status
-      if (user?.uid) {
-        try {
-          await supabase
-            .from('user_profiles')
-            .update({
-              maid_application_status: 'pending',
-              profile_photo_url: profilePhotoUrl || undefined,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', user.uid);
-        } catch (uErr) {
-          console.warn('Notice updating user_profiles for partner application:', uErr);
-        }
+      if (dbError) {
+        console.error('[MaidRegistration] Supabase upsert failed:', dbError.code, dbError.message, dbError.details, dbError.hint);
+        throw new Error(`Registration save failed: ${dbError.message} (${dbError.code})`);
       }
 
-      // 3. Attempt insertion into `partner_services` table
+      // Update user_profiles maid_application_status in Supabase
       try {
-        const partnerServicesRows = selectedServices.map(s => ({
-          partner_id: dbPayload.id || partnerCode,
-          service_id: s.serviceId,
+        await supabase
+          .from('user_profiles')
+          .update({
+            maid_application_status: 'pending',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', user?.uid || profileId);
+      } catch (uErr) {
+        console.warn('Could not update user_profiles maid_application_status:', uErr);
+      }
+
+      // Notify Admin Panel immediately of new partner registration
+      try {
+        await supabase.from('notifications').insert({
+          recipient_id: 'admin',
+          recipient_role: 'admin',
+          title: 'New Partner Registration',
+          message: `${fullName || 'Partner'} (${phone}) submitted an application for review.`,
+          category: 'updates',
+          is_read: false,
           created_at: new Date().toISOString(),
-        }));
-        await supabase.from('partner_services').upsert(partnerServicesRows, { onConflict: 'partner_id,service_id' });
-      } catch (psErr) {
-        // Non-blocking if table is pending Supabase migration
+        });
+      } catch (notifErr) {
+        console.warn('Could not insert admin notification for partner registration:', notifErr);
       }
 
-      // 4. Clear local registration draft on successful final submission
-      try {
-        const draftKey = `@gc_partner_draft_${user?.uid || phone || 'default'}`;
-        await AsyncStorage.removeItem(draftKey);
-      } catch (cErr) {
-        // Non-blocking
-      }
+      // Clear local draft upon final submission
+      const draftKey = `@gc_partner_draft_${user?.uid || phone || 'default'}`;
+      await AsyncStorage.removeItem(draftKey);
 
       setAppStatus('pending');
       setIsSubmitted(true);
-      setCurrentStep(6);
+      setCurrentStep(7);
+      navigateTo('maid_status');
     } catch (err: any) {
-      Alert.alert('Submission Error', err.message || 'Failed to submit application. Please check network connection.');
+      console.error('Final registration error:', err);
+      Alert.alert(
+        'Submission Failed',
+        err.message || 'Unable to submit your registration. Please check your network connection and try again.'
+      );
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  // ── Step 6: Trigger OTP Verification Dialog before Final Submission ──
+  const handleInitiateOtpVerification = async () => {
+    if (!termsAccepted || !privacyAccepted || !accuracyConfirmed) {
+      Alert.alert(
+        'Declarations Required',
+        'Please confirm all declarations and accept the terms before submitting your application.'
+      );
+      return;
+    }
+
+    const cleanDigits = phone.replace(/\D/g, '').slice(-10);
+    if (cleanDigits.length !== 10) {
+      Alert.alert('Invalid Mobile Number', 'Please provide a valid 10-digit mobile number.');
+      return;
+    }
+
+    setIsSendingOtp(true);
+    setOtpError('');
+    setOtpDigits(['', '', '', '', '', '']);
+
+    try {
+      const fullPhone = `+91 ${cleanDigits}`;
+      await authService.sendOtp(fullPhone);
+      setIsSendingOtp(false);
+      setShowOtpModal(true);
+      setOtpCountdown(30);
+      setTimeout(() => {
+        otpInputRefs.current[0]?.focus();
+      }, 200);
+    } catch (err: any) {
+      setIsSendingOtp(false);
+      Alert.alert('OTP Failed', err?.message || 'Unable to send verification code. Please check your phone number.');
+    }
+  };
+
+  const handleOtpDigitChange = (text: string, index: number) => {
+    if (otpError) setOtpError('');
+    const cleaned = text.replace(/[^0-9]/g, '');
+
+    if (cleaned.length >= 6) {
+      const newDigits = cleaned.slice(0, 6).split('');
+      setOtpDigits(newDigits);
+      otpInputRefs.current[5]?.focus();
+      return;
+    }
+
+    const singleDigit = cleaned.slice(-1);
+    const newDigits = [...otpDigits];
+    newDigits[index] = singleDigit;
+    setOtpDigits(newDigits);
+
+    if (singleDigit && index < 5) {
+      otpInputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleOtpKeyPress = (e: any, index: number) => {
+    if (e.nativeEvent.key === 'Backspace') {
+      if (!otpDigits[index] && index > 0) {
+        const newDigits = [...otpDigits];
+        newDigits[index - 1] = '';
+        setOtpDigits(newDigits);
+        otpInputRefs.current[index - 1]?.focus();
+      }
+    }
+  };
+
+  const handleResendPartnerOtp = async () => {
+    if (otpCountdown > 0) return;
+    const cleanDigits = phone.replace(/\D/g, '').slice(-10);
+    const fullPhone = `+91 ${cleanDigits}`;
+    setOtpError('');
+    try {
+      await authService.sendOtp(fullPhone);
+      setOtpCountdown(30);
+    } catch (err: any) {
+      setOtpError('Failed to resend code. Please try again.');
+    }
+  };
+
+  const handleVerifyOtpAndSubmit = async () => {
+    const code = otpDigits.join('');
+    if (code.length !== 6) {
+      setOtpError('Please enter all 6 digits of the OTP.');
+      return;
+    }
+
+    setIsVerifyingOtp(true);
+    setOtpError('');
+
+    const cleanDigits = phone.replace(/\D/g, '').slice(-10);
+    const fullPhone = `+91 ${cleanDigits}`;
+
+    try {
+      const res = await authService.verifyOtp(fullPhone, code, true);
+      if (!res.success) {
+        setIsVerifyingOtp(false);
+        setOtpError(res.message || 'Incorrect OTP code. Please try again.');
+        return;
+      }
+
+      setShowOtpModal(false);
+      setIsVerifyingOtp(false);
+
+      // Save and submit application to Supabase now that OTP is verified
+      await handleFinalSubmission();
+    } catch (err: any) {
+      setIsVerifyingOtp(false);
+      setOtpError(err?.message || 'Incorrect OTP code. Please try again.');
+    }
+  };
+
   // ─────────────────────────────────────────────────────────────
-  // STEP 6: APPLICATION STATUS & CONFIRMATION SCREEN
+  // 6. CONFIRMATION STATUS SCREEN (Clean, Minimal, Flat Layout)
   // ─────────────────────────────────────────────────────────────
-  if (currentStep === 6 || isSubmitted) {
+  if (isSubmitted || currentStep === 7) {
+    const hasPersonal = Boolean(fullName && phone);
+    const hasAddress = Boolean(fullAddress || selectedCity || locality);
+    const hasServices = Boolean(selectedServices.length > 0);
+    const hasDocs = Boolean(uploadedDocs.length > 0 || documents?.aadhaarFront?.fileUrl);
+    const hasBank = Boolean(accountNumber || upiId);
+
+    const steps = [
+      { id: 'personal', label: 'Personal Details', isCompleted: hasPersonal || true },
+      { id: 'address', label: 'Address Details', isCompleted: hasAddress || true },
+      { id: 'services', label: 'Services & Experience', isCompleted: hasServices || true },
+      { id: 'documents', label: 'Document Verification', isCompleted: hasDocs },
+      { id: 'bank', label: 'Bank Details', isCompleted: hasBank || true },
+    ];
+
+    const submittedSteps = steps.filter(s => s.isCompleted);
+
     return (
       <View style={styles.container}>
-        {/* Top Header */}
+        {/* Minimal Header */}
         <View style={styles.topHeader}>
-          <TouchableOpacity
-            onPress={() => navigateTo('become_maid_info')}
-            style={styles.headerBackBtn}
-            activeOpacity={0.7}
-          >
-            <ArrowLeft size={18} color="#0F172A" />
-          </TouchableOpacity>
-          <View style={styles.headerTitleContainer}>
-            <Text style={styles.headerTitleText}>Partner Application</Text>
-            <Text style={styles.headerSubtitleText}>Status & Operations Verification</Text>
-          </View>
-          <View style={styles.reviewPill}>
-            <Sparkles size={11} color="#B45309" />
-            <Text style={styles.reviewPillText}>
-              {appStatus === 'approved'
-                ? 'ACTIVE'
-                : appStatus === 'correction_requested'
-                ? 'ACTION REQUIRED'
-                : appStatus === 'rejected'
-                ? 'DECLINED'
-                : 'UNDER REVIEW'}
-            </Text>
+          <View style={styles.headerInner}>
+            <TouchableOpacity
+              onPress={() => navigateTo('home')}
+              style={styles.headerBackBtn}
+              activeOpacity={0.7}
+              accessibilityLabel="Back to Home"
+            >
+              <ArrowLeft size={18} color="#0F172A" />
+            </TouchableOpacity>
+            <View style={styles.headerTitleContainer}>
+              <Text style={styles.headerTitleText}>Partner Application</Text>
+            </View>
           </View>
         </View>
 
-        <ScrollView contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
-          {/* Status Hero Card */}
-          <View style={styles.reviewHeroCard}>
-            <View
-              style={[
-                styles.reviewIconRing,
-                appStatus === 'approved' && { backgroundColor: '#DCFCE7' },
-                appStatus === 'rejected' && { backgroundColor: '#FEE2E2' },
-              ]}
-            >
-              {appStatus === 'approved' ? (
-                <ShieldCheck size={36} color="#166534" />
-              ) : appStatus === 'rejected' ? (
-                <XCircle size={36} color="#DC2626" />
-              ) : (
-                <Clock size={36} color="#D97706" />
-              )}
-            </View>
-
-            <Text style={styles.reviewHeroTitle}>
-              {appStatus === 'approved'
-                ? 'Application Approved!'
-                : appStatus === 'correction_requested'
-                ? 'Correction Requested by Admin'
-                : appStatus === 'rejected'
-                ? 'Application Rejected'
-                : 'Pending Operations Verification'}
-            </Text>
-            <Text style={styles.reviewHeroSub}>
-              Hello <Text style={{ fontWeight: '800', color: '#0F172A' }}>{fullName || user?.name}</Text>!{' '}
-              {appStatus === 'approved'
-                ? 'Your partner profile has been verified and activated. You can now go online to accept service bookings.'
-                : appStatus === 'correction_requested'
-                ? maidProfile?.adminNotes || 'Admin has requested corrections to your submitted documents. Please edit and resubmit.'
-                : appStatus === 'rejected'
-                ? maidProfile?.rejectionReason || 'Your application did not meet our verification criteria. Contact support for help.'
-                : 'Your multi-service registration application has been received and is currently under verification by our Safety Operations team.'}
-            </Text>
-
-            {appStatus === 'pending' && (
-              <View style={styles.estTimeBadge}>
-                <Sparkles size={13} color="#166534" />
-                <Text style={styles.estTimeText}>Estimated Review Time: 2 to 4 Hours</Text>
-              </View>
-            )}
+        {/* Minimal Flat Content (No Large Box / Card) */}
+        <View style={{ flex: 1, paddingHorizontal: 24, paddingTop: 36, alignItems: 'flex-start' }}>
+          <View
+            style={{
+              width: 52,
+              height: 52,
+              borderRadius: 26,
+              backgroundColor: '#FEF3C7',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 20,
+            }}
+          >
+            <Clock size={28} color="#D97706" strokeWidth={2.2} />
           </View>
 
-          {/* Action Buttons based on status */}
-          {appStatus === 'correction_requested' && (
-            <TouchableOpacity
-              style={styles.resubmitBtn}
-              onPress={() => {
-                setIsSubmitted(false);
-                setCurrentStep(1);
-              }}
-              activeOpacity={0.88}
-            >
-              <Text style={styles.resubmitBtnText}>Edit & Resubmit Application</Text>
-              <ArrowRight size={18} color="#FFFFFF" />
-            </TouchableOpacity>
-          )}
+          <Text
+            style={{
+              fontSize: 22,
+              fontWeight: '800',
+              color: '#0F172A',
+              letterSpacing: -0.3,
+              marginBottom: 10,
+            }}
+          >
+            Application Under Review
+          </Text>
 
-          {appStatus === 'rejected' && (
-            <TouchableOpacity
-              style={[styles.resubmitBtn, { backgroundColor: '#168A68' }]}
-              onPress={() => {
-                setIsSubmitted(false);
-                setCurrentStep(1);
-              }}
-              activeOpacity={0.88}
-            >
-              <Text style={styles.resubmitBtnText}>Re-Apply as Partner</Text>
-              <ArrowRight size={18} color="#FFFFFF" />
-            </TouchableOpacity>
-          )}
-
-          {appStatus === 'approved' && (
-            <TouchableOpacity
-              style={styles.approvedDashboardBtn}
-              onPress={() => navigateTo('maid_home')}
-              activeOpacity={0.88}
-            >
-              <Text style={styles.approvedDashboardBtnText}>Go to Partner Dashboard</Text>
-              <ChevronRight size={18} color="#FFFFFF" />
-            </TouchableOpacity>
-          )}
-
-          {/* Application Breakdown Summary */}
-          <View style={styles.reviewStepsBox}>
-            <Text style={styles.reviewStepsBoxTitle}>Submitted Application Breakdown</Text>
-
-            {/* Step 1: Personal */}
-            <View style={styles.reviewStepRow}>
-              <View style={styles.reviewCheckCircle}>
-                <Check size={13} color="#166534" strokeWidth={3} />
-              </View>
-              <View style={styles.reviewStepTextCol}>
-                <Text style={styles.reviewStepTitle}>Partner ID & Personal Info</Text>
-                <Text style={styles.reviewStepSub}>
-                  ID #{generatedPartnerId || maidProfile?.maidCode || 'Pending'} • {fullName} ({phone})
+          {/* Submitted Steps List with ✓ tick marks */}
+          <View style={{ width: '100%', marginTop: 18 }}>
+            {submittedSteps.map(step => (
+              <View
+                key={step.id}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  paddingVertical: 14,
+                  borderBottomWidth: 1,
+                  borderBottomColor: '#F1F5F9',
+                }}
+              >
+                <View
+                  style={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: 11,
+                    backgroundColor: '#DCFCE7',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginRight: 12,
+                  }}
+                >
+                  <Check size={14} color="#166534" strokeWidth={2.8} />
+                </View>
+                <Text
+                  style={{
+                    fontSize: 14.5,
+                    fontWeight: '600',
+                    color: '#1E293B',
+                  }}
+                >
+                  {step.label}
                 </Text>
               </View>
-            </View>
-
-            {/* Step 2: Address & City */}
-            <View style={styles.reviewStepRow}>
-              <View style={styles.reviewCheckCircle}>
-                <Check size={13} color="#166534" strokeWidth={3} />
-              </View>
-              <View style={styles.reviewStepTextCol}>
-                <Text style={styles.reviewStepTitle}>Preferred Work City & Address</Text>
-                <Text style={styles.reviewStepSub}>
-                  Work Cities: {preferredWorkCities.length > 0 ? preferredWorkCities.join(', ') : (selectedCity || 'Selected Cities')} • Residential: {selectedCity || locality} ({pincode})
-                </Text>
-              </View>
-            </View>
-
-            {/* Step 3: Selected Services */}
-            <View style={styles.reviewStepRow}>
-              <View style={styles.reviewCheckCircle}>
-                <Check size={13} color="#166534" strokeWidth={3} />
-              </View>
-              <View style={styles.reviewStepTextCol}>
-                <Text style={styles.reviewStepTitle}>
-                  Services Provided ({selectedServices.length > 0 ? selectedServices.length : 'Configured'})
-                </Text>
-                <Text style={styles.reviewStepSub}>
-                  {selectedServices.length > 0
-                    ? selectedServices.map(s => s.serviceName).join(', ')
-                    : 'Active Supabase Services Connected'}
-                </Text>
-              </View>
-            </View>
-
-            {/* Step 3: Availability & Hours */}
-            <View style={styles.reviewStepRow}>
-              <View style={styles.reviewCheckCircle}>
-                <Check size={13} color="#166534" strokeWidth={3} />
-              </View>
-              <View style={styles.reviewStepTextCol}>
-                <Text style={styles.reviewStepTitle}>Availability & Dispatch</Text>
-                <Text style={styles.reviewStepSub}>
-                  Status: {availabilityStatus} • Hours: {startTime} - {endTime} • Radius: {serviceRadiusKm} KM
-                </Text>
-              </View>
-            </View>
-
-            {/* Step 4: Documents */}
-            <View style={styles.reviewStepRow}>
-              <View style={styles.reviewCheckCircle}>
-                <Check size={13} color="#166534" strokeWidth={3} />
-              </View>
-              <View style={styles.reviewStepTextCol}>
-                <Text style={styles.reviewStepTitle}>Document Verification</Text>
-                <Text style={styles.reviewStepSub}>
-                  Aadhaar Card (Front/Back) & PAN Card attached for KYC
-                </Text>
-              </View>
-            </View>
-
-            {/* Step 5: Bank Details */}
-            <View style={[styles.reviewStepRow, { borderBottomWidth: 0 }]}>
-              <View style={styles.reviewCheckCircle}>
-                <Check size={13} color="#166534" strokeWidth={3} />
-              </View>
-              <View style={styles.reviewStepTextCol}>
-                <Text style={styles.reviewStepTitle}>Payout Bank Account</Text>
-                <Text style={styles.reviewStepSub}>
-                  {bankName || 'Verified Bank'} (A/C ...{accountNumber.slice(-4) || 'XXXX'}) • IFSC: {ifscCode || 'Verified'}
-                </Text>
-              </View>
-            </View>
+            ))}
           </View>
-        </ScrollView>
+        </View>
+
+        {/* Bottom Non-Actionable Status Indicator */}
+        <View
+          style={{
+            paddingHorizontal: 24,
+            paddingBottom: Platform.OS === 'ios' ? 28 : 20,
+            paddingTop: 12,
+            backgroundColor: '#FFFFFF',
+            borderTopWidth: 1,
+            borderTopColor: '#F8FAFC',
+          }}
+        >
+          <View
+            style={{
+              height: 48,
+              borderRadius: 12,
+              backgroundColor: '#F8FAFC',
+              borderWidth: 1,
+              borderColor: '#E2E8F0',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 14.5,
+                fontWeight: '700',
+                color: '#64748B',
+              }}
+            >
+              In Progress
+            </Text>
+          </View>
+        </View>
       </View>
     );
   }
 
   // ─────────────────────────────────────────────────────────────
-  // 5-STEP REGISTRATION FORM WIZARD
+  // 5-STEP REGISTRATION WIZARD + STEP 6 REVIEW SCREEN
   // ─────────────────────────────────────────────────────────────
   return (
-    <View style={styles.container}>
-      {/* Top Header */}
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      {/* 1. Compact, Premium Registration Header */}
       <View style={styles.topHeader}>
-        <TouchableOpacity
-          onPress={() => {
-            if (currentStep > 1) handlePrevStep();
-            else navigateTo('become_maid_info');
-          }}
-          style={styles.headerBackBtn}
-          activeOpacity={0.7}
-        >
-          <ArrowLeft size={18} color="#0F172A" />
-        </TouchableOpacity>
-        <View style={styles.headerTitleContainer}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <View style={styles.headerInner}>
+          <TouchableOpacity
+            onPress={() => {
+              if (currentStep > 1) handlePrevStep();
+              else navigateTo('become_maid_info');
+            }}
+            style={styles.headerBackBtn}
+            activeOpacity={0.7}
+            accessibilityLabel="Go Back"
+          >
+            <ArrowLeft size={18} color="#0F172A" />
+          </TouchableOpacity>
+
+          <View style={styles.headerTitleContainer}>
             <Text style={styles.headerTitleText}>Partner Registration</Text>
-            {draftStatus === 'saving' && (
-              <Text style={styles.headerDraftStatus}>• Saving draft...</Text>
-            )}
-            {draftStatus === 'saved' && (
-              <Text style={styles.headerDraftStatusSaved}>• Draft saved</Text>
-            )}
+            <Text style={styles.headerSubtitleText}>
+              {currentStep === 1 && 'Personal Details'}
+              {currentStep === 2 && 'Address & Work Area'}
+              {currentStep === 3 && 'Services & Availability'}
+              {currentStep === 4 && 'Document Verification'}
+              {currentStep === 5 && 'Bank & Declarations'}
+              {currentStep === 6 && 'Review Application'}
+              {currentStep <= 5 ? ` • Step ${currentStep} of 5` : ' • Final Step'}
+            </Text>
           </View>
-          <Text style={styles.headerSubtitleText}>Step {currentStep} of 5</Text>
+
+          <View style={styles.stepBadge}>
+            <Text style={styles.stepBadgeText}>
+              {currentStep <= 5 ? `${currentStep} / 5` : 'Review'}
+            </Text>
+          </View>
         </View>
-        <View style={styles.stepBadge}>
-          <Text style={styles.stepBadgeText}>{currentStep} / 5</Text>
+
+        {/* Progress Bar Indicator directly attached to header */}
+        <View style={styles.progressBarContainer}>
+          <View
+            style={[
+              styles.progressBarFill,
+              { width: `${Math.min((currentStep / 5) * 100, 100)}%` },
+            ]}
+          />
         </View>
       </View>
 
-      {/* Progress Bar Indicator */}
-      <View style={styles.progressBarContainer}>
-        <View style={[styles.progressBarFill, { width: `${(currentStep / 5) * 100}%` }]} />
-      </View>
-
-      <ScrollView contentContainerStyle={styles.formScrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        ref={scrollViewRef}
+        style={styles.scrollContainer}
+        contentContainerStyle={[
+          styles.formScrollContent,
+          { paddingBottom: isKeyboardOpen ? 40 : 24 },
+        ]}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        showsVerticalScrollIndicator={false}
+      >
         {/* ── STEP 1: PERSONAL DETAILS ── */}
         {currentStep === 1 && (
-          <View style={styles.stepCard}>
+          <View style={styles.stepSection}>
             <View style={styles.stepHeaderRow}>
-              <User size={20} color="#168A68" />
-              <Text style={styles.stepTitle}>Step 1: Personal Details</Text>
+              <View style={styles.stepIconWrap}>
+                <User size={18} color="#168A68" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.stepTitle}>Personal Details</Text>
+                <Text style={styles.stepSubTitle}>Enter your basic contact and identity information.</Text>
+              </View>
             </View>
-            <Text style={styles.stepSubTitle}>Enter your basic contact and identity information.</Text>
 
-            {/* Partner Profile Photo Picker (Optional per Section 12) */}
+            {/* Partner Profile Photo Picker */}
             <ProfilePhotoPicker
               value={profilePhotoUrl}
               onChange={url => {
                 setProfilePhotoUrl(url);
                 setIsPhotoUploaded(Boolean(url));
-                saveDraft({ profilePhotoUrl: url });
               }}
+              onDelete={handlePhotoDelete}
               label="Partner Profile Photo (Optional)"
               subLabel="Optional: Take a live photo with camera"
               userType="partner"
@@ -1455,10 +1598,8 @@ export const MaidRegistrationFormScreen: React.FC = () => {
               placeholder="e.g. Saroja Devi"
               placeholderTextColor="#94A3B8"
               value={fullName}
-              onChangeText={val => {
-                setFullName(val);
-                saveDraft({ fullName: val });
-              }}
+              onFocus={handleInputFocus}
+              onChangeText={setFullName}
             />
 
             <Text style={styles.inputLabel}>Mobile Phone Number *</Text>
@@ -1469,10 +1610,8 @@ export const MaidRegistrationFormScreen: React.FC = () => {
               keyboardType="phone-pad"
               maxLength={10}
               value={phone}
-              onChangeText={val => {
-                setPhone(val);
-                saveDraft({ phone: val });
-              }}
+              onFocus={handleInputFocus}
+              onChangeText={setPhone}
             />
 
             <Text style={styles.inputLabel}>Email Address (Optional)</Text>
@@ -1483,22 +1622,21 @@ export const MaidRegistrationFormScreen: React.FC = () => {
               keyboardType="email-address"
               autoCapitalize="none"
               value={email}
-              onChangeText={val => {
-                setEmail(val);
-                saveDraft({ email: val });
-              }}
+              onFocus={handleInputFocus}
+              onChangeText={setEmail}
             />
 
-            <Text style={styles.inputLabel}>Date of Birth *</Text>
+            <Text style={styles.inputLabel}>Date of Birth (DD-MM-YYYY) *</Text>
             <TouchableOpacity
               style={styles.dobSelectorBtn}
-              onPress={() => setShowDobModal(true)}
+              onPress={openDobModal}
               activeOpacity={0.8}
             >
-              <CalendarIcon size={16} color="#168A68" />
+              <CalendarIcon size={18} color="#168A68" />
               <Text style={[styles.dobSelectorText, !dob && { color: '#94A3B8' }]}>
-                {dob ? dob : 'Select Date of Birth (YYYY-MM-DD)'}
+                {dob ? dob : 'DD-MM-YYYY (e.g. 15-06-1995)'}
               </Text>
+              <ChevronDown size={16} color="#64748B" style={{ marginLeft: 'auto' }} />
             </TouchableOpacity>
 
             <Text style={styles.inputLabel}>Gender *</Text>
@@ -1507,10 +1645,7 @@ export const MaidRegistrationFormScreen: React.FC = () => {
                 <TouchableOpacity
                   key={g}
                   style={[styles.genderChip, gender === g && styles.genderChipSelected]}
-                  onPress={() => {
-                    setGender(g);
-                    saveDraft({ gender: g });
-                  }}
+                  onPress={() => setGender(g)}
                   activeOpacity={0.8}
                 >
                   <Text style={[styles.genderChipText, gender === g && styles.genderChipTextSelected]}>
@@ -1526,10 +1661,8 @@ export const MaidRegistrationFormScreen: React.FC = () => {
               placeholder="e.g. Ramesh Kumar (Husband / Brother)"
               placeholderTextColor="#94A3B8"
               value={emergencyContactName}
-              onChangeText={val => {
-                setEmergencyContactName(val);
-                saveDraft({ emergencyContactName: val });
-              }}
+              onFocus={handleInputFocus}
+              onChangeText={setEmergencyContactName}
             />
 
             <Text style={styles.inputLabel}>Emergency Contact Phone *</Text>
@@ -1540,154 +1673,105 @@ export const MaidRegistrationFormScreen: React.FC = () => {
               keyboardType="phone-pad"
               maxLength={10}
               value={emergencyContactPhone}
-              onChangeText={val => {
-                setEmergencyContactPhone(val);
-                saveDraft({ emergencyContactPhone: val });
-              }}
+              onFocus={handleInputFocus}
+              onChangeText={setEmergencyContactPhone}
             />
           </View>
         )}
 
-        {/* ── STEP 2: ADDRESS DETAILS & PREFERRED WORK CITY ── */}
+        {/* ── STEP 2: ADDRESS & WORK CITY ── */}
         {currentStep === 2 && (
-          <View style={styles.step2Container}>
-            {/* Section 1: Address Details Card */}
-            <View style={styles.stepCard}>
-              <View style={styles.stepHeaderRow}>
-                <MapPin size={20} color="#168A68" />
-                <Text style={styles.stepTitle}>Address Details</Text>
+          <View style={styles.stepSection}>
+            <View style={styles.stepHeaderRow}>
+              <View style={styles.stepIconWrap}>
+                <MapPin size={18} color="#168A68" />
               </View>
-              <Text style={styles.stepSubTitle}>Enter your residential address information.</Text>
-
-              <AddressEntryForm
-                initialValues={{
-                  houseFlat,
-                  street,
-                  locality,
-                  city: selectedCity,
-                  district: selectedDistrict,
-                  state: selectedState,
-                  pincode,
-                  postOffice: selectedPostOffice,
-                }}
-                showSubmitButton={false}
-                onChange={data => {
-                  setHouseFlat(data.houseFlat);
-                  setStreet(data.street);
-                  setLocality(data.locality);
-                  setSelectedCity(data.city);
-                  setSelectedDistrict(data.district || '');
-                  setSelectedState(data.state);
-                  setPincode(data.pincode);
-                  setSelectedPostOffice(data.postOffice || '');
-                  setFullAddress(`${data.houseFlat}${data.street ? ', ' + data.street : ''}`);
-                  saveDraft({
-                    houseFlat: data.houseFlat,
-                    street: data.street,
-                    locality: data.locality,
-                    selectedCity: data.city,
-                    selectedDistrict: data.district || '',
-                    selectedState: data.state,
-                    pincode: data.pincode,
-                    selectedPostOffice: data.postOffice || '',
-                    fullAddress: `${data.houseFlat}${data.street ? ', ' + data.street : ''}`,
-                  });
-                }}
-              />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.stepTitle}>Address & Work Cities</Text>
+                <Text style={styles.stepSubTitle}>
+                  Enter your residential address and choose your operating cities.
+                </Text>
+              </View>
             </View>
 
-            {/* Section 2: Preferred Work City Card */}
-            <View style={styles.stepCard}>
-              <View style={styles.stepHeaderRow}>
-                <Globe size={20} color="#168A68" />
-                <Text style={styles.stepTitle}>Preferred Work City</Text>
-              </View>
+            {/* Standard Address Form */}
+            <AddressEntryForm
+              initialValues={{
+                houseFlat,
+                street,
+                locality,
+                city: selectedCity,
+                district: selectedDistrict,
+                state: selectedState,
+                pincode,
+                postOffice: selectedPostOffice,
+              }}
+              onSubmit={handlePartnerAddressSubmit}
+              submitButtonText="Save Address & Continue"
+              isSubmitting={isSavingStep}
+              cityOptions={availableCities}
+              onInputFocus={handleInputFocus}
+            />
+
+            {/* Multi-City Work Location Selection */}
+            <View style={{ marginTop: 24 }}>
+              <Text style={styles.sectionHeaderLabel}>Preferred Operational Cities *</Text>
               <Text style={styles.workCityHelperText}>
-                Select all cities where you want to provide services.
+                Select all cities where you are available to accept service appointments.
               </Text>
 
               <View style={styles.cityChecklistContainer}>
-                {availableCities.map(cityName => {
-                  const isSelected = preferredWorkCities.includes(cityName);
+                {availableCities.map(city => {
+                  const isChecked = preferredWorkCities.includes(city);
                   return (
                     <TouchableOpacity
-                      key={cityName}
-                      style={[
-                        styles.cityCheckboxRow,
-                        isSelected && styles.cityCheckboxRowSelected,
-                      ]}
-                      onPress={() => toggleWorkCity(cityName)}
+                      key={city}
+                      style={[styles.cityCheckboxRow, isChecked && styles.cityCheckboxRowSelected]}
+                      onPress={() => toggleWorkCity(city)}
                       activeOpacity={0.8}
-                      accessibilityRole="checkbox"
-                      accessibilityState={{ checked: isSelected }}
                     >
-                      <View
-                        style={[
-                          styles.cityCheckboxSquare,
-                          isSelected && styles.cityCheckboxSquareSelected,
-                        ]}
-                      >
-                        {isSelected && <Check size={13} color="#FFFFFF" strokeWidth={3} />}
+                      <View style={[styles.cityCheckboxSquare, isChecked && styles.cityCheckboxSquareSelected]}>
+                        {isChecked && <Check size={14} color="#FFFFFF" strokeWidth={3} />}
                       </View>
-                      <Text
-                        style={[
-                          styles.cityCheckboxLabel,
-                          isSelected && styles.cityCheckboxLabelSelected,
-                        ]}
-                      >
-                        {cityName}
+                      <Text style={[styles.cityCheckboxLabel, isChecked && styles.cityCheckboxLabelSelected]}>
+                        {city}
                       </Text>
                     </TouchableOpacity>
                   );
                 })}
               </View>
             </View>
-
-            {/* Step 2 Continue Button */}
-            <TouchableOpacity
-              style={[
-                styles.step2ContinueBtn,
-                preferredWorkCities.length === 0 && styles.step2ContinueBtnDisabled,
-              ]}
-              onPress={handleStep2Continue}
-              disabled={preferredWorkCities.length === 0}
-              activeOpacity={0.88}
-            >
-              <Text
-                style={[
-                  styles.step2ContinueBtnText,
-                  preferredWorkCities.length === 0 && styles.step2ContinueBtnTextDisabled,
-                ]}
-              >
-                Continue →
-              </Text>
-            </TouchableOpacity>
           </View>
         )}
 
         {/* ── STEP 3: SERVICES & AVAILABILITY ── */}
         {currentStep === 3 && (
-          <View style={styles.stepCard}>
+          <View style={styles.stepSection}>
             <View style={styles.stepHeaderRow}>
-              <Briefcase size={20} color="#168A68" />
-              <Text style={styles.stepTitle}>Step 3: Services & Availability</Text>
+              <View style={styles.stepIconWrap}>
+                <Briefcase size={18} color="#168A68" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.stepTitle}>Services & Availability</Text>
+                <Text style={styles.stepSubTitle}>
+                  Configure the services you provide and your operating schedule.
+                </Text>
+              </View>
             </View>
-            <Text style={styles.stepSubTitle}>
-              Select active services you provide and configure your operating schedule.
-            </Text>
 
-            {/* DYNAMIC SERVICE SELECTOR (Admin Supabase Service Catalog Source of Truth) */}
+            {/* Dynamic Services Selector */}
             <Text style={styles.sectionHeaderLabel}>Services You Provide *</Text>
             <DynamicServiceSelector
               selectedServiceIds={selectedServiceIds}
-              onChange={(ids, items) => {
+              selectedSubServiceIds={selectedSubServiceIds}
+              onChange={(ids, items, subIds) => {
                 setSelectedServiceIds(ids);
                 setSelectedServices(items);
-                saveDraft({ selectedServiceIds: ids, selectedServices: items });
+                if (subIds) setSelectedSubServiceIds(subIds);
               }}
             />
 
-            {/* EXPERIENCE (Required) */}
+            {/* Experience */}
             <Text style={styles.sectionHeaderLabel}>Experience (Years) *</Text>
             <View style={styles.experienceRow}>
               {EXPERIENCE_OPTIONS.map(exp => (
@@ -1695,27 +1779,34 @@ export const MaidRegistrationFormScreen: React.FC = () => {
                   key={exp}
                   style={[
                     styles.experienceChip,
-                    experienceYears === exp && styles.experienceChipSelected,
+                    experienceRange === exp && styles.experienceChipSelected,
                   ]}
                   onPress={() => {
-                    setExperienceYears(exp);
-                    saveDraft({ experienceYears: exp });
+                    setExperienceRange(exp);
+                    let num = 3;
+                    if (exp.includes('0–1')) num = 1;
+                    else if (exp.includes('1–2')) num = 2;
+                    else if (exp.includes('2–3')) num = 3;
+                    else if (exp.includes('3–5')) num = 4;
+                    else if (exp.includes('5–10')) num = 7;
+                    else if (exp.includes('10+')) num = 10;
+                    setExperienceYears(num);
                   }}
                   activeOpacity={0.8}
                 >
                   <Text
                     style={[
                       styles.experienceChipText,
-                      experienceYears === exp && styles.experienceChipTextSelected,
+                      experienceRange === exp && styles.experienceChipTextSelected,
                     ]}
                   >
-                    {exp} {exp === 1 ? 'Year' : 'Years'}
+                    {exp}
                   </Text>
                 </TouchableOpacity>
               ))}
             </View>
 
-            {/* LANGUAGES (Multiple selection: Telugu, Hindi, English, Other) */}
+            {/* Languages */}
             <Text style={styles.sectionHeaderLabel}>Languages Spoken *</Text>
             <View style={styles.langChecklist}>
               {STANDARD_LANGUAGES.map(lang => {
@@ -1736,7 +1827,6 @@ export const MaidRegistrationFormScreen: React.FC = () => {
               })}
             </View>
 
-            {/* Custom Language input if Other selected */}
             {selectedLanguages.includes('Other') && (
               <View style={styles.customLangSection}>
                 <Text style={styles.inputLabel}>Enter Additional Language</Text>
@@ -1746,24 +1836,27 @@ export const MaidRegistrationFormScreen: React.FC = () => {
                     placeholder="e.g. Kannada, Marathi, Tamil..."
                     placeholderTextColor="#94A3B8"
                     value={customLanguageInput}
+                    onFocus={handleInputFocus}
                     onChangeText={setCustomLanguageInput}
                   />
                   <TouchableOpacity
-                    style={styles.addCustomLangBtn}
+                    style={styles.addLangBtn}
                     onPress={handleAddCustomLanguage}
-                    activeOpacity={0.85}
+                    activeOpacity={0.8}
                   >
-                    <Text style={styles.addCustomLangBtnText}>Add</Text>
+                    <Text style={styles.addLangBtnText}>Add</Text>
                   </TouchableOpacity>
                 </View>
-
                 {customLanguagesList.length > 0 && (
-                  <View style={styles.chipsWrap}>
-                    {customLanguagesList.map(cl => (
-                      <View key={cl} style={styles.customLangChip}>
-                        <Text style={styles.customLangChipText}>{cl}</Text>
-                        <TouchableOpacity onPress={() => handleRemoveCustomLanguage(cl)}>
-                          <XCircle size={14} color="#64748B" />
+                  <View style={styles.customLangChipsWrap}>
+                    {customLanguagesList.map(item => (
+                      <View key={item} style={styles.customLangChip}>
+                        <Text style={styles.customLangChipText}>{item}</Text>
+                        <TouchableOpacity
+                          onPress={() => handleRemoveCustomLanguage(item)}
+                          style={{ padding: 2 }}
+                        >
+                          <Text style={{ fontSize: 13, color: '#047857', fontWeight: '800' }}>×</Text>
                         </TouchableOpacity>
                       </View>
                     ))}
@@ -1772,50 +1865,7 @@ export const MaidRegistrationFormScreen: React.FC = () => {
               </View>
             )}
 
-            {/* AVAILABILITY (Available / Not Available) */}
-            <Text style={styles.sectionHeaderLabel}>Partner Availability *</Text>
-            <View style={styles.availabilityRow}>
-              {(['Available', 'Not Available'] as const).map(opt => (
-                <TouchableOpacity
-                  key={opt}
-                  style={[
-                    styles.availabilityCard,
-                    availabilityStatus === opt && styles.availabilityCardSelected,
-                  ]}
-                  onPress={() => {
-                    setAvailabilityStatus(opt);
-                    saveDraft({ availabilityStatus: opt });
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <View
-                    style={[
-                      styles.radioCircle,
-                      availabilityStatus === opt && styles.radioCircleSelected,
-                    ]}
-                  >
-                    {availabilityStatus === opt && <View style={styles.radioDot} />}
-                  </View>
-                  <View>
-                    <Text
-                      style={[
-                        styles.availabilityTitle,
-                        availabilityStatus === opt && styles.availabilityTitleSelected,
-                      ]}
-                    >
-                      {opt}
-                    </Text>
-                    <Text style={styles.availabilitySub}>
-                      {opt === 'Available'
-                        ? 'Ready to accept jobs once approved'
-                        : 'Temporarily on pause'}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {/* SERVICE RADIUS (Initial dispatch radius: 5 KM) */}
+            {/* Service Radius */}
             <View style={styles.radiusHeaderRow}>
               <Text style={styles.sectionHeaderLabel}>Service Radius</Text>
               <Text style={styles.radiusValueBadge}>{serviceRadiusKm} KM</Text>
@@ -1825,10 +1875,7 @@ export const MaidRegistrationFormScreen: React.FC = () => {
                 <TouchableOpacity
                   key={r}
                   style={[styles.radiusChip, serviceRadiusKm === r && styles.radiusChipSelected]}
-                  onPress={() => {
-                    setServiceRadiusKm(r);
-                    saveDraft({ serviceRadiusKm: r });
-                  }}
+                  onPress={() => setServiceRadiusKm(r)}
                   activeOpacity={0.8}
                 >
                   <Text
@@ -1843,47 +1890,40 @@ export const MaidRegistrationFormScreen: React.FC = () => {
               ))}
             </View>
 
-            {/* WORKING TIME (Native AM/PM Start Time & End Time pickers with validation) */}
+            {/* Working Time */}
             <Text style={styles.sectionHeaderLabel}>Working Time *</Text>
             <NativeTimePicker
               startTime={startTime}
               endTime={endTime}
-              onStartTimeChange={(time24, display12) => {
-                setStartTime(display12);
-                saveDraft({ startTime: display12 });
-              }}
-              onEndTimeChange={(time24, display12) => {
-                setEndTime(display12);
-                saveDraft({ endTime: display12 });
-              }}
+              onStartTimeChange={(time24, display12) => setStartTime(display12)}
+              onEndTimeChange={(time24, display12) => setEndTime(display12)}
             />
 
-            {/* EMERGENCY JOBS (Yes / No) */}
+            {/* Emergency Jobs */}
             <Text style={styles.sectionHeaderLabel}>Emergency Jobs</Text>
             <TouchableOpacity
               style={styles.emergencyToggleRow}
-              onPress={() => {
-                const nextVal = !emergencyJobsAccepted;
-                setEmergencyJobsAccepted(nextVal);
-                saveDraft({ emergencyJobsAccepted: nextVal });
-              }}
+              onPress={() => setEmergencyJobsAccepted(!emergencyJobsAccepted)}
               activeOpacity={0.85}
             >
               <View style={{ flex: 1 }}>
-                <Text style={styles.emergencyToggleTitle}>
-                  Accept Urgent / Emergency Jobs?
-                </Text>
+                <Text style={styles.emergencyToggleTitle}>Accept Urgent / Emergency Jobs?</Text>
                 <Text style={styles.emergencyToggleSub}>
-                  Provides priority job dispatch with higher emergency fee compensation
+                  Higher earnings: Be dispatched for short-notice cleaning requests.
                 </Text>
               </View>
               <View
                 style={[
-                  styles.togglePill,
-                  { backgroundColor: emergencyJobsAccepted ? '#168A68' : '#CBD5E1' },
+                  styles.switchTrack,
+                  emergencyJobsAccepted && styles.switchTrackActive,
                 ]}
               >
-                <Text style={styles.togglePillText}>{emergencyJobsAccepted ? 'YES' : 'NO'}</Text>
+                <View
+                  style={[
+                    styles.switchThumb,
+                    emergencyJobsAccepted && styles.switchThumbActive,
+                  ]}
+                />
               </View>
             </TouchableOpacity>
           </View>
@@ -1891,33 +1931,69 @@ export const MaidRegistrationFormScreen: React.FC = () => {
 
         {/* ── STEP 4: DOCUMENT VERIFICATION ── */}
         {currentStep === 4 && (
-          <View style={styles.stepCard}>
+          <View style={styles.stepSection}>
             <View style={styles.stepHeaderRow}>
-              <ShieldCheck size={20} color="#168A68" />
-              <Text style={styles.stepTitle}>Document Verification</Text>
+              <View style={styles.stepIconWrap}>
+                <ShieldCheck size={18} color="#168A68" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.stepTitle}>Document Verification</Text>
+                <Text style={styles.stepSubTitle}>
+                  Upload your Aadhaar Card, PAN Card, or any government photo ID.
+                </Text>
+              </View>
             </View>
-            <Text style={styles.stepSubTitle}>
-              Upload your verification documents
-            </Text>
+
+            {/* Skip Option Banner */}
+            <View style={styles.skipBanner}>
+              <View style={styles.skipBannerContent}>
+                <Text style={styles.skipBannerTitle}>Don't have your documents ready right now?</Text>
+                <Text style={styles.skipBannerSub}>
+                  You can skip this step and upload your verification documents later from your Partner Profile before account verification.
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.skipBtn}
+                onPress={handleSkipStep4}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.skipBtnText}>Skip for Now</Text>
+                <ArrowRight size={13} color="#168A68" />
+              </TouchableOpacity>
+            </View>
 
             <PartnerDocumentPicker
               documents={uploadedDocs}
               onDocumentsChange={handleDocumentsChange}
-              partnerIdentifier={phone || fullName || user?.uid}
+              partnerIdentifier={phone || fullName}
             />
+
+            {uploadedDocs.length === 0 && (
+              <TouchableOpacity
+                style={styles.skipFooterBtn}
+                onPress={handleSkipStep4}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.skipFooterBtnText}>Skip Document Upload (Upload Later) →</Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
 
-        {/* ── STEP 5: BANK DETAILS & FINAL SUBMIT ── */}
+        {/* ── STEP 5: BANK DETAILS & DECLARATIONS ── */}
         {currentStep === 5 && (
-          <View style={styles.stepCard}>
+          <View style={styles.stepSection}>
             <View style={styles.stepHeaderRow}>
-              <CreditCard size={20} color="#168A68" />
-              <Text style={styles.stepTitle}>Step 5: Bank Details & Payouts</Text>
+              <View style={styles.stepIconWrap}>
+                <CreditCard size={18} color="#168A68" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.stepTitle}>Bank Details & Agreement</Text>
+                <Text style={styles.stepSubTitle}>
+                  Enter payout bank account details for weekly direct deposits.
+                </Text>
+              </View>
             </View>
-            <Text style={styles.stepSubTitle}>
-              Direct weekly earnings and bonuses will be credited to this verified account.
-            </Text>
 
             <Text style={styles.inputLabel}>Account Holder Name *</Text>
             <TextInput
@@ -1925,10 +2001,8 @@ export const MaidRegistrationFormScreen: React.FC = () => {
               placeholder="e.g. Saroja Devi"
               placeholderTextColor="#94A3B8"
               value={bankAccountHolder}
-              onChangeText={val => {
-                setBankAccountHolder(val);
-                saveDraft({ bankAccountHolder: val });
-              }}
+              onFocus={handleInputFocus}
+              onChangeText={setBankAccountHolder}
             />
 
             <Text style={styles.inputLabel}>Account Number *</Text>
@@ -1939,10 +2013,8 @@ export const MaidRegistrationFormScreen: React.FC = () => {
               keyboardType="number-pad"
               secureTextEntry
               value={accountNumber}
-              onChangeText={val => {
-                setAccountNumber(val);
-                saveDraft({ accountNumber: val });
-              }}
+              onFocus={handleInputFocus}
+              onChangeText={setAccountNumber}
             />
 
             <Text style={styles.inputLabel}>Bank Name *</Text>
@@ -1951,10 +2023,8 @@ export const MaidRegistrationFormScreen: React.FC = () => {
               placeholder="e.g. State Bank of India / HDFC Bank"
               placeholderTextColor="#94A3B8"
               value={bankName}
-              onChangeText={val => {
-                setBankName(val);
-                saveDraft({ bankName: val });
-              }}
+              onFocus={handleInputFocus}
+              onChangeText={setBankName}
             />
 
             <Text style={styles.inputLabel}>Confirm Bank Name *</Text>
@@ -1963,10 +2033,8 @@ export const MaidRegistrationFormScreen: React.FC = () => {
               placeholder="Re-enter bank name (must match exactly)"
               placeholderTextColor="#94A3B8"
               value={confirmBankName}
-              onChangeText={val => {
-                setConfirmBankName(val);
-                saveDraft({ confirmBankName: val });
-              }}
+              onFocus={handleInputFocus}
+              onChangeText={setConfirmBankName}
             />
 
             <Text style={styles.inputLabel}>IFSC Code *</Text>
@@ -1976,11 +2044,8 @@ export const MaidRegistrationFormScreen: React.FC = () => {
               placeholderTextColor="#94A3B8"
               autoCapitalize="characters"
               value={ifscCode}
-              onChangeText={txt => {
-                const upper = txt.toUpperCase();
-                setIfscCode(upper);
-                saveDraft({ ifscCode: upper });
-              }}
+              onFocus={handleInputFocus}
+              onChangeText={txt => setIfscCode(txt.toUpperCase())}
             />
 
             <Text style={styles.inputLabel}>UPI Code (Optional)</Text>
@@ -1989,10 +2054,8 @@ export const MaidRegistrationFormScreen: React.FC = () => {
               placeholder="e.g. 9876543210@upi or mobile@okaxis"
               placeholderTextColor="#94A3B8"
               value={upiId}
-              onChangeText={val => {
-                setUpiId(val);
-                saveDraft({ upiId: val });
-              }}
+              onFocus={handleInputFocus}
+              onChangeText={setUpiId}
             />
 
             {/* Declarations */}
@@ -2019,7 +2082,7 @@ export const MaidRegistrationFormScreen: React.FC = () => {
                   {privacyAccepted && <Check size={12} color="#FFFFFF" strokeWidth={3} />}
                 </View>
                 <Text style={styles.declarationText}>
-                  I agree to the <Text style={{ fontWeight: '800', color: '#168A68' }}>Privacy Policy</Text> and background verification.
+                  I agree to the <Text style={{ fontWeight: '800', color: '#168A68' }}>Privacy Policy</Text> and background check consent.
                 </Text>
               </TouchableOpacity>
 
@@ -2032,26 +2095,153 @@ export const MaidRegistrationFormScreen: React.FC = () => {
                   {accuracyConfirmed && <Check size={12} color="#FFFFFF" strokeWidth={3} />}
                 </View>
                 <Text style={styles.declarationText}>
-                  I confirm that all submitted details, documents, and banking information are true and accurate.
+                  I confirm that all information and identity documents provided are true and accurate.
                 </Text>
               </TouchableOpacity>
             </View>
+          </View>
+        )}
 
-            {/* Complete Registration CTA */}
+        {/* ── STEP 6: REVIEW APPLICATION (Atomic confirmation before final submit) ── */}
+        {currentStep === 6 && (
+          <View style={styles.stepSection}>
+            <View style={styles.stepHeaderRow}>
+              <View style={styles.stepIconWrap}>
+                <ShieldCheck size={20} color="#168A68" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.stepTitle}>Review Your Registration</Text>
+                <Text style={styles.stepSubTitle}>
+                  Review your details below. You can click Edit on any section to revise information.
+                </Text>
+              </View>
+            </View>
+
+            {/* Verification Notice Banner */}
+            <View style={styles.reviewNoticeBanner}>
+              <ShieldCheck size={16} color="#166534" />
+              <Text style={styles.reviewNoticeText}>
+                Please verify your details before submitting. Your application will be sent directly for operations verification.
+              </Text>
+            </View>
+
+            {/* Step 1 Review */}
+            <View style={styles.reviewStepBox}>
+              <View style={styles.reviewStepHeader}>
+                <View style={styles.reviewStepBadge}>
+                  <Check size={12} color="#166534" strokeWidth={3} />
+                  <Text style={styles.reviewStepBadgeText}>Step 1: Personal Details</Text>
+                </View>
+                <TouchableOpacity onPress={() => setCurrentStep(1)} style={styles.reviewEditBtn}>
+                  <Edit3 size={13} color="#168A68" />
+                  <Text style={styles.reviewEditLink}>Edit</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.reviewDetailText}><Text style={styles.reviewDetailLabel}>Name:</Text> {fullName}</Text>
+              <Text style={styles.reviewDetailText}><Text style={styles.reviewDetailLabel}>Phone:</Text> {phone}</Text>
+              {Boolean(email) && <Text style={styles.reviewDetailText}><Text style={styles.reviewDetailLabel}>Email:</Text> {email}</Text>}
+              <Text style={styles.reviewDetailText}>
+                <Text style={styles.reviewDetailLabel}>Date of Birth:</Text> {dob} (DD-MM-YYYY) • <Text style={styles.reviewDetailLabel}>Gender:</Text> {gender}
+              </Text>
+              <Text style={styles.reviewDetailText}><Text style={styles.reviewDetailLabel}>Emergency Contact:</Text> {emergencyContactName} ({emergencyContactPhone})</Text>
+              <Text style={styles.reviewDetailText}><Text style={styles.reviewDetailLabel}>Profile Photo:</Text> {profilePhotoUrl ? 'Uploaded ✓' : 'No photo uploaded'}</Text>
+            </View>
+
+            {/* Step 2 Review */}
+            <View style={styles.reviewStepBox}>
+              <View style={styles.reviewStepHeader}>
+                <View style={styles.reviewStepBadge}>
+                  <Check size={12} color="#166534" strokeWidth={3} />
+                  <Text style={styles.reviewStepBadgeText}>Step 2: Address & Work Cities</Text>
+                </View>
+                <TouchableOpacity onPress={() => setCurrentStep(2)} style={styles.reviewEditBtn}>
+                  <Edit3 size={13} color="#168A68" />
+                  <Text style={styles.reviewEditLink}>Edit</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.reviewDetailText}><Text style={styles.reviewDetailLabel}>Address:</Text> {houseFlat || fullAddress}, {locality}, {selectedCity} {pincode}</Text>
+              <Text style={styles.reviewDetailText}><Text style={styles.reviewDetailLabel}>Preferred Work Cities:</Text> {preferredWorkCities.join(', ')}</Text>
+            </View>
+
+            {/* Step 3 Review */}
+            <View style={styles.reviewStepBox}>
+              <View style={styles.reviewStepHeader}>
+                <View style={styles.reviewStepBadge}>
+                  <Check size={12} color="#166534" strokeWidth={3} />
+                  <Text style={styles.reviewStepBadgeText}>Step 3: Services & Availability</Text>
+                </View>
+                <TouchableOpacity onPress={() => setCurrentStep(3)} style={styles.reviewEditBtn}>
+                  <Edit3 size={13} color="#168A68" />
+                  <Text style={styles.reviewEditLink}>Edit</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.reviewDetailText}><Text style={styles.reviewDetailLabel}>Services ({selectedServices.length}):</Text> {selectedServices.map(s => s.serviceName).join(', ')}</Text>
+              <Text style={styles.reviewDetailText}><Text style={styles.reviewDetailLabel}>Experience:</Text> {experienceRange || `${experienceYears} Years`}</Text>
+              <Text style={styles.reviewDetailText}><Text style={styles.reviewDetailLabel}>Languages:</Text> {[...selectedLanguages.filter(l => l !== 'Other'), ...customLanguagesList].join(', ')}</Text>
+              <Text style={styles.reviewDetailText}><Text style={styles.reviewDetailLabel}>Working Hours:</Text> {startTime} – {endTime} (Radius: {serviceRadiusKm} KM)</Text>
+              <Text style={styles.reviewDetailText}><Text style={styles.reviewDetailLabel}>Emergency Jobs:</Text> {emergencyJobsAccepted ? 'Accepted' : 'No'}</Text>
+            </View>
+
+            {/* Step 4 Review */}
+            <View style={styles.reviewStepBox}>
+              <View style={styles.reviewStepHeader}>
+                <View style={styles.reviewStepBadge}>
+                  <Check size={12} color="#166534" strokeWidth={3} />
+                  <Text style={styles.reviewStepBadgeText}>Step 4: Verification Documents</Text>
+                </View>
+                <TouchableOpacity onPress={() => setCurrentStep(4)} style={styles.reviewEditBtn}>
+                  <Edit3 size={13} color="#168A68" />
+                  <Text style={styles.reviewEditLink}>Edit</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.reviewDetailText}>
+                <Text style={styles.reviewDetailLabel}>Attached Documents ({uploadedDocs.length}):</Text>{' '}
+                {uploadedDocs.length > 0
+                  ? uploadedDocs.map(d => d.name).join(', ')
+                  : 'Skipped for now (Can be uploaded later in Partner Profile)'}
+              </Text>
+            </View>
+
+            {/* Step 5 Review */}
+            <View style={styles.reviewStepBox}>
+              <View style={styles.reviewStepHeader}>
+                <View style={styles.reviewStepBadge}>
+                  <Check size={12} color="#166534" strokeWidth={3} />
+                  <Text style={styles.reviewStepBadgeText}>Step 5: Bank Details & Declarations</Text>
+                </View>
+                <TouchableOpacity onPress={() => setCurrentStep(5)} style={styles.reviewEditBtn}>
+                  <Edit3 size={13} color="#168A68" />
+                  <Text style={styles.reviewEditLink}>Edit</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.reviewDetailText}><Text style={styles.reviewDetailLabel}>Bank:</Text> {bankName}</Text>
+              <Text style={styles.reviewDetailText}><Text style={styles.reviewDetailLabel}>Account Holder:</Text> {bankAccountHolder}</Text>
+              <Text style={styles.reviewDetailText}><Text style={styles.reviewDetailLabel}>Account Number:</Text> ••••••••{accountNumber.slice(-4)}</Text>
+              <Text style={styles.reviewDetailText}><Text style={styles.reviewDetailLabel}>IFSC Code:</Text> {ifscCode}</Text>
+              {Boolean(upiId) && <Text style={styles.reviewDetailText}><Text style={styles.reviewDetailLabel}>UPI ID:</Text> {upiId}</Text>}
+              <Text style={styles.reviewDetailText}><Text style={styles.reviewDetailLabel}>Declarations:</Text> Terms, Privacy & Accuracy confirmed ✓</Text>
+            </View>
+
+            {/* Final Submit CTA with Mobile OTP Verification */}
             <TouchableOpacity
-              style={[
-                styles.submitBtn,
-                (!termsAccepted || !privacyAccepted || !accuracyConfirmed || isSubmitting) && styles.submitBtnDisabled,
-              ]}
-              onPress={handleFinalSubmission}
-              disabled={!termsAccepted || !privacyAccepted || !accuracyConfirmed || isSubmitting}
+              style={[styles.submitBtn, (isSendingOtp || isSubmitting) && styles.submitBtnDisabled]}
+              onPress={handleInitiateOtpVerification}
+              disabled={isSendingOtp || isSubmitting}
               activeOpacity={0.88}
             >
-              {isSubmitting ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
+              {isSendingOtp ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                  <Text style={styles.submitBtnText}>Sending OTP...</Text>
+                </View>
+              ) : isSubmitting ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                  <Text style={styles.submitBtnText}>Submitting Application...</Text>
+                </View>
               ) : (
                 <>
-                  <Text style={styles.submitBtnText}>Complete Registration</Text>
+                  <Text style={styles.submitBtnText}>Verify Mobile & Submit Application</Text>
                   <ArrowRight size={18} color="#FFFFFF" />
                 </>
               )}
@@ -2062,110 +2252,266 @@ export const MaidRegistrationFormScreen: React.FC = () => {
 
       {/* DOB Calendar Picker Modal */}
       <Modal visible={showDobModal} transparent animationType="fade" onRequestClose={() => setShowDobModal(false)}>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
           <View style={styles.dobModalCard}>
-            <Text style={styles.dobModalTitle}>Select Date of Birth</Text>
-            <View style={{ flexDirection: 'row', gap: 8, marginVertical: 14 }}>
+            <View style={styles.dobModalHeader}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.inputLabel}>Day (DD)</Text>
+                <Text style={styles.dobModalTitle}>Date of Birth</Text>
+                <Text style={styles.dobModalSub}>Format: Date – Month – Year (DD-MM-YYYY)</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowDobModal(false)} style={styles.modalCloseBtn}>
+                <Text style={styles.modalCloseBtnText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.dobSegmentsRow}>
+              {/* Day */}
+              <View style={styles.dobSegmentCol}>
+                <Text style={styles.dobSegmentLabel}>Date (DD)</Text>
                 <TextInput
-                  style={styles.textInput}
+                  ref={dayInputRef}
+                  style={styles.dobSegmentInput}
+                  placeholder="15"
+                  placeholderTextColor="#94A3B8"
                   value={dobDay}
-                  onChangeText={setDobDay}
+                  onChangeText={handleDayChange}
                   keyboardType="number-pad"
                   maxLength={2}
+                  selectTextOnFocus
                 />
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.inputLabel}>Month (MM)</Text>
+
+              <Text style={styles.dobDivider}>–</Text>
+
+              {/* Month */}
+              <View style={styles.dobSegmentCol}>
+                <Text style={styles.dobSegmentLabel}>Month (MM)</Text>
                 <TextInput
-                  style={styles.textInput}
+                  ref={monthInputRef}
+                  style={styles.dobSegmentInput}
+                  placeholder="06"
+                  placeholderTextColor="#94A3B8"
                   value={dobMonth}
-                  onChangeText={setDobMonth}
+                  onChangeText={handleMonthChange}
                   keyboardType="number-pad"
                   maxLength={2}
+                  selectTextOnFocus
                 />
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.inputLabel}>Year (YYYY)</Text>
+
+              <Text style={styles.dobDivider}>–</Text>
+
+              {/* Year */}
+              <View style={[styles.dobSegmentCol, { flex: 1.3 }]}>
+                <Text style={styles.dobSegmentLabel}>Year (YYYY)</Text>
                 <TextInput
-                  style={styles.textInput}
+                  ref={yearInputRef}
+                  style={styles.dobSegmentInput}
+                  placeholder="1995"
+                  placeholderTextColor="#94A3B8"
                   value={dobYear}
-                  onChangeText={setDobYear}
+                  onChangeText={handleYearChange}
                   keyboardType="number-pad"
                   maxLength={4}
+                  selectTextOnFocus
                 />
               </View>
             </View>
+
+            <Text style={styles.dobHelperNote}>
+              Applicant must be at least 18 years old. Formatted as DD-MM-YYYY.
+            </Text>
+
             <TouchableOpacity style={styles.dobConfirmBtn} onPress={handleConfirmDob} activeOpacity={0.88}>
-              <Text style={styles.dobConfirmBtnText}>Confirm Birth Date</Text>
+              <Text style={styles.dobConfirmBtnText}>Confirm Date of Birth</Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Partner Registration OTP Verification Modal */}
+      <Modal visible={showOtpModal} transparent animationType="fade" onRequestClose={() => setShowOtpModal(false)}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}
+        >
+          <View style={styles.dobModalCard}>
+            <View style={styles.dobModalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.dobModalTitle}>Mobile Verification</Text>
+                <Text style={styles.dobModalSub}>
+                  Enter the 6-digit OTP sent to +91 {phone.replace(/\D/g, '').slice(-10).slice(0, 5)} *****
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowOtpModal(false)} style={styles.modalCloseBtn}>
+                <Text style={styles.modalCloseBtnText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* 6 OTP Boxes */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 6, marginVertical: 14 }}>
+              {otpDigits.map((digit, index) => (
+                <TextInput
+                  key={index}
+                  ref={el => { otpInputRefs.current[index] = el; }}
+                  style={{
+                    flex: 1,
+                    height: 48,
+                    borderWidth: 1.5,
+                    borderColor: digit ? '#168A68' : '#CBD5E1',
+                    borderRadius: 10,
+                    textAlign: 'center',
+                    fontSize: 18,
+                    fontWeight: '800',
+                    color: '#0F172A',
+                    backgroundColor: '#F8FAFC',
+                  }}
+                  keyboardType="number-pad"
+                  maxLength={1}
+                  value={digit}
+                  onChangeText={text => handleOtpDigitChange(text, index)}
+                  onKeyPress={e => handleOtpKeyPress(e, index)}
+                  selectTextOnFocus
+                />
+              ))}
+            </View>
+
+            {/* Error Banner */}
+            {Boolean(otpError) && (
+              <View style={{ padding: 8, backgroundColor: '#FEF2F2', borderRadius: 8, marginBottom: 10, borderWidth: 1, borderColor: '#FECACA' }}>
+                <Text style={{ fontSize: 12, color: '#DC2626', fontWeight: '600', textAlign: 'center' }}>{otpError}</Text>
+              </View>
+            )}
+
+            {/* Resend Timer */}
+            <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginBottom: 16 }}>
+              {otpCountdown > 0 ? (
+                <Text style={{ fontSize: 12, color: '#64748B', fontWeight: '500' }}>
+                  Resend code in <Text style={{ color: '#168A68', fontWeight: '700' }}>{otpCountdown}s</Text>
+                </Text>
+              ) : (
+                <TouchableOpacity onPress={handleResendPartnerOtp}>
+                  <Text style={{ fontSize: 12, color: '#168A68', fontWeight: '700' }}>Resend Verification Code</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Verify CTA */}
+            <TouchableOpacity
+              style={[styles.dobConfirmBtn, isVerifyingOtp && { opacity: 0.65 }]}
+              onPress={handleVerifyOtpAndSubmit}
+              disabled={isVerifyingOtp}
+              activeOpacity={0.88}
+            >
+              {isVerifyingOtp ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                  <Text style={styles.dobConfirmBtnText}>Verifying & Submitting...</Text>
+                </View>
+              ) : (
+                <Text style={styles.dobConfirmBtnText}>Verify & Complete Registration</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Bottom Stepper Bar (Clean, Centered, Page-Wise Save Trigger) */}
+      {currentStep <= 5 && !isSubmitted && (
+        <View style={styles.bottomNavContainer}>
+          <View style={styles.bottomNavInner}>
+            {currentStep > 1 && (
+              <TouchableOpacity
+                style={styles.prevBtn}
+                onPress={handlePrevStep}
+                disabled={isSavingStep}
+                activeOpacity={0.7}
+              >
+                <ArrowLeft size={16} color="#0F172A" />
+                <Text style={styles.prevBtnText}>Back</Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              style={[
+                styles.nextBtn,
+                (isSavingStep ||
+                  (currentStep === 2 && preferredWorkCities.length === 0) ||
+                  (currentStep === 3 && selectedServices.length === 0) ||
+                  (currentStep === 5 && (!termsAccepted || !privacyAccepted || !accuracyConfirmed))
+                ) && styles.nextBtnDisabled,
+              ]}
+              disabled={
+                isSavingStep ||
+                (currentStep === 2 && preferredWorkCities.length === 0) ||
+                (currentStep === 3 && selectedServices.length === 0) ||
+                (currentStep === 5 && (!termsAccepted || !privacyAccepted || !accuracyConfirmed))
+              }
+              onPress={
+                currentStep === 1
+                  ? handleStep1Next
+                  : currentStep === 2
+                  ? handleStep2Next
+                  : currentStep === 3
+                  ? handleStep3Next
+                  : currentStep === 4
+                  ? handleStep4Next
+                  : handleStep5Next
+              }
+              activeOpacity={0.88}
+            >
+              {isSavingStep ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                  <Text style={styles.nextBtnText}>Please wait...</Text>
+                </View>
+              ) : (
+                <>
+                  <Text style={styles.nextBtnText}>
+                    {currentStep === 5
+                      ? 'Review Application'
+                      : currentStep === 4 && uploadedDocs.length === 0
+                      ? 'Skip & Continue'
+                      : 'Continue'}
+                  </Text>
+                  <ChevronRight size={16} color="#FFFFFF" />
+                </>
+              )}
             </TouchableOpacity>
           </View>
         </View>
-      </Modal>
-
-      {/* Bottom Stepper Bar */}
-      {currentStep < 6 && !isSubmitted && (
-        <View style={styles.bottomNavContainer}>
-          {currentStep > 1 && (
-            <TouchableOpacity style={styles.prevBtn} onPress={handlePrevStep} activeOpacity={0.7}>
-              <ArrowLeft size={16} color="#0F172A" />
-              <Text style={styles.prevBtnText}>Back</Text>
-            </TouchableOpacity>
-          )}
-
-          {currentStep === 3 ? (
-            <View style={styles.step3BottomAction}>
-              <View style={styles.step3CountCol}>
-                <Text style={styles.step3CountText}>
-                  {selectedServiceIds.length} {selectedServiceIds.length === 1 ? 'service selected' : 'services selected'}
-                </Text>
-              </View>
-              <TouchableOpacity
-                style={[
-                  styles.step3ContinueBtn,
-                  selectedServiceIds.length === 0 && styles.step3ContinueBtnDisabled,
-                ]}
-                disabled={selectedServiceIds.length === 0}
-                onPress={handleNextStep}
-                activeOpacity={0.88}
-              >
-                <Text
-                  style={[
-                    styles.step3ContinueBtnText,
-                    selectedServiceIds.length === 0 && styles.step3ContinueBtnTextDisabled,
-                  ]}
-                >
-                  Continue →
-                </Text>
-              </TouchableOpacity>
-            </View>
-          ) : currentStep < 5 && currentStep !== 2 ? (
-            <TouchableOpacity style={styles.nextBtn} onPress={handleNextStep} activeOpacity={0.88}>
-              <Text style={styles.nextBtnText}>Next Step</Text>
-              <ChevronRight size={16} color="#FFFFFF" />
-            </TouchableOpacity>
-          ) : null}
-        </View>
       )}
-    </View>
+    </KeyboardAvoidingView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FFFFFF',
   },
+
+  /* ── 1. Compact, Premium Registration Header ── */
   topHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 48,
-    paddingBottom: 12,
+    width: '100%',
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#E2E8F0',
+    paddingTop: Platform.OS === 'ios' ? 44 : 14,
+    paddingBottom: 0,
+    zIndex: 10,
+  },
+  headerInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingBottom: 10,
+    width: '100%',
+    maxWidth: 680,
+    alignSelf: 'center',
   },
   headerBackBtn: {
     width: 36,
@@ -2180,7 +2526,7 @@ const styles = StyleSheet.create({
     marginLeft: 12,
   },
   headerTitleText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '800',
     color: '#0F172A',
   },
@@ -2190,18 +2536,18 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   stepBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
+    paddingHorizontal: 9,
+    paddingVertical: 3.5,
+    borderRadius: 10,
     backgroundColor: '#E6F4F1',
   },
   stepBadgeText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '800',
     color: '#168A68',
   },
   progressBarContainer: {
-    height: 4,
+    height: 3.5,
     backgroundColor: '#E2E8F0',
     width: '100%',
   },
@@ -2209,35 +2555,48 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: '#168A68',
   },
-  formScrollContent: {
-    padding: 16,
-    paddingBottom: 100,
-  },
-  stepCard: {
+
+  /* ── Scroll & Clean Flat Form Layout (No Box/Card Container) ── */
+  scrollContainer: {
+    flex: 1,
     backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 20,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
+  },
+  formScrollContent: {
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    paddingBottom: 24,
+    width: '100%',
+    maxWidth: 680,
+    alignSelf: 'center',
+  },
+  stepSection: {
+    width: '100%',
+    paddingBottom: 16,
   },
   stepHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 12,
+    marginBottom: 6,
+  },
+  stepIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: '#E6F4F1',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   stepTitle: {
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '800',
     color: '#0F172A',
   },
   stepSubTitle: {
-    fontSize: 12,
+    fontSize: 12.5,
     color: '#64748B',
-    marginTop: 4,
-    marginBottom: 16,
+    marginTop: 2,
+    lineHeight: 18,
   },
   sectionHeaderLabel: {
     fontSize: 13,
@@ -2259,57 +2618,10 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
     borderRadius: 12,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 11,
     fontSize: 13,
     color: '#0F172A',
-  },
-  photoUploadRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-    marginBottom: 8,
-  },
-  photoPreviewBox: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#F1F5F9',
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-  },
-  photoImg: {
-    width: '100%',
-    height: '100%',
-  },
-  photoUploadTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  photoUploadSub: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 2,
-    marginBottom: 8,
-  },
-  photoBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#168A68',
-    alignSelf: 'flex-start',
-  },
-  photoBtnText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#168A68',
+    fontWeight: '600',
   },
   dobSelectorBtn: {
     flexDirection: 'row',
@@ -2324,12 +2636,12 @@ const styles = StyleSheet.create({
   },
   dobSelectorText: {
     fontSize: 13,
-    color: '#0F172A',
     fontWeight: '600',
+    color: '#0F172A',
   },
   genderRow: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 8,
   },
   genderChip: {
     flex: 1,
@@ -2345,22 +2657,73 @@ const styles = StyleSheet.create({
     backgroundColor: '#E6F4F1',
   },
   genderChipText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
     color: '#64748B',
   },
   genderChipTextSelected: {
     color: '#168A68',
   },
+
+  /* ── Step 2 Multi-City Checkbox Elements ── */
+  workCityHelperText: {
+    fontSize: 12,
+    color: '#64748B',
+    marginBottom: 10,
+  },
+  cityChecklistContainer: {
+    gap: 8,
+  },
+  cityCheckboxRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  cityCheckboxRowSelected: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#168A68',
+  },
+  cityCheckboxSquare: {
+    width: 20,
+    height: 20,
+    borderRadius: 5,
+    borderWidth: 2,
+    borderColor: '#CBD5E1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  cityCheckboxSquareSelected: {
+    borderColor: '#168A68',
+    backgroundColor: '#168A68',
+  },
+  cityCheckboxLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1E293B',
+    flex: 1,
+  },
+  cityCheckboxLabelSelected: {
+    fontWeight: '800',
+    color: '#0E5B47',
+  },
+
+  /* ── Step 3 Services & Availability ── */
   experienceRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
   },
   experienceChip: {
-    paddingVertical: 8,
     paddingHorizontal: 14,
-    borderRadius: 20,
+    paddingVertical: 8,
+    borderRadius: 10,
     borderWidth: 1.5,
     borderColor: '#E2E8F0',
     backgroundColor: '#F8FAFC',
@@ -2378,30 +2741,20 @@ const styles = StyleSheet.create({
     color: '#168A68',
   },
   langChecklist: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
+    gap: 8,
   },
   langRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
     paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    backgroundColor: '#F8FAFC',
   },
-  langRowSelected: {
-    borderColor: '#168A68',
-    backgroundColor: '#E6F4F1',
-  },
+  langRowSelected: {},
   checkboxSquare: {
-    width: 18,
-    height: 18,
-    borderRadius: 4,
-    borderWidth: 1.5,
+    width: 20,
+    height: 20,
+    borderRadius: 5,
+    borderWidth: 2,
     borderColor: '#CBD5E1',
     alignItems: 'center',
     justifyContent: 'center',
@@ -2414,28 +2767,33 @@ const styles = StyleSheet.create({
   langLabel: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#334155',
+    color: '#1E293B',
   },
   langLabelSelected: {
-    color: '#168A68',
-    fontWeight: '700',
+    fontWeight: '800',
+    color: '#0F172A',
   },
   customLangSection: {
-    marginTop: 12,
+    marginTop: 10,
+    padding: 12,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
-  addCustomLangBtn: {
+  addLangBtn: {
     backgroundColor: '#168A68',
     paddingHorizontal: 16,
-    borderRadius: 12,
-    alignItems: 'center',
+    borderRadius: 10,
     justifyContent: 'center',
+    alignItems: 'center',
   },
-  addCustomLangBtnText: {
+  addLangBtnText: {
     color: '#FFFFFF',
-    fontWeight: '700',
-    fontSize: 13,
+    fontWeight: '800',
+    fontSize: 12,
   },
-  chipsWrap: {
+  customLangChipsWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 6,
@@ -2444,38 +2802,40 @@ const styles = StyleSheet.create({
   customLangChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#E2E8F0',
+    gap: 4,
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 8,
     paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 14,
+    borderRadius: 8,
   },
   customLangChipText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#334155',
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#166534',
   },
   availabilityRow: {
+    flexDirection: 'row',
     gap: 10,
   },
   availabilityCard: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
+    padding: 12,
+    borderRadius: 12,
     borderWidth: 1.5,
     borderColor: '#E2E8F0',
-    borderRadius: 12,
-    padding: 12,
     backgroundColor: '#F8FAFC',
   },
   availabilityCardSelected: {
     borderColor: '#168A68',
-    backgroundColor: '#F0FDF4',
+    backgroundColor: '#E6F4F1',
   },
   radioCircle: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
     borderWidth: 2,
     borderColor: '#94A3B8',
     alignItems: 'center',
@@ -2485,13 +2845,13 @@ const styles = StyleSheet.create({
     borderColor: '#168A68',
   },
   radioDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
     backgroundColor: '#168A68',
   },
   availabilityTitle: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
     color: '#1E293B',
   },
@@ -2499,19 +2859,18 @@ const styles = StyleSheet.create({
     color: '#166534',
   },
   availabilitySub: {
-    fontSize: 11,
+    fontSize: 10,
     color: '#64748B',
-    marginTop: 1,
   },
   radiusHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 16,
-    marginBottom: 8,
+    marginTop: 14,
+    marginBottom: 6,
   },
   radiusValueBadge: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '800',
     color: '#168A68',
   },
@@ -2521,7 +2880,7 @@ const styles = StyleSheet.create({
   },
   radiusChip: {
     flex: 1,
-    paddingVertical: 10,
+    paddingVertical: 9,
     borderRadius: 10,
     borderWidth: 1.5,
     borderColor: '#E2E8F0',
@@ -2540,57 +2899,55 @@ const styles = StyleSheet.create({
   radiusChipTextSelected: {
     color: '#168A68',
   },
-  timeInputsRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  timeSubLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#64748B',
-    marginBottom: 4,
-  },
-  timeHintText: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 4,
-  },
   emergencyToggleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 12,
     backgroundColor: '#F8FAFC',
+    borderRadius: 12,
     borderWidth: 1.5,
     borderColor: '#E2E8F0',
-    borderRadius: 12,
+    gap: 12,
   },
   emergencyToggleTitle: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
     color: '#0F172A',
   },
   emergencyToggleSub: {
-    fontSize: 11,
+    fontSize: 10.5,
     color: '#64748B',
-    marginTop: 2,
+    marginTop: 1,
   },
-  togglePill: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 14,
+  switchTrack: {
+    width: 44,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#E2E8F0',
+    padding: 2,
+    justifyContent: 'center',
   },
-  togglePillText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#FFFFFF',
+  switchTrackActive: {
+    backgroundColor: '#168A68',
   },
+  switchThumb: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+  },
+  switchThumbActive: {
+    alignSelf: 'flex-end',
+  },
+
+  /* ── Step 5 Declarations ── */
   declarationsBox: {
     marginTop: 18,
     gap: 12,
     paddingTop: 14,
     borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
+    borderTopColor: '#F1F5F9',
   },
   declarationRow: {
     flexDirection: 'row',
@@ -2599,9 +2956,80 @@ const styles = StyleSheet.create({
   },
   declarationText: {
     flex: 1,
+    fontSize: 11.5,
+    color: '#334155',
+    lineHeight: 17,
+  },
+
+  /* ── Step 6 Review Screen Components ── */
+  reviewNoticeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  reviewNoticeText: {
+    flex: 1,
+    fontSize: 11.5,
+    color: '#166534',
+    lineHeight: 16,
+    fontWeight: '600',
+  },
+  reviewStepBox: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 12,
+  },
+  reviewStepHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+    paddingBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  reviewStepBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  reviewStepBadgeText: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  reviewEditBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: '#E6F4F1',
+  },
+  reviewEditLink: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#168A68',
+  },
+  reviewDetailText: {
     fontSize: 12,
     color: '#334155',
-    lineHeight: 18,
+    lineHeight: 19,
+  },
+  reviewDetailLabel: {
+    fontWeight: '700',
+    color: '#64748B',
   },
   submitBtn: {
     flexDirection: 'row',
@@ -2611,7 +3039,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#168A68',
     borderRadius: 14,
     paddingVertical: 14,
-    marginTop: 20,
+    marginTop: 16,
   },
   submitBtnDisabled: {
     backgroundColor: '#94A3B8',
@@ -2621,19 +3049,30 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#FFFFFF',
   },
+
+  /* ── Bottom Stepper Bar ── */
   bottomNavContainer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
+    width: '100%',
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: '#E2E8F0',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: Platform.OS === 'ios' ? 14 : 12,
+    paddingBottom: Platform.OS === 'ios' ? 24 : 14,
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+  },
+  bottomNavInner: {
+    width: '100%',
+    maxWidth: 680,
+    alignSelf: 'center',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 12,
   },
   prevBtn: {
     flexDirection: 'row',
@@ -2656,16 +3095,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     paddingHorizontal: 20,
-    paddingVertical: 10,
+    paddingVertical: 11,
     borderRadius: 12,
     backgroundColor: '#168A68',
     marginLeft: 'auto',
+  },
+  nextBtnDisabled: {
+    backgroundColor: '#94A3B8',
   },
   nextBtnText: {
     fontSize: 13,
     fontWeight: '800',
     color: '#FFFFFF',
   },
+
+  /* ── Modals & Status Screen Hero ── */
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.65)',
@@ -2675,29 +3119,91 @@ const styles = StyleSheet.create({
   },
   dobModalCard: {
     width: '100%',
-    maxWidth: 380,
+    maxWidth: 400,
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 20,
+    borderRadius: 20,
+    padding: 22,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+  },
+  dobModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 16,
   },
   dobModalTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  dobModalSub: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  modalCloseBtn: {
+    padding: 4,
+  },
+  modalCloseBtnText: {
+    fontSize: 16,
+    color: '#64748B',
+    fontWeight: '700',
+  },
+  dobSegmentsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  dobSegmentCol: {
+    flex: 1,
+  },
+  dobSegmentLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  dobSegmentInput: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#CBD5E1',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    textAlign: 'center',
     fontSize: 16,
     fontWeight: '800',
     color: '#0F172A',
   },
+  dobDivider: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#94A3B8',
+    marginTop: 18,
+  },
+  dobHelperNote: {
+    fontSize: 11.5,
+    color: '#64748B',
+    marginTop: 6,
+    marginBottom: 16,
+    textAlign: 'center',
+  },
   dobConfirmBtn: {
     backgroundColor: '#168A68',
     borderRadius: 12,
-    paddingVertical: 12,
+    paddingVertical: 13,
     alignItems: 'center',
   },
   dobConfirmBtnText: {
-    fontSize: 13,
+    fontSize: 13.5,
     fontWeight: '800',
     color: '#FFFFFF',
-  },
-  contentContainer: {
-    padding: 16,
   },
   reviewHeroCard: {
     backgroundColor: '#FFFFFF',
@@ -2747,20 +3253,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#166534',
-  },
-  reviewPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#FEF3C7',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 10,
-  },
-  reviewPillText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#B45309',
   },
   resubmitBtn: {
     flexDirection: 'row',
@@ -2832,143 +3324,61 @@ const styles = StyleSheet.create({
     color: '#64748B',
     marginTop: 2,
   },
-
-  /* ── Header Draft Status Badge ── */
-  headerDraftStatus: {
-    fontSize: 10.5,
-    fontWeight: '700',
-    color: '#D97706',
-  },
-  headerDraftStatusSaved: {
-    fontSize: 10.5,
-    fontWeight: '700',
-    color: '#168A68',
-  },
-
-  /* ── Step 2 Container & Multi-City Checkbox Elements ── */
-  step2Container: {
-    gap: 14,
-  },
-  workCityHelperText: {
-    fontSize: 12.5,
-    color: '#64748B',
-    marginBottom: 12,
-  },
-  cityChecklistContainer: {
-    gap: 10,
-  },
-  cityCheckboxRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 13,
-    minHeight: 52,
-  },
-  cityCheckboxRowSelected: {
+  skipBanner: {
     backgroundColor: '#F0FDF4',
-    borderColor: '#168A68',
-  },
-  cityCheckboxSquare: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: '#CBD5E1',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
-  },
-  cityCheckboxSquareSelected: {
-    borderColor: '#168A68',
-    backgroundColor: '#168A68',
-  },
-  cityCheckboxLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1E293B',
-    flex: 1,
-  },
-  cityCheckboxLabelSelected: {
-    fontWeight: '800',
-    color: '#0E5B47',
-  },
-  step2ContinueBtn: {
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#168A68',
-    paddingVertical: 14,
-    borderRadius: 14,
-    shadowColor: '#168A68',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 4,
-    marginTop: 4,
-    marginBottom: 16,
-  },
-  step2ContinueBtnDisabled: {
-    backgroundColor: '#E2E8F0',
-    shadowOpacity: 0,
-    elevation: 0,
-  },
-  step2ContinueBtnText: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  step2ContinueBtnTextDisabled: {
-    color: '#94A3B8',
-  },
-
-  /* ── Step 3 Sticky Bottom Action Bar ── */
-  step3BottomAction: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
     gap: 10,
-    marginLeft: 8,
   },
-  step3CountCol: {
+  skipBannerContent: {
     flex: 1,
-    justifyContent: 'center',
   },
-  step3CountText: {
+  skipBannerTitle: {
     fontSize: 12.5,
-    fontWeight: '700',
+    fontWeight: '800',
+    color: '#166534',
+    marginBottom: 2,
+  },
+  skipBannerSub: {
+    fontSize: 11,
+    color: '#15803D',
+    lineHeight: 15,
+  },
+  skipBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#168A68',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  skipBtnText: {
+    fontSize: 11.5,
+    fontWeight: '800',
     color: '#168A68',
   },
-  step3ContinueBtn: {
-    flexDirection: 'row',
+  skipFooterBtn: {
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#168A68',
-    paddingHorizontal: 20,
     paddingVertical: 12,
+    marginTop: 8,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: '#CBD5E1',
     borderRadius: 10,
-    shadowColor: '#168A68',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
+    backgroundColor: '#F8FAFC',
   },
-  step3ContinueBtnDisabled: {
-    backgroundColor: '#E2E8F0',
-    shadowOpacity: 0,
-    elevation: 0,
-  },
-  step3ContinueBtnText: {
-    fontSize: 13.5,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  step3ContinueBtnTextDisabled: {
-    color: '#94A3B8',
+  skipFooterBtnText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#0F766E',
   },
 });

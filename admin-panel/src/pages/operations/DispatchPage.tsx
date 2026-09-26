@@ -1,4 +1,4 @@
-﻿import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import {
   Calendar,
@@ -35,9 +35,9 @@ export const DispatchPage: React.FC = () => {
     bookings,
     maids,
     setCurrentTab,
+    sendPartnerAssignmentRequest,
     finalizeSlotAdmin,
     resolveRedFlagAdmin,
-    confirmMaidAssignment,
     selectedTimezone,
   } = useAdmin();
 
@@ -245,9 +245,17 @@ export const DispatchPage: React.FC = () => {
     if (!activeDispatchBooking || !pendingConfirmationPartner) return;
     setIsAssigning(true);
     try {
-      await confirmMaidAssignment(activeDispatchBooking.bookingId, pendingConfirmationPartner.uid);
-      setPendingConfirmationPartner(null);
-      setActiveDispatchBooking(null);
+      const distKm = getEstimatedDistanceKm(pendingConfirmationPartner, activeDispatchBooking);
+      const success = await sendPartnerAssignmentRequest(
+        activeDispatchBooking.bookingId,
+        pendingConfirmationPartner.uid,
+        distKm > 0 ? distKm : undefined
+      );
+      if (success) {
+        alert(`Assignment request dispatched to ${pendingConfirmationPartner.fullName}. Partner will inspect details and accept with ETA.`);
+        setPendingConfirmationPartner(null);
+        setActiveDispatchBooking(null);
+      }
     } catch (err: any) {
       alert(`Assignment failed: ${err.message || 'Error assigning partner.'}`);
     } finally {
@@ -666,7 +674,7 @@ export const DispatchPage: React.FC = () => {
                           <div className="flex items-center gap-1">
                             <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                             <span className="font-semibold text-slate-800 truncate max-w-[120px]">
-                              {b.address?.locality || b.address?.city || 'Hyderabad'}
+                              {b.address?.locality || b.address?.city || 'Address not added'}
                             </span>
                           </div>
                         </td>
@@ -751,7 +759,7 @@ export const DispatchPage: React.FC = () => {
                     <div>
                       <h4 className="font-extrabold text-slate-900 text-sm">{b.serviceName}</h4>
                       <p className="text-xs text-slate-500 mt-0.5 font-medium">
-                        {b.customerName} • {b.address?.locality || b.address?.city || 'Hyderabad'}
+                        {b.customerName} • {b.address?.locality || b.address?.city || 'Address not added'}
                         {estimatedDist ? ` (${estimatedDist} km)` : ''}
                       </p>
                       <p className="text-[11px] text-slate-400 mt-0.5">
@@ -899,7 +907,7 @@ export const DispatchPage: React.FC = () => {
                 </div>
                 <div className="flex items-center gap-1">
                   <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                  <span>{activeDispatchBooking.address?.locality || 'Hyderabad'}</span>
+                  <span>{activeDispatchBooking.address?.locality || activeDispatchBooking.address?.city || 'Address not added'}</span>
                 </div>
               </div>
             </div>
@@ -972,12 +980,12 @@ export const DispatchPage: React.FC = () => {
                       {isAssigning ? (
                         <>
                           <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                          <span>Assigning...</span>
+                          <span>Dispatching Offer...</span>
                         </>
                       ) : (
                         <>
                           <Check className="w-3.5 h-3.5" />
-                          <span>Confirm Assignment</span>
+                          <span>Send Assignment Offer</span>
                         </>
                       )}
                     </button>

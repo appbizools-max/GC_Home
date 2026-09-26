@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAdmin } from '../../context/AdminContext';
 import {
   Mail,
@@ -22,6 +23,7 @@ import { GCLogo } from '../../components/common/GCLogo';
 
 export const LoginPage: React.FC = () => {
   const { loginAdminWithCredentials, resetPassword } = useAdmin();
+  const navigate = useNavigate();
 
   // Form states
   const [email, setEmail] = useState('');
@@ -69,7 +71,11 @@ export const LoginPage: React.FC = () => {
       }
 
       const res = await loginAdminWithCredentials(email, password);
-      if (!res.success) {
+      if (res.success) {
+        const searchParams = new URLSearchParams(window.location.search);
+        const redirectParam = searchParams.get('redirect');
+        navigate(redirectParam ? decodeURIComponent(redirectParam) : '/admin/dashboard', { replace: true });
+      } else {
         setErrorMessage(res.error || 'Invalid credentials. Please check your email and password.');
       }
     } catch (err: any) {

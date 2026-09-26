@@ -271,40 +271,63 @@ export const ActiveMaidsTab: React.FC = () => {
 
               {/* Drawer Content */}
               <div className="p-6">
-                {/* Current Job Live Card matching Screenshot 5 */}
-                <div className="p-4 bg-amber-50/60 border border-amber-200 rounded-2xl mb-6">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-black text-slate-900 uppercase tracking-wider">Current Job</span>
-                    <span className="px-2 py-0.5 bg-amber-200 text-amber-900 rounded-full font-extrabold text-[10px]">In Progress</span>
-                  </div>
+                {/* Current Job Live Card or Idle Status */}
+                {(() => {
+                  const activeJob = bookings.find(
+                    b =>
+                      (b.assignedMaidId === activeDrawerMaid.uid || b.assignedMaidName === activeDrawerMaid.fullName) &&
+                      ['en_route', 'arrived', 'cleaning_started', 'in_progress', 'ongoing', 'maid_assigned'].includes(b.status)
+                  );
 
-                  <div className="space-y-1.5 text-xs text-slate-700 font-medium">
-                    <p className="flex justify-between">
-                      <span className="text-slate-500">Booking ID</span>
-                      <strong className="text-slate-900">BK250916001</strong>
-                    </p>
-                    <p className="flex justify-between">
-                      <span className="text-slate-500">Customer</span>
-                      <strong className="text-slate-900">Priya Sharma</strong>
-                    </p>
-                    <p className="flex justify-between">
-                      <span className="text-slate-500">Location</span>
-                      <strong className="text-slate-900">Kondapur, Hyderabad</strong>
-                    </p>
-                    <p className="flex justify-between">
-                      <span className="text-slate-500">Service</span>
-                      <strong className="text-slate-900">Home Cleaning (2 BHK)</strong>
-                    </p>
-                    <p className="flex justify-between">
-                      <span className="text-slate-500">Started At</span>
-                      <strong className="text-slate-900">10:00 AM, 16 Sep 2026</strong>
-                    </p>
-                  </div>
+                  if (activeJob) {
+                    return (
+                      <div className="p-4 bg-amber-50/60 border border-amber-200 rounded-2xl mb-6">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-black text-slate-900 uppercase tracking-wider">Current Job</span>
+                          <span className="px-2 py-0.5 bg-amber-200 text-amber-900 rounded-full font-extrabold text-[10px] uppercase">
+                            {activeJob.status.replace('_', ' ')}
+                          </span>
+                        </div>
 
-                  <button className="w-full mt-3 py-2 bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm">
-                    <Navigation className="w-3.5 h-3.5" /> View on Map
-                  </button>
-                </div>
+                        <div className="space-y-1.5 text-xs text-slate-700 font-medium">
+                          <p className="flex justify-between">
+                            <span className="text-slate-500">Booking ID</span>
+                            <strong className="text-slate-900">{activeJob.bookingId}</strong>
+                          </p>
+                          <p className="flex justify-between">
+                            <span className="text-slate-500">Customer</span>
+                            <strong className="text-slate-900">{activeJob.customerName || 'Customer'}</strong>
+                          </p>
+                          <p className="flex justify-between">
+                            <span className="text-slate-500">Location</span>
+                            <strong className="text-slate-900">
+                              {[activeJob.address?.locality, activeJob.address?.city].filter(Boolean).join(', ') || 'Telangana'}
+                            </strong>
+                          </p>
+                          <p className="flex justify-between">
+                            <span className="text-slate-500">Service</span>
+                            <strong className="text-slate-900">{activeJob.serviceName}</strong>
+                          </p>
+                          <p className="flex justify-between">
+                            <span className="text-slate-500">Scheduled</span>
+                            <strong className="text-slate-900">{activeJob.date || 'Today'} ({activeJob.timeSlot || 'Anytime'})</strong>
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="p-4 bg-emerald-50/60 border border-emerald-200 rounded-2xl mb-6 text-center">
+                      <span className="text-xs font-black text-emerald-900 block">No Active Job In Progress</span>
+                      <p className="text-[11px] text-emerald-700 mt-0.5">
+                        {activeDrawerMaid.isOnline
+                          ? 'Partner is currently online and available for job dispatch.'
+                          : 'Partner is currently offline.'}
+                      </p>
+                    </div>
+                  );
+                })()}
 
                 {/* Quick Stats Grid */}
                 <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider mb-3">Quick Stats</h4>

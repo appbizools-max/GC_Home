@@ -1,6 +1,7 @@
-﻿import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import { Booking, BookingStatus } from '../../types';
+import { formatDateDDMMYYYY } from '../../utils/bookingDisplayUtils';
 import {
   Play,
   Car,
@@ -19,6 +20,7 @@ import {
   Clock,
   ShieldCheck,
   RefreshCw,
+  Phone,
 } from 'lucide-react';
 
 export const OngoingBookingsPage: React.FC = () => {
@@ -394,18 +396,18 @@ export const OngoingBookingsPage: React.FC = () => {
 
                       {/* Customer */}
                       <td className="py-3.5 px-3">
-                        <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center font-bold text-[11px] shrink-0">
-                            {(job.customerName || 'C').charAt(0).toUpperCase()}
-                          </div>
-                          <div>
-                            <span className="font-extrabold text-slate-900 block leading-tight">
-                              {job.customerName}
-                            </span>
-                            <span className="text-[10px] text-slate-400 block mt-0.5">
-                              {job.customerPhone}
-                            </span>
-                          </div>
+                        <div>
+                          <span className="font-extrabold text-slate-900 block leading-tight">
+                            {job.customerName}
+                          </span>
+                          <a
+                            href={`tel:${job.customerPhone}`}
+                            className="text-[10px] text-slate-500 hover:text-emerald-700 font-medium inline-flex items-center gap-1 mt-0.5"
+                            onClick={e => e.stopPropagation()}
+                          >
+                            <Phone className="w-2.5 h-2.5 text-slate-400" />
+                            {job.customerPhone}
+                          </a>
                         </div>
                       </td>
 
@@ -447,7 +449,7 @@ export const OngoingBookingsPage: React.FC = () => {
 
                       {/* Time */}
                       <td className="py-3.5 px-3 font-semibold text-slate-600">
-                        <div>{job.date || 'Today'}</div>
+                        <div>{formatDateDDMMYYYY(job.date) || 'Today'}</div>
                         <div className="text-[10px] text-slate-400">{job.timeSlot || 'Anytime'}</div>
                       </td>
 
@@ -508,7 +510,7 @@ export const OngoingBookingsPage: React.FC = () => {
                       Partner: <strong>{job.assignedMaidName || 'Unassigned'}</strong>
                     </p>
                     <div className="flex items-center gap-3 text-[11px] text-slate-400 mt-1">
-                      <span>{job.date || 'Today'} • {job.timeSlot || 'Anytime'}</span>
+                      <span>{formatDateDDMMYYYY(job.date) || 'Today'} • {job.timeSlot || 'Anytime'}</span>
                       <span>•</span>
                       <span>{job.address?.locality || job.address?.city || 'Hyderabad'}</span>
                     </div>
